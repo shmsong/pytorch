@@ -6739,3 +6739,15 @@
   variants: function
   device_guard: False
   supports_named_tensor: True
+
+- func: stochastic_rounding(Tensor input, Tensor(a!) output, Generator? gen_=None) -> Tensor(a!)
+  dispatch:
+    CUDA: stochastic_rounding_cuda
+
+- func: stochastic_rounding_adam_step(Tensor(a!) param, Tensor grad, Tensor(b!) exp_avg, Tensor(c!) exp_avg_sq, Tensor(d!) max_exp_avg_sq, Tensor inv_scale, Tensor found_inf, float lr, float beta1, float beta2, float weight_decay, float eps, int step, bool is_decoupled, bool is_amsgrad, Generator? gen_=None) -> Tensor(a!)
+  dispatch:
+    CUDA: stochastic_rounding_adam_step_cuda
+
+- func: stochastic_rounding_sgd_step(Tensor(a!) param, Tensor grad, Tensor(b!) momentum_buffer, Tensor inv_scale, Tensor found_inf, float lr, float momentum, float weight_decay, float dampening, bool nesterov, bool first_run, Generator? gen_=None) -> Tensor(a!)
+  dispatch:
+    CUDA: stochastic_rounding_sgd_step_cuda
