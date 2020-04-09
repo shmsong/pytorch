@@ -36,7 +36,7 @@ class SRAdam(Adam):
     _step_supports_amp_scaling = True
 
     @torch.no_grad()
-    def step(self,closure=None, grad_scaler=None):
+    def step(self, closure=None, grad_scaler=None):
         """Performs a single optimization step.
 
         Arguments:
