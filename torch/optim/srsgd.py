@@ -64,9 +64,9 @@ class SRSGD(SGD):
                 momentum_buffer = param_state['momentum_buffer']
 
                 torch.stochastic_rounding_sgd_step(
-                    param, param.grad, momentum_buffer,
+                    param, grad, momentum_buffer,
                     inv_scale, found_inf,
-                    weight_decay, momentum, dampening, group['lr'],
+                    group['lr'], momentum, weight_decay, dampening,
                     nesterov, first_run)
 
         return loss
