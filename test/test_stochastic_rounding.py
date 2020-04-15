@@ -15,8 +15,7 @@ def test_rs(scale):
     x = torch.tensor([original_value] * N).cuda()
     _, exponent = math.frexp(original_value)
     exponent -= 1
-    rounded = torch.zeros((N,)).cuda()
-    rounded = torch.stochastic_rounding(x, rounded)
+    rounded = torch.stochastic_rounding(x)
 
     mean = torch.mean(rounded).item()
     delta_fp16 = math.pow(2, -10 + exponent if exponent >= -14 else -24)

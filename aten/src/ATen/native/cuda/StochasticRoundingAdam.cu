@@ -107,7 +107,7 @@ Tensor stochastic_rounding_adam_step_cuda(
   }
 
   AT_DISPATCH_FLOATING_TYPES_AND_HALF(
-      param.scalar_type(), "stochastic_rounding_adam_step_kernel", [&] {
+      param.scalar_type(), "stochastic_rounding_adam_step_cuda", [&] {
         stochastic_rounding_adam_step_kernel<scalar_t><<<grid, dim_block, 0, c10::cuda::getCurrentCUDAStream()>>>(
             param.data_ptr<scalar_t>(),
             grad.data_ptr<scalar_t>(),

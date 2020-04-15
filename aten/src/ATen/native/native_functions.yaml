@@ -6740,7 +6740,7 @@
   device_guard: False
   supports_named_tensor: True
 
-- func: stochastic_rounding(Tensor input, Tensor(a!) output, Generator? gen_=None) -> Tensor(a!)
+- func: stochastic_rounding(Tensor input, Generator? gen_=None) -> Tensor
   dispatch:
     CUDA: stochastic_rounding_cuda
 

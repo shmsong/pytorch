@@ -1,24 +1,6 @@
 #include <ATen/ATen.h>
 #include <ATen/native/cuda/stochastic_rounding.cuh>
 
-#define DISPATCH_FLOAT_AND_HALF(TYPE, LEVEL, NAME, ...) \
-  switch(TYPE) \
-  { \
-    case at::ScalarType::Float: \
-    { \
-      using scalar_t_##LEVEL = float; \
-      __VA_ARGS__; \
-      break; \
-    } \
-    case at::ScalarType::Half: \
-    { \
-      using scalar_t_##LEVEL = at::Half; \
-      __VA_ARGS__; \
-      break; \
-    } \
-    default: \
-      AT_ERROR(#NAME, " not implemented for '", toString(TYPE), "'");  \
-  }
 
 namespace at {
 namespace native {
@@ -39,10 +21,9 @@ __global__ void stochastic_rounding_kernel(
   }
 }
 
-Tensor stochastic_rounding_cuda(const Tensor& input, Tensor& output, Generator gen_) {
-  TORCH_CHECK(input.numel() > 0 && input.numel() == output.numel());
-  TORCH_CHECK(input.is_contiguous());
-  TORCH_CHECK(output.is_contiguous());
+Tensor stochastic_rounding_cuda(const Tensor& input, Generator gen_) {
+
+  Tensor output = at::empty_like(input, input.options().dtype(kHalf), input.suggest_memory_format());
 
   const int64_t numel = input.numel();
   const int block = 256;
@@ -57,19 +38,16 @@ Tensor stochastic_rounding_cuda(const Tensor& input, Tensor& output, Generator g
     rng_engine_inputs = gen->philox_engine_inputs((numel + block * grid - 1) / (block * grid));
   }
 
-  DISPATCH_FLOAT_AND_HALF(
-    input.scalar_type(), 0, "round_stochastically_input",
-    DISPATCH_FLOAT_AND_HALF(
-      output.scalar_type(), 1, "round_stochastically_output",
-      stochastic_rounding_kernel<scalar_t_0, scalar_t_1><<<grid, block, 0, at::cuda::getCurrentCUDAStream()>>>(
-        input.data_ptr<scalar_t_0>(),
-        output.data_ptr<scalar_t_1>(),
+  AT_DISPATCH_FLOATING_TYPES_AND_HALF(
+    input.scalar_type(),  "stochastic_rounding_cuda", [&] {
+      stochastic_rounding_kernel<scalar_t, at::Half><<<grid, block, 0, at::cuda::getCurrentCUDAStream()>>>(
+        input.data_ptr<scalar_t>(),
+        output.data_ptr<at::Half>(),
         numel, rng_engine_inputs);
-      ));
+    });
 
   return output;
 }
 
 } // namespace native
 } // namespace at
-#undef DISPATCH_FLOAT_AND_HALF

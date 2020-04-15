@@ -92,6 +92,7 @@ Tensor stochastic_rounding_sgd_step_cuda(
             static_cast<float>(weight_decay), static_cast<float>(momentum), static_cast<float>(dampening), static_cast<float>(lr),
             nesterov, first_run, numel, rng_engine_inputs);
       });
+  AT_CUDA_CHECK(cudaGetLastError());
   return param;
 }
 
