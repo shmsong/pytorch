@@ -52,11 +52,8 @@ __global__ void stochastic_rounding_adam_step_kernel(
       max_v = fmaxf(prev_max_v, v);
     }
 
-    // Update parameter
     weight -= (lr / m_correction) * m / (sqrtf(max_v / v_correction) + eps);
 
-    // Rounding
-    // `maybe_square` must not be used in this section.
     weights[i] = round_stochastically<scalar_t>(weight, random_values.x);
     exp_avg[i] = round_stochastically<scalar_t>(m, random_values.y);
     exp_avg_sq[i] = round_stochastically<scalar_t>(sqrtf(v), random_values.z);
@@ -87,8 +84,6 @@ Tensor stochastic_rounding_adam_step_cuda(
   TORCH_CHECK(exp_avg_sq.is_contiguous());
   TORCH_CHECK(max_exp_avg_sq.is_contiguous());
 
-  // Based on ATen/native/cuda/Dropout.cu
-  // link: https://github.com/pytorch/pytorch/blob/c21896327094637cfb83bc0f536e6a442b9877a1/aten/src/ATen/native/cuda/Dropout.cu
   const int64_t numel = param.numel();
   const int block_size = 256;
   const int blocks_per_sm = at::cuda::getCurrentDeviceProperties()->maxThreadsPerMultiProcessor / block_size;
@@ -101,7 +96,6 @@ Tensor stochastic_rounding_adam_step_cuda(
   uint64_t counter_offset = ((numel + dim_block.x * grid.x - 1) / (block_size * grid.x)) * 4;
   std::pair<uint64_t, uint64_t> rng_engine_inputs;
   {
-    // See Note [Acquire lock when using random generators]
     std::lock_guard<std::mutex> lock(gen->mutex_);
     rng_engine_inputs = gen->philox_engine_inputs(counter_offset);
   }

@@ -1,4 +1,3 @@
-// Ref: https://gitlab.com/riship11/stochastic-rounding
 #ifndef _STOCHASTIC_ROUNDING_CUH_
 #define _STOCHASTIC_ROUNDING_CUH_
 
@@ -21,9 +20,6 @@
 // 2^-10 is the step for normal FP16 numbers.
 // 2^-24 is the unit in the last place (ULP)/precision limitation.
 // 24 is **NOT** related to the number of mantissa bits of single precision format.
-// ref:
-//   - https://en.wikipedia.org/wiki/Half-precision_floating-point_format#Precision_limitations_on_decimal_values_in_[0,_1]
-//   - https://en.wikipedia.org/wiki/Half-precision_floating-point_format#Precision_limitations_on_decimal_values_in_[1,_2048]
 __device__ const float TWO_10 = 0.0009765625;
 __device__ const float TWO_24 = 0.000000059604644775390625;
 

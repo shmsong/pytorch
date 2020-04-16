@@ -11,13 +11,8 @@ __global__ void stochastic_rounding_sgd_step_kernel(
     scalar_t *weights, scalar_t *gradients, scalar_t *momentum_buffer,
     float* inv_scale, float* found_inf,
     float weight_decay, float momentum, float dampening, float lr,
-    bool nesterov, bool first_run, int numel, std::pair<uint64_t, uint64_t> seeds)
-{
+    bool nesterov, bool first_run, int numel, std::pair<uint64_t, uint64_t> seeds) {
 
-  // 1.0 indicates that any gradients contain inf or nan.
-  // See below about `found_inf`:
-  //  - https://github.com/mcarilli/pytorch/blob/382d02f01d104049179f4f056cc9258caad029af/aten/src/ATen/native/cuda/AmpKernels.cu#L40-L41
-  //  - https://github.com/mcarilli/pytorch/blob/382d02f01d104049179f4f056cc9258caad029af/aten/src/ATen/native/cuda/AmpKernels.cu#L116-L117
   if (*found_inf) return;
 
   int tid = blockIdx.x * blockDim.x + threadIdx.x;
@@ -47,7 +42,6 @@ __global__ void stochastic_rounding_sgd_step_kernel(
 
     weight -= lr * gradient;
 
-    // Rounding.
     weights[i] = round_stochastically<scalar_t>(weight, random_values.x);
     if (momentum != 0.0f)
       momentum_buffer[i] = round_stochastically<scalar_t>(velocity, random_values.y);
@@ -77,7 +71,6 @@ Tensor stochastic_rounding_sgd_step_cuda(
   uint64_t counter_offset = ((numel + dim_block.x * grid.x - 1) / (dim_block.x * grid.x)) * 4;
   std::pair<uint64_t, uint64_t> rng_engine_inputs;
   {
-    // See Note [Acquire lock when using random generators]
     std::lock_guard<std::mutex> lock(gen->mutex_);
     rng_engine_inputs = gen->philox_engine_inputs(counter_offset);
   }
