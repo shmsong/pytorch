@@ -1547,18 +1547,21 @@ class TestLRScheduler(TestCase):
 
         self.assertLessEqual(last_lr, max_lr)
 
+
+def _calc_loss(weight, bias, input):
+    y = weight.mv(input)
+    if y.get_device() != bias.get_device():
+        y = y.cuda(bias.get_device())
+    return (y + bias).pow(2).sum()
+
+
+@unittest.skipIf(not torch.cuda.is_available(), 'No CUDA')
 class TestStochasticRoundingOptim(TestCase):
 
     exact_dtype = True
 
     def _test_basic_cases_template(
             self, weight, bias, input, constructor, grad_scaler=None):
-
-        def _calc_loss(weight, bias, input):
-            y = weight.mv(input)
-            if y.get_device() != bias.get_device():
-                y = y.cuda(bias.get_device())
-            return (y + bias).pow(2).sum()
 
         optimizer = constructor(weight, bias)
         initial_value = None
@@ -1599,15 +1602,11 @@ class TestStochasticRoundingOptim(TestCase):
                 constructor, grad_scaler)
 
     def _test_without_GradScaler(self, opt):
-        if not torch.cuda.is_available():
-            return
         for dtype in (torch.float16, torch.float32, torch.float64):
             self._test_basic_cases(
                 dtype, lambda weight, bias: opt([weight, bias], lr=1e-2), None)
 
     def _test_with_GradScaler(self, opt):
-        if not torch.cuda.is_available():
-            return
         for dtype in (torch.float16, torch.float32):
             self._test_basic_cases(
                 dtype, lambda weight, bias: opt([weight, bias], lr=1e-2),
@@ -1624,6 +1623,35 @@ class TestStochasticRoundingOptim(TestCase):
     def test_SRSGD(self):
         self._test_without_GradScaler(optim.SRSGD)
         self._test_with_GradScaler(optim.SRSGD)
+
+    def _prepare_optimizer(self, opt, update=False):
+        weight = torch.nn.Parameter(torch.randn(10, 5).cuda())
+        bias = torch.nn.Parameter(torch.randn(10).cuda())
+        optimizer = opt([weight, bias], lr=1e-2)
+        if not update:
+            return optimizer
+        input = torch.randn(5).cuda()
+
+        optimizer.zero_grad()
+        _calc_loss(weight, bias, input).backward()
+        optimizer.step()
+        optimizer.zero_grad()
+
+        return optimizer
+
+    def _test_state_dict(self, opt_1, opt_2):
+        optimizer = self._prepare_optimizer(opt_1)
+        optimizer.load_state_dict(optimizer.state_dict())
+        optimizer2 = self._prepare_optimizer(opt_2, False)
+        optimizer2.load_state_dict(optimizer.state_dict())
+        optimizer2 = self._prepare_optimizer(opt_2, False)
+        optimizer.load_state_dict(optimizer2.state_dict())
+        self._prepare_optimizer(opt_1, False).load_state_dict(optimizer2.state_dict())
+
+    def test_state_dict_compatibility(self):
+        self._test_state_dict(optim.SRSGD, optim.SGD)
+        self._test_state_dict(optim.SRAdam, optim.Adam)
+        self._test_state_dict(optim.SRAdamW, optim.AdamW)
 
 
 if __name__ == '__main__':

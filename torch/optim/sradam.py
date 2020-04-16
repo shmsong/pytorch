@@ -1,10 +1,28 @@
+import copy
+
 import torch
 from .adam import Adam
 
 
-# TODO(crcrpar): Decide whether to override `state_dict` method as
-# this optimizer tracks square root of `exp_avg_sq` and `max_exp_avg_sq`
-# that contradicts with its parent optimizer :class:`torch.optim.Adam`.
+def _apply_square_to_state_dict(state_dict):
+    with torch.no_grad():
+        for state_per_param in state_dict['state'].values():
+            state_per_param['exp_avg_sq'].square_()
+            state_per_param['max_exp_avg_sq'].square()
+    return state_dict
+
+
+def _apply_sqrt_to_state_dict(state_dict):
+    with torch.no_grad():
+        for state_per_param in state_dict['state'].values():
+            state_per_param['exp_avg_sq'].sqrt_()
+            if 'max_exp_avg_sq' not in state_per_param:
+                state_per_param['max_exp_avg_sq'] = torch.zeros_like(state_per_param['exp_avg_sq'])
+            else:
+                state_per_param['max_exp_avg_sq'].sqrt_()
+    return state_dict
+
+
 class SRAdam(Adam):
     r"""Implements Adam algorithm with Stochastic Rounding.
 
@@ -34,6 +52,12 @@ class SRAdam(Adam):
     """
 
     _step_supports_amp_scaling = True
+
+    def state_dict(self):
+        return _apply_square_to_state_dict(super().state_dict())
+
+    def load_state_dict(self, state_dict):
+        super().load_state_dict(_apply_sqrt_to_state_dict(state_dict))
 
     @torch.no_grad()
     def step(self, closure=None, grad_scaler=None):
