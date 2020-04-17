@@ -6,7 +6,7 @@ class SRSGD(SGD):
     r"""Implements stochastic gradient descent with Stochastic Rounding.
 
     With Stochastic Rounding, param and `momentum_buffer` can be represented with 16 bits.
-    This optimizer requires CUDA.
+    See :func:`torch.stochastic_rounding` for details. This optimizer requires CUDA.
 
     Args:
         params (iterable): iterable of parameters to optimize or dicts defining

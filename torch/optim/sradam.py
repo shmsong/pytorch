@@ -29,7 +29,7 @@ class SRAdam(Adam):
     It has been proposed in `Adam: A Method for Stochastic Optimization`_.
 
     With Stochastic Rounding, param, `exp_avg`, `exp_avg_sq`, and optionally `max_exp_avg_sq`
-    can be represented with 16 bits.
+    can be represented with 16 bits. See :func:`torch.stochastic_rounding` for details.
     This optimizer requires CUDA.
 
     Arguments:
