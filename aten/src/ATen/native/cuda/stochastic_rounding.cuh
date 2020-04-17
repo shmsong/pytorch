@@ -1,5 +1,4 @@
-#ifndef _STOCHASTIC_ROUNDING_CUH_
-#define _STOCHASTIC_ROUNDING_CUH_
+#pragma once
 
 #include <math.h>
 #include <utility>
@@ -59,5 +58,3 @@ __device__ __forceinline__ scalar_t round_stochastically(float x, float random_v
   }
   return maybe_upcast<scalar_t>(__float2half_rz(val));
 }
-
-#endif // _STOCHASTIC_ROUNDING_CUH_
