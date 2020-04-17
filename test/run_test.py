@@ -78,6 +78,7 @@ TESTS = [
     'test_overrides',
     'test_jit_fuser_te',
     'test_tensorexpr',
+    'test_stochastic_rounding',
 ]
 
 # skip < 3.3 because mock is added in 3.3 and is used in rpc_spawn
