@@ -1,4 +1,5 @@
 import torch
+from torch.cuda.amp.grad_scaler import _MultiDeviceReplicator
 from .sgd import SGD
 
 
@@ -35,13 +36,15 @@ class SRSGD(SGD):
                 loss = closure()
 
         if grad_scaler is not None:
-            found_inf = grad_scaler._check_inf_per_device(
-                self)[torch.device(torch.cuda.current_device())]
+            found_inf = grad_scaler._check_inf_per_device(self)
             scale = grad_scaler._get_scale_async()
             inv_scale = scale.double().reciprocal().float()
         else:
             found_inf = torch.zeros((1,), dtype=torch.float, device=torch.cuda.current_device())
+            found_inf = _MultiDeviceReplicator(found_inf)
             inv_scale = torch.ones((1,), dtype=torch.float, device=torch.cuda.current_device())
+
+        inv_scale = _MultiDeviceReplicator(inv_scale)
 
         for group in self.param_groups:
             weight_decay = group['weight_decay']
@@ -65,7 +68,7 @@ class SRSGD(SGD):
 
                 torch.stochastic_rounding_sgd_step(
                     param, grad, momentum_buffer,
-                    inv_scale, found_inf,
+                    inv_scale.get(param.device), found_inf.get(param.device),
                     group['lr'], momentum, weight_decay, dampening,
                     nesterov, first_run)
 

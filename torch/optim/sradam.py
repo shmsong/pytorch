@@ -1,6 +1,5 @@
-import copy
-
 import torch
+from torch.cuda.amp.grad_scaler import _MultiDeviceReplicator
 from .adam import Adam
 
 
@@ -73,13 +72,15 @@ class SRAdam(Adam):
                 loss = closure()
 
         if grad_scaler is not None:
-            found_inf = grad_scaler._check_inf_per_device(
-                self)[torch.device(torch.cuda.current_device())]
+            found_inf = grad_scaler._check_inf_per_device(self)
             scale = grad_scaler._get_scale_async()
             inv_scale = scale.double().reciprocal().float()
         else:
             found_inf = torch.zeros((1,), dtype=torch.float, device=torch.cuda.current_device())
+            found_inf = _MultiDeviceReplicator(found_inf)
             inv_scale = torch.ones((1,), dtype=torch.float, device=torch.cuda.current_device())
+
+        inv_scale = _MultiDeviceReplicator(inv_scale)
 
         for group in self.param_groups:
             for param in group['params']:
@@ -107,7 +108,7 @@ class SRAdam(Adam):
                 torch.stochastic_rounding_adam_step(
                     param, grad,
                     state['exp_avg'], state['exp_avg_sq'], state['max_exp_avg_sq'],
-                    inv_scale, found_inf,
+                    inv_scale.get(param.device), found_inf.get(param.device),
                     group['lr'], beta1, beta2,
                     group['weight_decay'], group['eps'], state['step'],
                     False, group['amsgrad'])
