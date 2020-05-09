@@ -327,7 +327,7 @@ void IRPrinter::handle(const Allocate* const a) {
 void IRPrinter::handle(const Split* const s) {
   os << "Split: ";
   handle(s->in());
-  os << " axis " << s->axis() << " by factor " << s->factor() << " -> ";
+  os << " axis " << s->axis() << " by factor " << s->factor() << " ->\n";
   handle(s->out());
   os << "\n";
 }

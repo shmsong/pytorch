@@ -34,6 +34,86 @@ TensorView* makeDummyTensor(int nDims) {
 // 1. Test cases are void() functions.
 // 2. They start with the prefix `test`
 
+void testGPU_FusionExprEval() {
+  Fusion fusion;
+  FusionGuard fg(&fusion);
+
+  // Set up your input tensor views
+  TensorView* tv0 = makeDummyTensor(2);
+  TensorView* tv1 = makeDummyTensor(2);
+
+  // Register your inputs
+  fusion.addInput(tv0);
+  fusion.addInput(tv1);
+
+  // Do math with it, it returns a `Val*` but can be static_casted back to
+  // TensorView
+  TensorView* tv2 = static_cast<TensorView*>(add(tv1, new Float(2.0)));
+  TensorView* tv3 = static_cast<TensorView*>(add(tv0, tv2));
+
+  // Register your outputs
+  fusion.addOutput(tv3);
+
+  tv3->split(0, 4);
+
+  // For all inputs, computeAt the output inline, temporaries should be squeezed
+  // between them
+  tv0->computeAt(tv3, 1);
+  tv1->computeAt(tv3, 1);
+
+  // Parallelize TV3
+  tv3->axis(0)->parallelize(ParallelType::BIDx);
+  tv2->axis(1)->parallelize(ParallelType::Unroll);
+  tv3->axis(1)->parallelize(ParallelType::Unroll);
+  tv2->axis(-1)->parallelize(ParallelType::TIDx);
+  tv3->axis(-1)->parallelize(ParallelType::TIDx);
+
+
+
+  TORCH_CHECK(tv3->domain()->nDims() == 3);
+
+  const auto* ext0 = tv3->axis(0)->rawExtent();
+  const auto* ext1 = tv3->axis(1)->rawExtent();
+  const auto* ext2 = tv3->axis(2)->rawExtent();
+
+  TORCH_CHECK(ext0->isAnInt());
+  TORCH_CHECK(ext1->isAnInt());
+  TORCH_CHECK(ext2->isAnInt());
+
+  const auto val0 = ext0->as<Int>()->value();
+  const auto val1 = ext1->as<Int>()->value();
+  const auto val2 = ext2->as<Int>()->value();
+
+  /* TODO
+  TORCH_CHECK(val0.has_value());
+  TORCH_CHECK(val1.has_value());
+  TORCH_CHECK(val2.has_value());
+  */
+
+#if 1
+  torch::jit::fuser::cuda::CudaKernel prog;
+  prog.device_ = 0;
+  prog.grid(1); // 1 CTA
+  prog.block(128); // 128 Threads
+
+  auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
+
+  at::Tensor input1 = at::ones({1, 128}, options);
+  at::Tensor input2 = at::ones_like(input1);
+  ;
+  at::Tensor output = at::empty_like(input1);
+  std::vector<at::Tensor> inputs{{input1, input2}};
+  std::vector<at::Tensor> outputs{{output}};
+
+  torch::jit::fuser::cuda::compileKernel(fusion, &prog);
+  torch::jit::fuser::cuda::runTestKernel(prog, inputs, outputs);
+
+  at::Tensor check = at::full({1, 128}, 4, options);
+  ;
+  TORCH_CHECK(output.equal(check));
+#endif
+}
+
 void testGPU_FusionDispatch() {
   Fusion fusion;
   FusionGuard fg(&fusion);

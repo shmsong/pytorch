@@ -97,6 +97,7 @@ namespace jit {
   _(GraphExecutor)               \
   _(ModuleConversion)            \
   _(Interp)                      \
+  _(GPU_FusionExprEval)          \
   _(GPU_FusionDispatch)          \
   _(GPU_FusionSimpleArith)       \
   _(GPU_FusionSimpleTypePromote) \

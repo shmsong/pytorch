@@ -95,6 +95,40 @@ struct TORCH_CUDA_API Statement {
   // Make sure this is an Expr and return it as an Expr*
   Expr* asExpr();
 
+  // notation idea for generic downcasts:
+  //  val->as<Int>()->value()
+  //
+  // instead of:
+  //  static_cast<Int*>(val)->value()
+  //  or
+  //  stm->asVal()
+  //
+  // PS. plus debug build checks!
+  //
+  template<class T>
+  T* as()
+  {
+    #ifdef NDEBUG
+    auto downcast_ptr = static_cast<T*>(this);
+    #else
+    auto downcast_ptr = dynamic_cast<T*>(this);
+    #endif
+    assert(downcast_ptr);
+    return downcast_ptr;
+  }
+
+  template<class T>
+  const T* as() const
+  {
+    #ifdef NDEBUG
+    auto downcast_ptr = static_cast<const T*>(this);
+    #else
+    auto downcast_ptr = dynamic_cast<const T*>(this);
+    #endif
+    assert(downcast_ptr);
+    return downcast_ptr;
+  }
+
   // Return the fusion this statement belongs to
   Fusion* fusion() const noexcept {
     return fusion_;
@@ -136,7 +170,8 @@ struct TORCH_CUDA_API Statement {
  * Adding a Val:
  * Right now adding a Val is quite involved. Val's can be defined in ir.h or in
  * their own header file. The following is what is currently needed to add a new
- * Val: 1) Definition inheriting from Val
+ * Val: 
+ * 1) Definition inheriting from Val
  *     - Members must be private or protected
  *     - Accessor functions for members
  *     - Must call Val constructor, Val constructor registers with fusion
@@ -349,18 +384,20 @@ struct TORCH_CUDA_API IRInputOutput {
  * Adding an Expr:
  * Right now adding an Expr is quite involved. Expr's can be defined in ir.h or
  * in their own header file. The following is what is currently needed for Expr
- * definitions: 1) Definition inheriting from Expr.
+ * definitions: 
+ * 1) Definition inheriting from Expr.
  *     - Members must be private or protected
  *     - Accessor functions for members
  *     - Constructors need to register with the Fusion after inputs/outputs are
- * defined
+ *        defined
  *     - Implementation of bool sameAs(...)
  * 2) dispatch.h/.cpp must be updated to include dispatch of the new Val
  * 3) Default mutator function should be added to mutator.h/.cpp
  * 4) Printing functions should be added to ir_iostream.h/.cpp
  * 5) Lower case convenience functions should be added to arith.h/.cpp (If user
- * facing) 6) An enum value must be added to ExprType in type.h 7) A string
- * entry must be added in expr_type_string_map
+*   facing) 
+ * 6) An enum value must be added to ExprType in type.h 7) A string
+ *  entry must be added in expr_type_string_map
  */
 struct TORCH_CUDA_API Expr : public Statement, IRInputOutput {
  public:

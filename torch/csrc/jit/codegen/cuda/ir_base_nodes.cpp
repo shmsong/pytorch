@@ -66,6 +66,7 @@ struct ConstCheck : OptOutConstDispatch {
   void handle(const NamedScalar* const ns) override {
     is_const_ = false;
   }
+  
   void handle(const Val* const val) override {
     const Expr* orig = FusionGuard::getCurFusion()->origin(val);
     if (orig != nullptr)

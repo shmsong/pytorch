@@ -157,7 +157,7 @@ struct TORCH_CUDA_API Fusion : public IRInputOutput {
   std::vector<TensorView*> inputsOf(Val* val);
 
   // Print this fusion to cout.
-  void print();
+  void print() /*const*/;
 
   // Register the Val with this fusion
   StmtNameType registerVal(Val* val);
