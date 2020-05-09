@@ -425,6 +425,7 @@ std::vector<Expr*> GPULower::getLoweredExprs() {
 
   replaceSizes();
 
+  std::vector<Expr*> exprs;
   auto loop_nests = LoopNestGenerator::getLoopNest(fusion_);
   auto unrolled_loops = UnrollPass::runPass(fusion_, loop_nests);
   // Run through loop nests and further lower the expressions
@@ -434,17 +435,17 @@ std::vector<Expr*> GPULower::getLoweredExprs() {
         mutated_stmt->isExpr(),
         "Tried to generate a kernel but hit a non expression during lowering: ",
         mutated_stmt);
-    lowered_exprs.push_back(static_cast<Expr*>(mutated_stmt));
+    exprs.push_back(static_cast<Expr*>(mutated_stmt));
   }
 
-  return lowered_exprs;
+  return exprs;
 }
 
 std::ostream& GPULower::printKernel(
     std::ostream& os,
     const std::string& kernel_name) {
   FusionGuard fg(fusion_);
-  getLoweredExprs();
+  lowered_exprs = getLoweredExprs(); // was this the intention?
 
   IRPrinter irp(os);
   irp.printKernel(lowered_exprs, kernel_name);
