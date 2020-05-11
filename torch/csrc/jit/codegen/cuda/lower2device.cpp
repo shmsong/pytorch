@@ -348,8 +348,8 @@ void GPULower::replaceSizes() {
       Val* new_size =
           new NamedScalar(ss.str(), orig_size->getDataType().value());
       if (!orig_size->sameAs(new_size) ||
-          size_map.find(orig_size) == size_map.end())
-        size_map[orig_size] = new_size;
+          size_map.find(orig_size) == size_map.end()) // ???
+        size_map[orig_size] = new_size; 
     }
   }
 
@@ -373,7 +373,7 @@ void GPULower::replaceSizes() {
     }
 
     TensorDomain* old_domain = tv->domain();
-    TensorDomain* new_domain = TransformReplay::fullReplay(
+    TensorDomain* new_domain = TransformReplay::fullReplay( // why do we need to reply here?
         old_domain, new TensorDomain(new_domain_iters));
 
     TORCH_INTERNAL_ASSERT(
@@ -415,7 +415,7 @@ void validate(Fusion* fusion) {
 
 // Traverse through the fusion and print CUDA code associated with it
 std::vector<Expr*> GPULower::getLoweredExprs() {
-  FusionGuard fg(fusion_);
+  FusionGuard fg(fusion_, __PRETTY_FUNCTION__);
 
   validate(fusion_);
 
@@ -444,7 +444,7 @@ std::vector<Expr*> GPULower::getLoweredExprs() {
 std::ostream& GPULower::printKernel(
     std::ostream& os,
     const std::string& kernel_name) {
-  FusionGuard fg(fusion_);
+  FusionGuard fg(fusion_, nullptr);
   lowered_exprs = getLoweredExprs(); // was this the intention?
 
   IRPrinter irp(os);

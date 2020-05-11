@@ -55,11 +55,13 @@ struct TensorView;
 // it to be accessed anywhere through FusionGuard::getCurFusion().
 struct TORCH_CUDA_API FusionGuard {
  public:
-  Fusion* prev_fusion;
+  Fusion* prev_fusion = nullptr;
+  Fusion* current_fusion = nullptr;
+  const char* context_name = nullptr;
 
   // Set the active fusion so it can be manipulated.
   // Q: does it make sense to use FusionGuard with a const Fusion* ?
-  FusionGuard(Fusion* fusion);
+  explicit FusionGuard(Fusion* fusion, const char* context_name = "Unknown");
 
   ~FusionGuard();
 

@@ -34,7 +34,7 @@ std::vector<Statement*> IterVisitor::next(Expr* expr) {
 void IterVisitor::traverseFrom(
     Fusion* const fusion,
     const std::vector<Val*>& from) {
-  FusionGuard fg(fusion);
+  FusionGuard fg(fusion, nullptr);
 
   std::set<Statement*> visited;
   std::deque<Statement*> to_visit;
@@ -80,7 +80,7 @@ void IterVisitor::traverse(
     Fusion* const fusion,
     bool from_outputs_only,
     bool breadth_first) {
-  FusionGuard fg(fusion);
+  FusionGuard fg(fusion, nullptr);
   if (breadth_first)
     TORCH_INTERNAL_ASSERT(false, "Not implemented yet.");
   std::set<Statement*> visited;

@@ -36,7 +36,7 @@ TensorView* makeDummyTensor(int nDims) {
 
 void testGPU_FusionExprEval() {
   Fusion fusion;
-  FusionGuard fg(&fusion);
+  FusionGuard fg(&fusion, __PRETTY_FUNCTION__);
 
   // Set up your input tensor views
   TensorView* tv0 = makeDummyTensor(2);
@@ -67,8 +67,6 @@ void testGPU_FusionExprEval() {
   tv3->axis(1)->parallelize(ParallelType::Unroll);
   tv2->axis(-1)->parallelize(ParallelType::TIDx);
   tv3->axis(-1)->parallelize(ParallelType::TIDx);
-
-
 
   TORCH_CHECK(tv3->domain()->nDims() == 3);
 

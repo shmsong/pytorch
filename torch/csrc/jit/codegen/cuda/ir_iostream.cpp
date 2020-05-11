@@ -328,7 +328,10 @@ void IRPrinter::handle(const Split* const s) {
   os << "Split: ";
   handle(s->in());
   os << " axis " << s->axis() << " by factor " << s->factor() << " ->\n";
+  ++indent_size;
+  indent();
   handle(s->out());
+  --indent_size;
   os << "\n";
 }
 
@@ -367,7 +370,7 @@ std::ostream& operator<<(std::ostream& os, const Statement* const stmt) {
 
 std::ostream& operator<<(std::ostream& os, Fusion* f) {
   IRPrinter p(os);
-  FusionGuard guard(f);
+  FusionGuard guard(f, nullptr);
   p.handle(f);
   return os;
 }

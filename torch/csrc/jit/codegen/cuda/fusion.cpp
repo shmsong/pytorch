@@ -8,12 +8,30 @@ namespace fuser {
 
 static thread_local Fusion* ACTIVE_FUSION = nullptr;
 
-FusionGuard::FusionGuard(Fusion* fusion) {
+static thread_local bool AUTO_PRINT = true;
+
+FusionGuard::FusionGuard(Fusion* fusion, const char* context_name) : 
+    current_fusion(fusion), context_name(context_name) {
+  TORCH_CHECK(fusion != nullptr);
+  //TORCH_CHECK(fusion != ACTIVE_FUSION); ???
   prev_fusion = ACTIVE_FUSION;
   ACTIVE_FUSION = fusion;
+  if (context_name && AUTO_PRINT) {
+    std::cout << "Before (" << context_name << ")\n";
+    std::cout << "====================================================================\n";
+    fusion->print();
+    std::cout << "====================================================================\n";
+  }
 }
 
 FusionGuard::~FusionGuard() {
+  TORCH_CHECK(ACTIVE_FUSION == current_fusion);
+  if (context_name && AUTO_PRINT) {
+    std::cout << "After (" << context_name << ")\n";
+    std::cout << "====================================================================\n";
+    current_fusion->print();
+    std::cout << "====================================================================\n";
+  }
   ACTIVE_FUSION = prev_fusion;
 }
 
@@ -162,7 +180,7 @@ std::vector<TensorView*> Fusion::inputsOf(Val* val) {
 }
 
 void Fusion::print() {
-  FusionGuard fg(this);
+  FusionGuard fg(this, nullptr);
   std::cout << "%kernel {\n";
   IRMathPrinter op_exprs(std::cout);
   op_exprs.handle(this);
