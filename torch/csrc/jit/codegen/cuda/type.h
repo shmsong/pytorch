@@ -29,6 +29,7 @@ enum class ExprType {
   UnaryOp,
   BinaryOp,
   TernaryOp,
+  Operation,
   ForLoop,
   IfThenElse,
   Allocate,
@@ -106,6 +107,8 @@ enum class BinaryOpType {
 };
 
 enum class TernaryOpType { Clamp, Threshold, Where };
+
+enum class OperationType { Clamp, Threshold, Where };
 
 enum class ParallelType {
   BIDz,

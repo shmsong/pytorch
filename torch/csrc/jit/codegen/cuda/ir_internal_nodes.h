@@ -142,6 +142,57 @@ struct TORCH_CUDA_API TernaryOp : public Expr {
   Val* const in3_;
 };
 
+template<typename OUT_T, typename ...IN_T>
+struct TORCH_CUDA_API Operation : public Expr {
+  ~Operation() = default;
+  Operation(OperationType _type, OUT_T* _out, IN_T*... _inputs) :
+    Expr(ExprType::Operation),
+    out_{_out},
+    ins_{_inputs... }
+  {
+    addOutput(_out);
+    std::for_each(ins_.begin(), ins_.end(), [this](Val* v) {
+      this->addInput(v);
+    });
+    this->name_ = FusionGuard::getCurFusion()->registerExpr(this);
+  }
+
+  Operation(const Operation& other) = delete;
+  Operation& operator=(const Operation& other) = delete;
+
+  Operation(Operation&& other) = delete;
+  Operation& operator=(Operation&& other) = delete;
+
+  Val* out() const noexcept {
+    return out_;
+  }
+  Val* in(int num) const noexcept {
+    TORCH_CHECK( (num < 0) && (num >= sizeof...(IN_T)),
+                 "Illegal index: ", num);
+    return ins_[num];
+  }
+
+  OperationType getOperationType() const noexcept {
+    return op_type_;
+  }
+
+  bool sameAs(const Operation* other) const {
+    if (getOperationType() != other->getOperationType())
+      return false;
+    bool inputs_match = true;
+    for(decltype(sizeof...(IN_T)) i{0}; i < sizeof...(IN_T); i++) {
+      inputs_match = inputs_match && in(i)->sameas(other->in(i));
+    }
+    return inputs_match;
+  }
+
+ private:
+  const OperationType op_type_;
+
+  Val* const out_;
+  std::array<Val* const, sizeof...(IN_T)> ins_;
+};
+
 /*
  * Simply a representation of an annotated 1D iterable from start to extent.
  * TensorDomains which represent how to iterate over a tensor is made up of

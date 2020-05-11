@@ -68,6 +68,7 @@ static _enum_unordered_map<ExprType, std::string> expr_type_string_map{
     {ExprType::UnaryOp, "UnaryOp"},
     {ExprType::BinaryOp, "BinaryOp"},
     {ExprType::TernaryOp, "TernaryOp"},
+    {ExprType::Operation, "Operation"},
     {ExprType::ForLoop, "ForLoop"},
     {ExprType::IfThenElse, "IfThenElse"},
     {ExprType::Allocate, "Allocate"},
@@ -156,6 +157,10 @@ static _enum_unordered_map<TernaryOpType, std::string>
     ternary_op_type_string_map{{TernaryOpType::Clamp, "clamp"},
                                {TernaryOpType::Threshold, "threshold"},
                                {TernaryOpType::Where, "where"}};
+static _enum_unordered_map<OperationType, std::string>
+    op_type_string_map{{OperationType::Clamp, "clamp"},
+                       {OperationType::Threshold, "threshold"},
+                       {OperationType::Where, "where"}};
 
 static _enum_unordered_map<ParallelType, std::string> parallel_type_string_map{
     {ParallelType::BIDz, "blockIdx.z"},
@@ -250,6 +255,15 @@ TORCH_CUDA_API std::ostream& operator<<(
       ternary_op_type_string_map.count(totype) != 0,
       "No string found for TernaryOp type.");
   return out << ternary_op_type_string_map[totype];
+}
+
+TORCH_CUDA_API std::ostream& operator<<(
+    std::ostream& out,
+    const OperationType totype) {
+  TORCH_INTERNAL_ASSERT(
+      op_type_string_map.count(totype) != 0,
+      "No string found for Operation type.");
+  return out << op_type_string_map[totype];
 }
 
 std::string stringify(const ParallelType ptype) {
