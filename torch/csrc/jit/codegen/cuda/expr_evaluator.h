@@ -12,6 +12,10 @@ namespace fuser {
 
 /*
  * TODO
+ * 
+ * Open questions:
+ * - error handling (ex. div by zero)
+ * - 
  */
 
 struct TORCH_CUDA_API ExpressionEvaluator : public OptInConstDispatch {
@@ -22,10 +26,12 @@ struct TORCH_CUDA_API ExpressionEvaluator : public OptInConstDispatch {
   ExpressionEvaluator() = default;
   ~ExpressionEvaluator() override = default;
 
+  /*
   void handle(const TensorDomain*) override;
   void handle(const TensorView*) override;
   void handle(const IterDomain*) override;
   void handle(const TensorIndex*) override;
+  */
 
   void handle(const Float*) override;
   void handle(const Int*) override;
@@ -34,6 +40,7 @@ struct TORCH_CUDA_API ExpressionEvaluator : public OptInConstDispatch {
   void handle(const UnaryOp*) override;
   void handle(const BinaryOp*) override;
 
+  /*
   void handle(const ForLoop*) override;
   void handle(const IfThenElse*) override;
   void handle(const Allocate*) override;
@@ -41,6 +48,7 @@ struct TORCH_CUDA_API ExpressionEvaluator : public OptInConstDispatch {
   void handle(const Split*) override;
   void handle(const Merge*) override;
   void handle(const Reorder*) override;
+  */
 
  private:
   c10::optional<int> result_;

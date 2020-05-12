@@ -15,24 +15,26 @@ c10::optional<int> ExpressionEvaluator::evaluate(const Statement* expr) {
   return evaluator.result_;
 }
 
+/*
 void ExpressionEvaluator::handle(const TensorDomain* td) {
-  // TODO
+  // NOP
 }
 
 void ExpressionEvaluator::handle(const TensorView* tv) {
-  // TODO
+  // NOP
 }
 
 void ExpressionEvaluator::handle(const IterDomain* id) {
-  // TODO
+  // NOP
 }
 
 void ExpressionEvaluator::handle(const TensorIndex* ti) {
-  // TODO
+  // NOP
 }
+*/
 
 void ExpressionEvaluator::handle(const Float* f) {
-  // TODO
+  // NOP
 }
 
 void ExpressionEvaluator::handle(const Int* i) {
@@ -40,11 +42,23 @@ void ExpressionEvaluator::handle(const Int* i) {
 }
 
 void ExpressionEvaluator::handle(const NamedScalar* i) {
-  // TODO
+  // NOP
 }
 
 void ExpressionEvaluator::handle(const UnaryOp* uop) {
-  // TODO
+  const auto in = evaluate(uop->in());
+  if (in.has_value()) {
+    switch (uop->getUnaryOpType()) {
+      case UnaryOpType::Neg:
+        result_ = int(!*in);
+        break;
+      case UnaryOpType::Cast:
+        result_ = *in;
+        break;
+      default:
+        TORCH_CHECK(!"Unexpected operator type");
+    }
+  }
 }
 
 void ExpressionEvaluator::handle(const BinaryOp* bop) {
@@ -74,7 +88,7 @@ void ExpressionEvaluator::handle(const BinaryOp* bop) {
         break;
       case BinaryOpType::CeilDiv:
         TORCH_CHECK(*rhs != 0);
-        result_ = (*lhs + *rhs -1) / *rhs;
+        result_ = (*lhs + *rhs - 1) / *rhs;
         break;
       case BinaryOpType::And:
         result_ = int(*lhs && *rhs);
@@ -85,29 +99,31 @@ void ExpressionEvaluator::handle(const BinaryOp* bop) {
   }
 }
 
+/*
 void ExpressionEvaluator::handle(const ForLoop* fl) {
-  // TODO
+  // NOP
 }
 
 void ExpressionEvaluator::handle(const IfThenElse* ite) {
-  // TODO
+  // NOP
 }
 
 void ExpressionEvaluator::handle(const Allocate* a) {
-  // TODO
+  // NOP
 }
 
 void ExpressionEvaluator::handle(const Split* s) {
-  // TODO
+  // NOP
 }
 
 void ExpressionEvaluator::handle(const Merge* m) {
-  // TODO
+  // NOP
 }
 
 void ExpressionEvaluator::handle(const Reorder* ro) {
-  // TODO
+  // NOP
 }
+*/
 
 } // namespace fuser
 } // namespace jit
