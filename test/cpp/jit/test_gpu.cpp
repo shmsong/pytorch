@@ -97,18 +97,6 @@ void testGPU_FusionExprEval() {
   const auto* ext1 = tv3->axis(1)->rawExtent();
   const auto* ext2 = tv3->axis(2)->rawExtent();
 
-#if 0 // tmp
-  IRPrinter test_printer(std::cout);
-  std::cout << "--------------------------------\n";
-  test_printer.handle(ext0);
-  std::cout << "\n";
-  test_printer.handle(ext1);
-  std::cout << "\n";
-  test_printer.handle(ext2);
-  std::cout << "\n";
-  std::cout << "--------------------------------\n";
-#endif
-
   TORCH_CHECK(ext0->isAnInt());
   TORCH_CHECK(ext1->isAnInt());
   TORCH_CHECK(ext2->isAnInt());
@@ -121,39 +109,13 @@ void testGPU_FusionExprEval() {
   // ... T1[ iS{i5}, iS{i7} ]
   // i11 = ceilDiv(i5, 4);
   TORCH_CHECK(val0.has_value());
-  TORCH_CHECK(val1.value() == 2);
+  TORCH_CHECK(val0.value() == 2);
 
   TORCH_CHECK(val1.has_value());
   TORCH_CHECK(val1.value() == 4);
 
   TORCH_CHECK(val2.has_value());
   TORCH_CHECK(val2.value() == 128);
-
-#if 1
-  torch::jit::fuser::cuda::CudaKernel prog;
-  prog.device_ = 0;
-  prog.grid(1); // 1 CTA
-  prog.block(128); // 128 Threads
-
-  auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
-
-  at::Tensor input1 = at::ones({1, 128}, options);
-  at::Tensor input2 = at::ones_like(input1);
-  
-  // how do we check for mismatched sizes in general?
-  at::Tensor output = at::empty_like(input1);
-  //at::Tensor output = at::empty({200, 50});
-  //at::Tensor output = at::empty({1, 50});
-  
-  std::vector<at::Tensor> inputs{{input1, input2}};
-  std::vector<at::Tensor> outputs{{output}};
-
-  torch::jit::fuser::cuda::compileKernel(fusion, &prog);
-  torch::jit::fuser::cuda::runTestKernel(prog, inputs, outputs);
-
-  at::Tensor check = at::full({1, 128}, 4, options);
-  TORCH_CHECK(output.equal(check));
-#endif
 }
 
 void testGPU_FusionDispatch() {

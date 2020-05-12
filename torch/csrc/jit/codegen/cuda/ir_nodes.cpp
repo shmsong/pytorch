@@ -3,8 +3,8 @@
 #include <torch/csrc/jit/codegen/cuda/ir_interface_nodes.h>
 #include <torch/csrc/jit/codegen/cuda/ir_iostream.h>
 #include <torch/csrc/jit/codegen/cuda/transform_iter.h>
-
 #include <torch/csrc/jit/codegen/cuda/ir_iostream.h>
+#include <torch/csrc/jit/codegen/cuda/expr_evaluator.h>
 
 #include <sstream>
 
@@ -65,18 +65,13 @@ bool Int::sameAs(const Int* const other) const {
 }
 
 c10::optional<int> Int::evaluate() const {
-  if (maybe_value_) {
-    return maybe_value_;
+  if (!maybe_value_.has_value()) {
+    if (const auto* def = fusion()->origin(this)) {
+      return ExpressionEvaluator::evaluate(def);
+    }
   }
-
-  if (const auto* def = fusion()->origin(this)) {
-    // TODO
-  }
-
-  // TODO
   return maybe_value_;
 }
-
 
 UnaryOp::UnaryOp(UnaryOpType _type, Val* _out, Val* _in)
     : Expr(ExprType::UnaryOp), unary_op_type_{_type}, out_{_out}, in_{_in} {

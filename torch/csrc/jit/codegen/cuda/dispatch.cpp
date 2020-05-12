@@ -271,6 +271,8 @@ Statement* Statement::mutatorDispatch(T mutator, Statement* stmt) {
  * Handler template instantiations. These should only have to be done on base
  * classes. Actual visitors/mutators should inhereit from these classes and call
  * ->dispatch(this) to avoid needing an explicit instantiation.
+ * 
+ * NOTE - this doesn't quite work
  */
 template void Statement::dispatch(OptOutDispatch, Statement*);
 template void Statement::dispatch(OptOutDispatch*, Statement*);

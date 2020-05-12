@@ -2,40 +2,13 @@
 #pragma once
 
 #include <torch/csrc/WindowsTorchApiMacro.h>
-
 #include <torch/csrc/jit/codegen/cuda/dispatch.h>
+
+#include <c10/util/Optional.h>
 
 namespace torch {
 namespace jit {
 namespace fuser {
-
-struct Fusion;
-
-struct Statement;
-
-struct Val;
-struct Expr;
-
-struct UnaryOp;
-struct BinaryOp;
-
-struct ForLoop;
-struct IfThenElse;
-
-struct TensorDomain;
-struct TensorView;
-struct IterDomain;
-struct TensorIndex;
-
-struct TensorContiguity;
-
-struct Split;
-struct Merge;
-struct Reorder;
-
-struct Float;
-struct Int;
-struct Add;
 
 /*
  * TODO
@@ -43,20 +16,11 @@ struct Add;
 
 struct TORCH_CUDA_API ExpressionEvaluator : public OptInConstDispatch {
  public:
+  static c10::optional<int> evaluate(const Statement* expr); // should be Expr*
+
+ private:
   ExpressionEvaluator() = default;
   ~ExpressionEvaluator() override = default;
-
-  void handle(const Statement* s) override {
-    OptInConstDispatch::handle(s);
-  };
-
-  void handle(const Val* v) override {
-    OptInConstDispatch::handle(v);
-  };
-
-  void handle(const Expr* e) override {
-    OptInConstDispatch::handle(e);
-  };
 
   void handle(const TensorDomain*) override;
   void handle(const TensorView*) override;
@@ -77,6 +41,9 @@ struct TORCH_CUDA_API ExpressionEvaluator : public OptInConstDispatch {
   void handle(const Split*) override;
   void handle(const Merge*) override;
   void handle(const Reorder*) override;
+
+ private:
+  c10::optional<int> result_;
 };
 
 } // namespace fuser

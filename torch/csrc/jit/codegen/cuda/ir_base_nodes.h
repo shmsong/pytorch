@@ -182,7 +182,7 @@ struct TORCH_CUDA_API Statement {
  * 5) An enum value must be added to ValType in type.h
  * 6) A string entry must be added in val_type_string_map
  */
-struct TORCH_CUDA_API Val : public Statement {
+struct TORCH_CUDA_API Val : public Statement { // shouldn't Val be an Expr?
  public:
   virtual ~Val() = default;
 
