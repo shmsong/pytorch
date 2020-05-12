@@ -301,9 +301,12 @@ Statement* GPULower::mutate(TernaryOp* top) {
     return OptOutMutator::mutate(top);
 
   TensorIndex* out = getConsumerIndex(ir_utils::asTV(top->out()));
-  Val* in1 = top->in1();
-  Val* in2 = top->in2();
-  Val* in3 = top->in3();
+  Val* in0 = top->in(0);
+  Val* in1 = top->in(1);
+  Val* in2 = top->in(2);
+
+  if (ir_utils::isTV(in0))
+    in0 = getProducerIndex(ir_utils::asTV(in0), ir_utils::asTV(top->out()));
 
   if (ir_utils::isTV(in1))
     in1 = getProducerIndex(ir_utils::asTV(in1), ir_utils::asTV(top->out()));
@@ -311,10 +314,7 @@ Statement* GPULower::mutate(TernaryOp* top) {
   if (ir_utils::isTV(in2))
     in2 = getProducerIndex(ir_utils::asTV(in2), ir_utils::asTV(top->out()));
 
-  if (ir_utils::isTV(in3))
-    in3 = getProducerIndex(ir_utils::asTV(in3), ir_utils::asTV(top->out()));
-
-  Expr* new_op = new TernaryOp(top->getTernaryOpType(), out, in1, in2, in3);
+  Expr* new_op = new TernaryOp(top->getTernaryOpType(), out, in0, in1, in2);
 
   return new_op;
 }

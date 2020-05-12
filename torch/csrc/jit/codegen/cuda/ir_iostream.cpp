@@ -316,19 +316,19 @@ void IRPrinter::handle(const TernaryOp* const top) {
   }
 
   os << top->getTernaryOpType() << "(";
-  handle(top->in1());
+  handle(top->in(0));
   if (istvop) {
     os << "\n";
     indent();
   }
   os << ", ";
-  handle(top->in2());
+  handle(top->in(1));
   if (istvop) {
     os << "\n";
     indent();
   }
   os << ", ";
-  handle(top->in3());
+  handle(top->in(2));
   os << ")";
 
   if (istvop)

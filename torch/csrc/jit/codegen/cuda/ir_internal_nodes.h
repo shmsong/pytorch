@@ -107,7 +107,7 @@ struct TORCH_CUDA_API BinaryOp : public Expr {
  */
 struct TORCH_CUDA_API TernaryOp : public Expr {
   ~TernaryOp() = default;
-  TernaryOp(TernaryOpType _type, Val* _out, Val* _in1, Val* _in2, Val* _in3);
+  TernaryOp(TernaryOpType _type, Val* _out, Val* _in0, Val* _in1, Val* _in2);
 
   TernaryOp(const TernaryOp& other) = delete;
   TernaryOp& operator=(const TernaryOp& other) = delete;
@@ -118,14 +118,10 @@ struct TORCH_CUDA_API TernaryOp : public Expr {
   Val* out() const noexcept {
     return out_;
   }
-  Val* in1() const noexcept {
-    return in1_;
-  }
-  Val* in2() const noexcept {
-    return in2_;
-  }
-  Val* in3() const noexcept {
-    return in3_;
+  Val* in(std::size_t num) const noexcept {
+    TORCH_CHECK( (num >= 0) && (num < ins_.size()),
+                 "Illegal index: ", num);
+    return ins_[num];
   }
 
   TernaryOpType getTernaryOpType() const noexcept {
@@ -137,9 +133,7 @@ struct TORCH_CUDA_API TernaryOp : public Expr {
  private:
   const TernaryOpType ternary_op_type_;
   Val* const out_;
-  Val* const in1_;
-  Val* const in2_;
-  Val* const in3_;
+  std::array<Val* const, 3> ins_;
 };
 
 /*

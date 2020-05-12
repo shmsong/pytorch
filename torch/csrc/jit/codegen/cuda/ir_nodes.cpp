@@ -122,29 +122,29 @@ bool BinaryOp::sameAs(const BinaryOp* other) const {
 TernaryOp::TernaryOp(
     TernaryOpType _type,
     Val* _out,
+    Val* _in0,
     Val* _in1,
-    Val* _in2,
-    Val* _in3)
+    Val* _in2)
     : Expr(ExprType::TernaryOp),
       ternary_op_type_{_type},
       out_{_out},
-      in1_{_in1},
-      in2_{_in2},
-      in3_{_in3} {
+      ins_{_in0, _in1, _in2}
+{
   addOutput(_out);
+  addInput(_in0);
   addInput(_in1);
   addInput(_in2);
-  addInput(_in3);
   this->name_ = FusionGuard::getCurFusion()->registerExpr(this);
 }
 
 bool TernaryOp::sameAs(const TernaryOp* other) const {
   if (getTernaryOpType() != other->getTernaryOpType())
     return false;
-  if (!(in1()->sameAs(other->in1()) && in2()->sameAs(other->in2()) &&
-        in3()->sameAs(other->in3())))
-    return false;
-  return true;
+  bool inputs_match = true;
+  for(std::size_t i{0}; i < ins_.size(); ++i) {
+    inputs_match = inputs_match && in(i)->sameAs(other->in(i));
+  }
+  return inputs_match;
 }
 
 IterDomain::IterDomain(

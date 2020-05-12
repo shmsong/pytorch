@@ -184,14 +184,14 @@ Statement* OptOutMutator::mutate(BinaryOp* bop) {
 
 Statement* OptOutMutator::mutate(TernaryOp* top) {
   Val* out = mutateAsVal(top->out())->asVal();
-  Val* in1 = mutateAsVal(top->in1())->asVal();
-  Val* in2 = mutateAsVal(top->in2())->asVal();
-  Val* in3 = mutateAsVal(top->in3())->asVal();
-  if (out == top->out() && in1 == top->in1() && in2 == top->in2() &&
-      in3 == top->in3())
+  Val* in0 = mutateAsVal(top->in(0))->asVal();
+  Val* in1 = mutateAsVal(top->in(1))->asVal();
+  Val* in2 = mutateAsVal(top->in(2))->asVal();
+  if (out == top->out() && in0 == top->in(0) && in1 == top->in(1) &&
+      in2 == top->in(2))
     return top;
   FusionGuard::getCurFusion()->removeExpr(top);
-  return new TernaryOp(top->getTernaryOpType(), out, in1, in2, in3);
+  return new TernaryOp(top->getTernaryOpType(), out, in0, in1, in2);
 }
 
 Statement* OptOutMutator::mutate(ForLoop* fl) {
