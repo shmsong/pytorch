@@ -151,7 +151,7 @@ struct TORCH_CUDA_API Operation : public Expr {
     ins_{_inputs... }
   {
     addOutput(_out);
-    std::for_each(ins_.begin(), ins_.end(), [this](Val* v) {
+    std::for_each(ins_.begin(), ins_.end(), [this](OUT_T* v) {
       this->addInput(v);
     });
     this->name_ = FusionGuard::getCurFusion()->registerExpr(this);
@@ -163,10 +163,10 @@ struct TORCH_CUDA_API Operation : public Expr {
   Operation(Operation&& other) = delete;
   Operation& operator=(Operation&& other) = delete;
 
-  Val* out() const noexcept {
+  OUT_T* out() const noexcept {
     return out_;
   }
-  Val* in(int num) const noexcept {
+  OUT_T* in(int num) const noexcept {
     TORCH_CHECK( (num < 0) && (num >= sizeof...(IN_T)),
                  "Illegal index: ", num);
     return ins_[num];
@@ -189,8 +189,8 @@ struct TORCH_CUDA_API Operation : public Expr {
  private:
   const OperationType op_type_;
 
-  Val* const out_;
-  std::array<Val* const, sizeof...(IN_T)> ins_;
+  OUT_T* const out_;
+  std::array<OUT_T* const, sizeof...(IN_T)> ins_;
 };
 
 /*

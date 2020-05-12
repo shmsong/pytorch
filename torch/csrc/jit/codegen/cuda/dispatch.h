@@ -73,6 +73,7 @@ struct Reorder;
 struct UnaryOp;
 struct BinaryOp;
 struct TernaryOp;
+struct Operation;
 struct ForLoop;
 struct IfThenElse;
 struct Allocate;
@@ -114,6 +115,8 @@ struct TORCH_CUDA_API OptOutConstDispatch {
   virtual void handle(const UnaryOp* const) {}
   virtual void handle(const BinaryOp* const) {}
   virtual void handle(const TernaryOp* const) {}
+  template<typename OUT_T, typename ...IN_T>
+  virtual void handle(const Operation* const) {}
   virtual void handle(const ForLoop* const) {}
   virtual void handle(const IfThenElse* const) {}
   virtual void handle(const Allocate* const) {}
@@ -152,6 +155,8 @@ struct TORCH_CUDA_API OptOutDispatch {
   virtual void handle(UnaryOp*) {}
   virtual void handle(BinaryOp*) {}
   virtual void handle(TernaryOp*) {}
+  template<typename OUT_T, typename ...IN_T>
+  virtual void handle(Operation*) {}
   virtual void handle(ForLoop*) {}
   virtual void handle(IfThenElse*) {}
   virtual void handle(Allocate*) {}
@@ -219,6 +224,10 @@ struct TORCH_CUDA_API OptInConstDispatch {
   }
   virtual void handle(const TernaryOp* const) {
     TORCH_INTERNAL_ASSERT(false, "Handle not overriden for TernaryOp.");
+  }
+  template<typename OUT_T, typename ...IN_T>
+  virtual void handle(const Operation* const) {
+    TORCH_INTERNAL_ASSERT(false, "Handle not overriden for Operation.");
   }
   virtual void handle(const ForLoop* const) {
     AT_ERROR("Handle not overriden for ForLoop.");
@@ -294,6 +303,10 @@ struct TORCH_CUDA_API OptInDispatch {
   virtual void handle(TernaryOp*) {
     TORCH_INTERNAL_ASSERT(false, "Handle not overriden for TernaryOp.");
   }
+  template<typename OUT_T, typename ...IN_T>
+  virtual void handle(Operation*) {
+    TORCH_INTERNAL_ASSERT(false, "Handle not overriden for Operation.");
+  }
   virtual void handle(ForLoop*) {
     TORCH_INTERNAL_ASSERT(false, "Handle not overriden for ForLoop.");
   }
@@ -362,6 +375,8 @@ struct TORCH_CUDA_API OptOutMutator {
   virtual Statement* mutate(UnaryOp*);
   virtual Statement* mutate(BinaryOp*);
   virtual Statement* mutate(TernaryOp*);
+  template<typename OUT_T, typename ...IN_T>
+  virtual Statement* mutate(Operation*);
   virtual Statement* mutate(ForLoop*);
   virtual Statement* mutate(IfThenElse*);
   virtual Statement* mutate(Allocate*);
@@ -436,6 +451,10 @@ struct TORCH_CUDA_API OptInMutator {
   }
   virtual Statement* mutate(TernaryOp*) {
     TORCH_INTERNAL_ASSERT(false, "Mutate not overriden for TernaryOp.");
+  }
+  template<typename OUT_T, typename ...IN_T>
+  virtual Statement* mutate(Operation*) {
+    TORCH_INTERNAL_ASSERT(false, "Mutate not overriden for Operation.");
   }
   virtual Statement* mutate(ForLoop*) {
     TORCH_INTERNAL_ASSERT(false, "Mutate not overriden for ForLoop.");
