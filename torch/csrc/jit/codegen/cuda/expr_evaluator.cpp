@@ -11,14 +11,7 @@ namespace fuser {
 
 c10::optional<int> ExpressionEvaluator::evaluate(const Statement* expr) {
   ExpressionEvaluator evaluator;
-  auto visitor = static_cast<OptInConstDispatch*>(&evaluator); // workaround
-  if (expr->isVal()) {
-    Val::constDispatch(visitor, expr->as<Val>());
-  } else if (expr->isExpr()) {
-    Expr::constDispatch(visitor, expr->as<Expr>());
-  } else {
-    TORCH_CHECK(!"Unexpected expression kind");
-  }
+  evaluator.OptInConstDispatch::handle(expr);
   return evaluator.result_;
 }
 

@@ -189,7 +189,7 @@ struct TORCH_CUDA_API Fusion : public IRInputOutput {
   std::set<Expr*> uses(Val* val) const;
 
   // Return the Expr that produces val
-  Expr* origin(Val* val) const;
+  Expr* origin(Val* val) const; // rename to def?
 
   // Return the Expr that produces val (const version)
   const Expr* origin(const Val* val) const;
