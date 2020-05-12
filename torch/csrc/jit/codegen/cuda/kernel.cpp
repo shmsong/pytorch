@@ -35,7 +35,7 @@ struct ExtractSizeStride {
   std::vector<int64_t> sizes;
   std::vector<int64_t> strides;
 
-  ExtractSizeStride(
+  explicit ExtractSizeStride(
       const at::Tensor& val,
       c10::optional<at::IntArrayRef> broadcasted_size = c10::nullopt) {
     if (broadcasted_size) {
@@ -44,7 +44,7 @@ struct ExtractSizeStride {
       TORCH_CHECK(b_dim >= o_dim);
       for (int i = 0; i < b_dim; i++) {
         sizes.push_back(broadcasted_size->at(i));
-        int index = i + o_dim - b_dim;
+        int index = i + o_dim - b_dim; // ??? 
         if (index < 0) {
           strides.push_back(0);
         } else if (val.sizes()[index] == sizes[i]) {
@@ -83,7 +83,7 @@ struct KernelArgumentHolder {
       const at::Tensor& val,
       c10::optional<at::IntArrayRef> broadcasted_size = c10::nullopt) {
     changed = true;
-    ExtractSizeStride ess(val, std::move(broadcasted_size));
+    ExtractSizeStride ess(val, broadcasted_size);
     int nDims = ess.sizes.size();
 
     c10::ScalarType dtype = val.scalar_type();
@@ -301,7 +301,7 @@ void runTestKernel(
   // allocated here from the subgraph could be, and very likely are, different
   // from I/O expected by the generated CUDA kernel.
   for (auto& input : inputs) {
-    kernel_args.push(input, outputs[0].sizes());
+    kernel_args.push(input, outputs[0].sizes()); // why is outputs[0] special?
   }
 
   for (auto& output : outputs) {

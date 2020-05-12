@@ -31,6 +31,14 @@ TensorView* makeDummyTensor(int nDims) {
   return new TensorView(new TensorDomain(dom), DataType::Float);
 }
 
+TensorView* makeSizedDummyTensor(const std::vector<int>& sizes) {
+  std::vector<IterDomain*> dom;
+  for (int extent : sizes) {
+    dom.push_back(new IterDomain(new Int(0), new Int(extent)));
+  }
+  return new TensorView(new TensorDomain(dom), DataType::Float);
+}
+
 // 1. Test cases are void() functions.
 // 2. They start with the prefix `test`
 
@@ -39,8 +47,8 @@ void testGPU_FusionExprEval() {
   FusionGuard fg(&fusion, __PRETTY_FUNCTION__);
 
   // Set up your input tensor views
-  TensorView* tv0 = makeDummyTensor(2);
-  TensorView* tv1 = makeDummyTensor(2);
+  TensorView* tv0 = makeSizedDummyTensor({6, 128});
+  TensorView* tv1 = makeSizedDummyTensor({6, 128});
 
   // Register your inputs
   fusion.addInput(tv0);
@@ -68,25 +76,58 @@ void testGPU_FusionExprEval() {
   tv2->axis(-1)->parallelize(ParallelType::TIDx);
   tv3->axis(-1)->parallelize(ParallelType::TIDx);
 
+  // Set up concrete sizes for the input vectors
+  /* 
+  1. would making setDomain public make sense?
+  tv0->setDomain(
+      new TensorDomain({
+        new IterDomain(new Int(0), new Int(1)),
+        new IterDomain(new Int(0), new Int(128))
+      }));
+ 
+  2. another option (downside is that Val would become mutable)
+  tv0->axis(0)->rawExtent()->as<Int>->setValue(1);
+  tv0->axis(1)->rawExtent()->as<Int>->setValue(128);
+  */
+
+  // Try to evaluate values
   TORCH_CHECK(tv3->domain()->nDims() == 3);
 
   const auto* ext0 = tv3->axis(0)->rawExtent();
   const auto* ext1 = tv3->axis(1)->rawExtent();
   const auto* ext2 = tv3->axis(2)->rawExtent();
 
+#if 0 // tmp
+  IRPrinter test_printer(std::cout);
+  std::cout << "--------------------------------\n";
+  test_printer.handle(ext0);
+  std::cout << "\n";
+  test_printer.handle(ext1);
+  std::cout << "\n";
+  test_printer.handle(ext2);
+  std::cout << "\n";
+  std::cout << "--------------------------------\n";
+#endif
+
   TORCH_CHECK(ext0->isAnInt());
   TORCH_CHECK(ext1->isAnInt());
   TORCH_CHECK(ext2->isAnInt());
 
-  const auto val0 = ext0->as<Int>()->value();
-  const auto val1 = ext1->as<Int>()->value();
-  const auto val2 = ext2->as<Int>()->value();
+  const auto val0 = ext0->as<Int>()->evaluate();
+  const auto val1 = ext1->as<Int>()->evaluate();
+  const auto val2 = ext2->as<Int>()->evaluate();
 
-  /* TODO
+  // This is a non trivial interesting case:
+  // ... T1[ iS{i5}, iS{i7} ]
+  // i11 = ceilDiv(i5, 4);
   TORCH_CHECK(val0.has_value());
+  TORCH_CHECK(val1.value() == 2);
+
   TORCH_CHECK(val1.has_value());
+  TORCH_CHECK(val1.value() == 4);
+
   TORCH_CHECK(val2.has_value());
-  */
+  TORCH_CHECK(val2.value() == 128);
 
 #if 1
   torch::jit::fuser::cuda::CudaKernel prog;
@@ -98,8 +139,12 @@ void testGPU_FusionExprEval() {
 
   at::Tensor input1 = at::ones({1, 128}, options);
   at::Tensor input2 = at::ones_like(input1);
-  ;
+  
+  // how do we check for mismatched sizes in general?
   at::Tensor output = at::empty_like(input1);
+  //at::Tensor output = at::empty({200, 50});
+  //at::Tensor output = at::empty({1, 50});
+  
   std::vector<at::Tensor> inputs{{input1, input2}};
   std::vector<at::Tensor> outputs{{output}};
 
@@ -107,7 +152,6 @@ void testGPU_FusionExprEval() {
   torch::jit::fuser::cuda::runTestKernel(prog, inputs, outputs);
 
   at::Tensor check = at::full({1, 128}, 4, options);
-  ;
   TORCH_CHECK(output.equal(check));
 #endif
 }

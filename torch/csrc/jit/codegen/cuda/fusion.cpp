@@ -8,7 +8,7 @@ namespace fuser {
 
 static thread_local Fusion* ACTIVE_FUSION = nullptr;
 
-static thread_local bool AUTO_PRINT = true;
+static thread_local bool AUTO_PRINT = false;
 
 FusionGuard::FusionGuard(Fusion* fusion, const char* context_name) : 
     current_fusion(fusion), context_name(context_name) {
@@ -226,7 +226,7 @@ StmtNameType Fusion::registerExpr(Expr* expr) {
     registerVal(output);
     auto it = origin_.find(output);
     if (it != origin_.end()) {
-      removeExpr(it->second); // will also remove origin entry
+      removeExpr(it->second); // will also remove origin entry -- ???
     }
 
     origin_[output] = expr;

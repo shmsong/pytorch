@@ -64,6 +64,20 @@ bool Int::sameAs(const Int* const other) const {
   return this == other;
 }
 
+c10::optional<int> Int::evaluate() const {
+  if (maybe_value_) {
+    return maybe_value_;
+  }
+
+  if (const auto* def = fusion()->origin(this)) {
+    // TODO
+  }
+
+  // TODO
+  return maybe_value_;
+}
+
+
 UnaryOp::UnaryOp(UnaryOpType _type, Val* _out, Val* _in)
     : Expr(ExprType::UnaryOp), unary_op_type_{_type}, out_{_out}, in_{_in} {
   addOutput(_out);
