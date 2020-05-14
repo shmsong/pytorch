@@ -111,9 +111,12 @@ TensorDomain* TransformReplay::replay(Merge* expr, TensorDomain* td) {
 
   if (merge) {
     // Make sure both merge axes are real.
+    /*
+    TORCH_INTERNAL_ASSERT(axis + 1 < axis_map.size());
     TORCH_INTERNAL_ASSERT(
         axis_map[axis] != -1 && axis_map[axis + 1] != -1,
         "During transformation replay attempted to merge an imaginary axis.");
+    */
     // Replay merge
     TORCH_INTERNAL_ASSERT(
         td->axis(axis)->start()->isZeroInt() &&

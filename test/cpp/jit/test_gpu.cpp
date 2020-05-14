@@ -44,7 +44,7 @@ TensorView* makeSizedDummyTensor(const std::vector<int>& sizes) {
 
 void testGPU_FusionExprEval() {
   Fusion fusion;
-  FusionGuard fg(&fusion, __PRETTY_FUNCTION__);
+  FusionGuard fg(&fusion);
 
   // Set up your input tensor views
   TensorView* tv0 = makeSizedDummyTensor({6, 128});

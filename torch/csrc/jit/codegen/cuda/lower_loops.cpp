@@ -175,7 +175,7 @@ void UnrollPass::handle(ForLoop* fl) {
 
 // Generate the loop nest structure and place it in lowered_exprs
 void UnrollPass::computeMap() {
-  FusionGuard fg(fusion_, __PRETTY_FUNCTION__);
+  FusionGuard fg(fusion_, "UnrollPass::computeMap");
 
   // Initialize members of the class
   active_view = nullptr;
@@ -190,7 +190,7 @@ void UnrollPass::computeMap() {
 std::vector<Expr*> UnrollPass::runPass(
     Fusion* fusion,
     const std::vector<Expr*>& exprs) {
-  FusionGuard fg(fusion, __PRETTY_FUNCTION__);
+  FusionGuard fg(fusion, "UnrollPass::runPass");
   UnrollPass up(fusion, exprs);
   up.computeMap();
   std::vector<Expr*> mutated_exprs;
@@ -367,7 +367,7 @@ void LoopNestGenerator::handle(Expr* expr) {
 
 // Generate the loop nest structure and place it in lowered_exprs
 void LoopNestGenerator::generate() {
-  FusionGuard fg(fusion_, __PRETTY_FUNCTION__);
+  FusionGuard fg(fusion_, "LoopNestGenerator::generate");
 
   // Initialize members of the class
   lowered_exprs = std::vector<Expr*>();

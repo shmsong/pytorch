@@ -81,7 +81,7 @@ struct TORCH_CUDA_API LoopNestGenerator : public OptOutDispatch {
 
  public:
   static std::vector<Expr*> getLoopNest(Fusion* fusion) {
-    FusionGuard fg(fusion, __PRETTY_FUNCTION__);
+    FusionGuard fg(fusion, "getLoopNest");
     LoopNestGenerator lng(fusion);
     lng.generate();
     return lng.lowered_exprs;

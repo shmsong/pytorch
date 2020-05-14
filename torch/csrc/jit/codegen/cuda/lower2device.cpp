@@ -415,7 +415,7 @@ void validate(Fusion* fusion) {
 
 // Traverse through the fusion and print CUDA code associated with it
 std::vector<Expr*> GPULower::getLoweredExprs() {
-  FusionGuard fg(fusion_, __PRETTY_FUNCTION__);
+  FusionGuard fg(fusion_, "GPULower::getLoweredExprs");
 
   validate(fusion_);
 

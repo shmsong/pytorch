@@ -43,7 +43,7 @@ class IrParser {
 
   // Fuses pointwise ops with loop unrolling (factor = 4).
   void parse() {
-    FusionGuard fg(fusion_, __PRETTY_FUNCTION__);
+    FusionGuard fg(fusion_, "parse");
     auto block = graph_->block();
 
     // in case of broadcast, we don't support explicit broadcast, so we need to

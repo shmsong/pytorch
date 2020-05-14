@@ -288,7 +288,7 @@ void ReplaceAll::instancesOf(std::unordered_map<Val*, Val*> replacement_map) {
 void ReplaceAll::instancesWithin(Val* instance, Val* with, Expr* within) {
   if (within == nullptr)
     return;
-  FusionGuard fg(within->fusion(), __PRETTY_FUNCTION__);
+  FusionGuard fg(within->fusion(), "ReplaceAll::instancesWithin");
   ReplaceAll ra(instance, with);
   ra.mutate(within);
 }
@@ -298,7 +298,7 @@ void ReplaceAll::instancesWithin(
     Expr* within) {
   if (within == nullptr)
     return;
-  FusionGuard fg(within->fusion(), __PRETTY_FUNCTION__);
+  FusionGuard fg(within->fusion(), "ReplaceAll::instancesWithin");
   ReplaceAll ra(std::move(replacement_map));
   ra.mutate(within);
 }
