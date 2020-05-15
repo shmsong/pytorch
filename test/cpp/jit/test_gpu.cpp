@@ -136,6 +136,8 @@ void testGPU_FusionExprEvalComplex() {
 
   tv6->axis(0)->parallelize(ParallelType::BIDx);
 
+  tv5->reorder({{-1, 0}});
+
   tv0->computeAt(tv3, 1);
   tv0->computeAt(tv6, 1);
 
