@@ -23,7 +23,7 @@ namespace jit {
 
 using namespace torch::jit::fuser;
 
-TensorView* makeDummyTensor(int nDims) {
+static TensorView* makeDummyTensor(int nDims) {
   std::vector<IterDomain*> dom;
   for (int i = 0; i < nDims; i++)
     dom.push_back(new IterDomain(new Int(0), new Int()));
@@ -31,16 +31,13 @@ TensorView* makeDummyTensor(int nDims) {
   return new TensorView(new TensorDomain(dom), DataType::Float);
 }
 
-TensorView* makeSizedDummyTensor(const std::vector<int>& sizes) {
+static TensorView* makeSizedDummyTensor(const std::vector<int>& sizes) {
   std::vector<IterDomain*> dom;
   for (int extent : sizes) {
     dom.push_back(new IterDomain(new Int(0), new Int(extent)));
   }
   return new TensorView(new TensorDomain(dom), DataType::Float);
 }
-
-// 1. Test cases are void() functions.
-// 2. They start with the prefix `test`
 
 static void checkIntValue(const Val* val, int expected_value) {
   TORCH_CHECK(val->isAnInt());
@@ -49,12 +46,24 @@ static void checkIntValue(const Val* val, int expected_value) {
   TORCH_CHECK(actual_value.value() == expected_value);
 }
 
+// tmp
 static void printIntValue(const Val* val, int expected_value) {
   TORCH_CHECK(val->isAnInt());
   const auto actual_value = val->as<Int>()->evaluate();
   TORCH_CHECK(actual_value.has_value());
   std::cout << "Value = " << actual_value.value() << "\n";
 }
+
+static void printTv(const TensorView* tv) {
+  std::cout << "------------------------\n";
+  std::cout << "dims: " << tv->domain()->nDims() << "\n";
+  for (const auto axis : tv->domain()->domain()) {
+    printIntValue(axis->rawExtent(), 100);
+  }
+}
+
+// 1. Test cases are void() functions.
+// 2. They start with the prefix `test`
 
 void testGPU_FusionExprEvalBasic() {
   Fusion fusion;
@@ -121,35 +130,14 @@ void testGPU_FusionExprEvalComplex() {
   fusion.addOutput(tv5);
   fusion.addOutput(tv6);
 
-  tv0->computeAt(tv3, 1);
-
-  // Check propagation of this computeAt.
-  /*
-  TORCH_INTERNAL_ASSERT(tv0->getComputeAtView() == tv3);
-  TORCH_INTERNAL_ASSERT(tv1->getComputeAtView() == tv4);
-  TORCH_INTERNAL_ASSERT(tv2->getComputeAtView() == tv4);
-  TORCH_INTERNAL_ASSERT(tv3->getComputeAtView() == tv6);
-  TORCH_INTERNAL_ASSERT(tv4->getComputeAtView() == tv5);
-  TORCH_INTERNAL_ASSERT(tv5->getComputeAtView() == tv6);
-  TORCH_INTERNAL_ASSERT(!tv6->hasComputeAt());
-  */
-
-  // Lets setup to actually run
   tv6->merge(0);
   tv6->split(0, 128);
   tv6->split(0, 4);
 
   tv6->axis(0)->parallelize(ParallelType::BIDx);
 
+  tv0->computeAt(tv3, 1);
   tv0->computeAt(tv6, 1);
-
-  TORCH_INTERNAL_ASSERT(tv0->getComputeAtView() == tv3 && tv0->nDims() == 3);
-  TORCH_INTERNAL_ASSERT(tv1->getComputeAtView() == tv4 && tv1->nDims() == 3);
-  TORCH_INTERNAL_ASSERT(tv2->getComputeAtView() == tv4 && tv2->nDims() == 3);
-  TORCH_INTERNAL_ASSERT(tv3->getComputeAtView() == tv6 && tv3->nDims() == 3);
-  TORCH_INTERNAL_ASSERT(tv4->getComputeAtView() == tv5 && tv4->nDims() == 3);
-  TORCH_INTERNAL_ASSERT(tv5->getComputeAtView() == tv6 && tv5->nDims() == 3);
-  TORCH_INTERNAL_ASSERT(!tv6->hasComputeAt());
 
   for (Val* val : fusion.vals()) {
     if (!fusion.hasInput(val) &&
@@ -160,14 +148,20 @@ void testGPU_FusionExprEvalComplex() {
     }
   }
 
-  // Try to evaluate values
-  /*
-  TORCH_CHECK(tv3->domain()->nDims() == 3);
+  // Evaluate and check extent values
+  TORCH_CHECK(tv0->domain()->nDims() == 2);
+  checkIntValue(tv0->axis(0)->rawExtent(), 129);
+  checkIntValue(tv0->axis(1)->rawExtent(), 127);
 
-  checkIntValue(tv3->axis(0)->rawExtent(), 2);
-  checkIntValue(tv3->axis(1)->rawExtent(), 4);
-  checkIntValue(tv3->axis(2)->rawExtent(), 128);
-  */
+  TORCH_CHECK(tv5->domain()->nDims() == 3);
+  checkIntValue(tv5->axis(0)->rawExtent(), 32);
+  checkIntValue(tv5->axis(1)->rawExtent(), 4);
+  checkIntValue(tv5->axis(2)->rawExtent(), 128);
+
+  TORCH_CHECK(tv6->domain()->nDims() == 3);
+  checkIntValue(tv6->axis(0)->rawExtent(), 32);
+  checkIntValue(tv6->axis(1)->rawExtent(), 4);
+  checkIntValue(tv6->axis(2)->rawExtent(), 128);
 }
 
 void testGPU_FusionDispatch() {
