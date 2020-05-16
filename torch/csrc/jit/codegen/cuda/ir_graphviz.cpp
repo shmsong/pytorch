@@ -27,23 +27,31 @@ void IrGraphGenerator::printArc(
     const Statement* src,
     const Statement* dst,
     const std::string& style) {
-  std::cout << "  " << getid(src) << " -> " << getid(dst) << " " << style
-            << ";\n";
+  if (arcs_.find({src, dst}) == arcs_.end()) {
+    std::cout << "  " << getid(src) << " -> " << getid(dst) << " " << style
+              << ";\n";
+    arcs_.insert({src, dst});
+  }
 }
 
 void IrGraphGenerator::printExpr(const Expr* expr, const std::string& label) {
   // node
   std::cout << "  " << getid(expr) << " "
-            << "[label=\"" << label << "\", shape=rect, color=blue]"
-            << ";\n";
+            << "[label=\"" << label << "\", shape=rect, color=blue];\n";
 
   // generic (IRInputOutput) inputs & outputs
+  // (paranoid - just to make sure we're not missing anything)
   for (const auto* val : expr->inputs()) {
     printArc(val, expr);
   }
   for (const auto* val : expr->outputs()) {
     printArc(expr, val);
   }
+}
+
+void IrGraphGenerator::printValue(const Val* val, const std::string& label) {
+  std::cout << "  " << getid(val) << " [label=\"" << label
+            << "\", shape=circle, color=green];\n";
 }
 
 void IrGraphGenerator::print(const Fusion* fusion) {
@@ -54,6 +62,9 @@ void IrGraphGenerator::print(const Fusion* fusion) {
             << "  edge [color=black];\n";
   for (const auto* expr : fusion->unordered_exprs()) {
     ir_to_dot.handle(expr);
+  }
+  for (const auto* val : fusion->vals()) {
+    ir_to_dot.handle(val);
   }
   std::cout << "}\n";
 }
@@ -75,15 +86,27 @@ void IrGraphGenerator::handle(const TensorIndex* ti) {
 }
 
 void IrGraphGenerator::handle(const Float* f) {
-  // TODO
+  std::stringstream label;
+  if (f->isSymbolic()) {
+    label << "f" << f->name();
+  } else {
+    label << std::fixed << std::setprecision(2) << *(f->value());
+  }
+  printValue(f, label.str());
 }
 
 void IrGraphGenerator::handle(const Int* i) {
-  // TODO
+  std::stringstream label;
+  if (i->isSymbolic()) {
+    label << "i" << i->name();
+  } else {
+    label << *(i->value());
+  }
+  printValue(i, label.str());
 }
 
 void IrGraphGenerator::handle(const NamedScalar* i) {
-  // TODO
+  printValue(i, i->name());
 }
 
 void IrGraphGenerator::handle(const UnaryOp* uop) {

@@ -6,6 +6,8 @@
 
 #include <string>
 #include <unordered_map>
+#include <set>
+#include <tuple>
 
 namespace torch {
 namespace jit {
@@ -62,9 +64,11 @@ struct TORCH_CUDA_API IrGraphGenerator : public OptInConstDispatch {
       const std::string& style = "");
 
   void printExpr(const Expr* expr, const std::string& label);
+  void printValue(const Val* val, const std::string& label);
 
  private:
   std::unordered_map<const Statement*, std::string> id_map_;
+  std::set<std::tuple<const Statement*, const Statement*>> arcs_;
   int next_id_ = 1;
 };
 
