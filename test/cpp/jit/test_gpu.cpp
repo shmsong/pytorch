@@ -10,6 +10,7 @@
 #include <torch/csrc/jit/codegen/cuda/mutator.h>
 #include <torch/csrc/jit/codegen/cuda/tensor_meta.h>
 #include <torch/csrc/jit/codegen/cuda/transform_replay.h>
+#include <torch/csrc/jit/codegen/cuda/ir_graphviz.h>
 
 // fuser and IR parser
 #include <torch/csrc/jit/codegen/cuda/parser.h>
@@ -110,6 +111,8 @@ void testGPU_FusionExprEvalBasic() {
   checkIntValue(tv3->axis(0)->rawExtent(), 2);
   checkIntValue(tv3->axis(1)->rawExtent(), 4);
   checkIntValue(tv3->axis(2)->rawExtent(), 128);
+
+  IrGraphGenerator::print(&fusion);
 }
 
 void testGPU_FusionExprEvalComplex() {
