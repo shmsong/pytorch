@@ -15,22 +15,28 @@ namespace fuser {
 // representation of the Fusion IR
 struct TORCH_CUDA_API IrGraphGenerator : public OptInConstDispatch {
  public:
-  static void print(const Fusion* fusion, bool verbose);
+  static void print(const Fusion* fusion, bool verbose = false);
 
  private:
   explicit IrGraphGenerator(bool verbose) : verbose_(verbose) {}
   ~IrGraphGenerator() override = default;
 
   void handle(const Statement* s) override {
-    OptInConstDispatch::handle(s);
+    if (!processed(s)) {
+      OptInConstDispatch::handle(s);
+    }
   };
 
   void handle(const Val* v) override {
-    OptInConstDispatch::handle(v);
+    if (!processed(v)) {
+      OptInConstDispatch::handle(v);
+    }
   };
 
   void handle(const Expr* e) override {
-    OptInConstDispatch::handle(e);
+    if (!processed(e)) {
+      OptInConstDispatch::handle(e);
+    }
   };
 
   void handle(const TensorDomain*) override;
@@ -55,6 +61,10 @@ struct TORCH_CUDA_API IrGraphGenerator : public OptInConstDispatch {
 
   // lookup the graph id, creating one if not found
   std::string getid(const Statement* stm);
+
+  bool processed(const Statement* s) const {
+    return id_map_.find(s) != id_map_.end();
+  }
 
   void printArc(
       const Statement* src,

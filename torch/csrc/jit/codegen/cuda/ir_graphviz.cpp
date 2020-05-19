@@ -71,6 +71,9 @@ struct TORCH_CUDA_API IrNodeLabel : public OptInConstDispatch {
       label_ << IrNodeLabel::gen(id->start()) << " : ";
     }
     label_ << IrNodeLabel::gen(id->extent());
+    if (id->rawExtent() != id->extent()) {
+      label_ << "\\<" << IrNodeLabel::gen(id->rawExtent()) << "\\>";
+    }
     label_ << ")";
   }
 
@@ -96,27 +99,16 @@ void IrGraphGenerator::printArc(
     const Statement* src,
     const Statement* dst,
     const std::string& style) {
+  handle(src);
+  handle(dst);
   std::cout << "  " << getid(src) << " -> " << getid(dst) << " " << style
             << ";\n";
 }
 
 void IrGraphGenerator::printExpr(const Expr* expr, const std::string& label) {
-  // node
   std::cout << "  " << getid(expr) << " "
-            << "[label=\"" << label << "\", shape=oval, color=blue];\n";
-
-  // generic (IRInputOutput) inputs & outputs
-  // (paranoid - just to make sure we're not missing anything)
-#if 0
-  if (verbose_) {
-    for (const auto* val : expr->inputs()) {
-      printArc(val, expr);
-    }
-    for (const auto* val : expr->outputs()) {
-      printArc(expr, val);
-    }
-  }
-#endif
+            << "[label=\"" << label << "\", shape=oval, color=blue, "
+            << "style=filled, fillcolor=azure];\n";
 }
 
 void IrGraphGenerator::printValue(const Val* val, const std::string& label) {
@@ -126,36 +118,41 @@ void IrGraphGenerator::printValue(const Val* val, const std::string& label) {
 
 void IrGraphGenerator::print(const Fusion* fusion, bool verbose) {
   IrGraphGenerator ir_to_dot(verbose);
-  std::cout << "\n//-------------------------------------\n";
+  std::cout << "\n//-------------------------------------\n\n";
   std::cout << "digraph fusion_ir {\n"
             << "  node [shape=circle, color=gray];\n"
             << "  edge [color=black];\n";
   for (const auto* expr : fusion->unordered_exprs()) {
     ir_to_dot.handle(expr);
   }
-  for (const auto* val : fusion->vals()) {
-    ir_to_dot.handle(val);
+  if (verbose) {
+    for (const auto* val : fusion->vals()) {
+      ir_to_dot.handle(val);
+    }
   }
   std::cout << "}\n";
-  std::cout << "\n//-------------------------------------\n";
+  std::cout << "\n//-------------------------------------\n\n";
 }
 
 void IrGraphGenerator::handle(const TensorDomain* td) {
-  std::cout << "  " << getid(td)
-            << " [label=\"TensorDomain\", shape=note, color=gray];\n";
+  std::cout << "  " << getid(td) << " [label=\"TensorDomain\", "
+            << "shape=note, color=gray, fontsize=10];\n";
   for (auto iter_domain : td->domain()) {
-    printArc(iter_domain, td);
+    printArc(iter_domain, td, "[color=gray]");
   }
 }
 
 void IrGraphGenerator::handle(const IterDomain* id) {
-  if (!id->start()->isZeroInt()) {
-    printArc(id->start(), id);
-  }
-  printArc(id->extent(), id);
-
   std::cout << "  " << getid(id) << " [label=\"" << IrNodeLabel::gen(id)
             << "\", shape=rect, color=gray, fontsize=10];\n";
+
+  if (!id->start()->isZeroInt()) {
+    printArc(id->start(), id, "[color=gray]");
+  }
+  printArc(id->rawExtent(), id, "[color=gray]");
+  if (verbose_ && id->rawExtent() != id->extent()) {
+    printArc(id->extent(), id, "[color=gray, style=dashed]");
+  }
 }
 
 void IrGraphGenerator::handle(const TensorIndex* ti) {
@@ -188,8 +185,17 @@ void IrGraphGenerator::handle(const TensorView* tv) {
     label << IrNodeLabel::gen(iter_domain);
   }
   label << "}}";
+
   std::cout << "  " << getid(tv) << " [label=\"" << label.str()
-            << "\", shape=Mrecord, color=brown];\n";
+            << "\", shape=Mrecord, color=brown, "
+            << "style=filled, fillcolor=beige];\n";
+
+  if (const auto* compute_at_view = tv->getComputeAtView()) {
+    std::stringstream arc_style;
+    arc_style << "[color=red, style=dashed, label=\""
+              << "ComputeAt(" << tv->getComputeAtAxis() << ")\"]";
+    printArc(tv, compute_at_view, arc_style.str());
+  }
 
   printArc(tv->domain(), tv, "[style=dashed, color=gray]");
 }
@@ -213,7 +219,7 @@ void IrGraphGenerator::handle(const BinaryOp* bop) {
 
   // BinaryOp inputs & outputs
   printArc(bop->lhs(), bop);
-  printArc(bop->rhs(), bop, "[color=green]");
+  printArc(bop->rhs(), bop, "[color=blue]");
   printArc(bop, bop->out());
 }
 
