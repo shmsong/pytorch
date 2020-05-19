@@ -77,6 +77,23 @@ struct TORCH_CUDA_API IrNodeLabel : public OptInConstDispatch {
     label_ << ")";
   }
 
+  void handle(const Split* split) override {
+    label_ << "Split(axis=" << split->axis()
+           << ", factor=" << IrNodeLabel::gen(split->factor()) << ")";
+  }
+
+  void handle(const Merge* merge) override {
+    label_ << "Merge(axis=" << merge->axis() << ")";
+  }
+
+  void handle(const Reorder* reorder) override {
+    label_ << "Reorder( ";
+    for (const int old_pos : reorder->pos2axis()) {
+      label_ << old_pos << " ";
+    }
+    label_ << ")";
+  }
+
  private:
   std::stringstream label_;
 };
@@ -249,28 +266,37 @@ void IrGraphGenerator::handle(const BinaryOp* bop) {
   printArc(bop, bop->out());
 }
 
-void IrGraphGenerator::handle(const ForLoop* fl) {
+void IrGraphGenerator::handle(const ForLoop* for_loop) {
   // TODO
+  OptInConstDispatch::handle(for_loop);
 }
 
-void IrGraphGenerator::handle(const IfThenElse* ite) {
+void IrGraphGenerator::handle(const IfThenElse* if_then_else) {
   // TODO
+  OptInConstDispatch::handle(if_then_else);
 }
 
-void IrGraphGenerator::handle(const Allocate* a) {
+void IrGraphGenerator::handle(const Allocate* allocate) {
   // TODO
+  OptInConstDispatch::handle(allocate);
 }
 
-void IrGraphGenerator::handle(const Split* s) {
-  // TODO
+void IrGraphGenerator::handle(const Split* split) {
+  printExpr(split, IrNodeLabel::gen(split));
+  printArc(split->in(), split);
+  printArc(split, split->out());
 }
 
-void IrGraphGenerator::handle(const Merge* m) {
-  // TODO
+void IrGraphGenerator::handle(const Merge* merge) {
+  printExpr(merge, IrNodeLabel::gen(merge));
+  printArc(merge->in(), merge);
+  printArc(merge, merge->out());
 }
 
-void IrGraphGenerator::handle(const Reorder* ro) {
-  // TODO
+void IrGraphGenerator::handle(const Reorder* reorder) {
+  printExpr(reorder, IrNodeLabel::gen(reorder));
+  printArc(reorder->in(), reorder);
+  printArc(reorder, reorder->out());
 }
 
 } // namespace fuser
