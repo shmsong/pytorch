@@ -6,6 +6,7 @@
 
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 
 namespace torch {
 namespace jit {
@@ -18,7 +19,7 @@ struct TORCH_CUDA_API IrGraphGenerator : public OptInConstDispatch {
   static void print(const Fusion* fusion, bool verbose = false);
 
  private:
-  explicit IrGraphGenerator(bool verbose) : verbose_(verbose) {}
+  IrGraphGenerator(const Fusion* fusion, bool verbose);
   ~IrGraphGenerator() override = default;
 
   void handle(const Statement* s) override {
@@ -77,6 +78,8 @@ struct TORCH_CUDA_API IrGraphGenerator : public OptInConstDispatch {
  private:
   const bool verbose_;
   std::unordered_map<const Statement*, std::string> id_map_;
+  std::unordered_set<const Val*> inputs_;
+  std::unordered_set<const Val*> outputs_;
   int next_id_ = 1;
 };
 

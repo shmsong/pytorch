@@ -83,6 +83,20 @@ struct TORCH_CUDA_API IrNodeLabel : public OptInConstDispatch {
 
 } // anonymous namespace
 
+IrGraphGenerator::IrGraphGenerator(const Fusion* fusion, bool verbose)
+    : verbose_(verbose) {
+  // setup inputs & outputs
+  // (indexes used to quickly check if a value is fusion input or output)
+  for (const auto* input : fusion->inputs()) {
+    TORCH_CHECK(inputs_.count(input) == 0);
+    inputs_.insert(input);
+  }
+  for (const auto* output : fusion->outputs()) {
+    TORCH_CHECK(outputs_.count(output) == 0);
+    outputs_.insert(output);
+  }
+}
+
 std::string IrGraphGenerator::getid(const Statement* stm) {
   const auto it = id_map_.find(stm);
   if (it == id_map_.end()) {
@@ -117,19 +131,24 @@ void IrGraphGenerator::printValue(const Val* val, const std::string& label) {
 }
 
 void IrGraphGenerator::print(const Fusion* fusion, bool verbose) {
-  IrGraphGenerator ir_to_dot(verbose);
+  IrGraphGenerator ir_to_dot(fusion, verbose);
   std::cout << "\n//-------------------------------------\n\n";
   std::cout << "digraph fusion_ir {\n"
             << "  node [shape=circle, color=gray];\n"
             << "  edge [color=black];\n";
+
+  // all expressions
   for (const auto* expr : fusion->unordered_exprs()) {
     ir_to_dot.handle(expr);
   }
+
+  // all values (verbose only)
   if (verbose) {
     for (const auto* val : fusion->vals()) {
       ir_to_dot.handle(val);
     }
   }
+
   std::cout << "}\n";
   std::cout << "\n//-------------------------------------\n\n";
 }
@@ -144,7 +163,7 @@ void IrGraphGenerator::handle(const TensorDomain* td) {
 
 void IrGraphGenerator::handle(const IterDomain* id) {
   std::cout << "  " << getid(id) << " [label=\"" << IrNodeLabel::gen(id)
-            << "\", shape=rect, color=gray, fontsize=10];\n";
+            << "\", shape=cds, color=gray, fontsize=10];\n";
 
   if (!id->start()->isZeroInt()) {
     printArc(id->start(), id, "[color=gray]");
@@ -156,6 +175,7 @@ void IrGraphGenerator::handle(const IterDomain* id) {
 }
 
 void IrGraphGenerator::handle(const TensorIndex* ti) {
+  // TODO
   OptInConstDispatch::handle(ti);
 }
 
@@ -186,9 +206,15 @@ void IrGraphGenerator::handle(const TensorView* tv) {
   }
   label << "}}";
 
+  const bool is_input = inputs_.find(tv) != inputs_.end();
+  const bool is_output = outputs_.find(tv) != outputs_.end();
+
+  const char* style = is_input ? "style=filled, fillcolor=palegreen"
+                               : is_output ? "style=filled, fillcolor=lightblue"
+                                           : "style=filled, fillcolor=beige";
+
   std::cout << "  " << getid(tv) << " [label=\"" << label.str()
-            << "\", shape=Mrecord, color=brown, "
-            << "style=filled, fillcolor=beige];\n";
+            << "\", shape=Mrecord, color=brown, " << style << "];\n";
 
   if (const auto* compute_at_view = tv->getComputeAtView()) {
     std::stringstream arc_style;
