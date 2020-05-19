@@ -117,7 +117,7 @@ void testGPU_FusionExprEvalBasic() {
 
 void testGPU_FusionExprEvalComplex() {
   Fusion fusion;
-  FusionGuard fg(&fusion, __PRETTY_FUNCTION__);
+  FusionGuard fg(&fusion);
 
   TensorView* tv0 = makeSizedDummyTensor({129, 127});
   fusion.addInput(tv0);
@@ -167,6 +167,8 @@ void testGPU_FusionExprEvalComplex() {
   checkIntValue(tv6->axis(0)->rawExtent(), 32);
   checkIntValue(tv6->axis(1)->rawExtent(), 4);
   checkIntValue(tv6->axis(2)->rawExtent(), 128);
+
+  //IrGraphGenerator::print(&fusion);
 }
 
 void testGPU_FusionDispatch() {

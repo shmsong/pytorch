@@ -93,6 +93,8 @@ struct TORCH_CUDA_API BinaryOp : public Expr {
 
  private:
   const BinaryOpType binary_op_type_;
+
+  // alias the inputs/outputs from IRInputOutput?
   Val* const out_;
   Val* const lhs_;
   Val* const rhs_;

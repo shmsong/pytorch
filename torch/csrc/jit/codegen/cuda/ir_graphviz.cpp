@@ -11,6 +11,75 @@ namespace torch {
 namespace jit {
 namespace fuser {
 
+namespace {
+
+struct TORCH_CUDA_API IrNodeLabel : public OptInConstDispatch {
+ public:
+  static std::string gen(const Statement* node) {
+    IrNodeLabel generator;
+    generator.OptInConstDispatch::handle(node);
+    return generator.label_.str();
+  }
+
+ private:
+  IrNodeLabel() = default;
+  ~IrNodeLabel() override = default;
+
+  void handle(const Float* f) override {
+    if (f->isSymbolic()) {
+      label_ << "f" << f->name();
+    } else {
+      label_ << std::fixed << std::setprecision(2) << *(f->value());
+    }
+  }
+
+  void handle(const Int* i) override {
+    if (i->isSymbolic()) {
+      label_ << "i" << i->name();
+    } else {
+      label_ << *(i->value());
+    }
+  }
+
+  void handle(const NamedScalar* ns) override {
+    label_ << ns->name();
+  }
+
+  void handle(const IterDomain* id) override {
+    if (id->isReduction()) {
+      label_ << "r";
+    } else {
+      label_ << "i";
+    }
+
+    switch (id->parallel_method()) {
+      case (ParallelType::Vectorize):
+        label_ << "V";
+        break;
+      case (ParallelType::Unroll):
+        label_ << "U";
+        break;
+      case (ParallelType::Serial):
+        label_ << "S";
+        break;
+      default:
+        label_ << id->parallel_method();
+    }
+
+    label_ << "(";
+    if (!id->start()->isZeroInt()) {
+      label_ << IrNodeLabel::gen(id->start()) << " : ";
+    }
+    label_ << IrNodeLabel::gen(id->extent());
+    label_ << ")";
+  }
+
+ private:
+  std::stringstream label_;
+};
+
+} // anonymous namespace
+
 std::string IrGraphGenerator::getid(const Statement* stm) {
   const auto it = id_map_.find(stm);
   if (it == id_map_.end()) {
@@ -37,27 +106,29 @@ void IrGraphGenerator::printArc(
 void IrGraphGenerator::printExpr(const Expr* expr, const std::string& label) {
   // node
   std::cout << "  " << getid(expr) << " "
-            << "[label=\"" << label << "\", shape=rect, color=blue];\n";
+            << "[label=\"" << label << "\", shape=oval, color=blue];\n";
 
   // generic (IRInputOutput) inputs & outputs
   // (paranoid - just to make sure we're not missing anything)
+  /*
   for (const auto* val : expr->inputs()) {
     printArc(val, expr);
   }
   for (const auto* val : expr->outputs()) {
     printArc(expr, val);
   }
+  */
 }
 
 void IrGraphGenerator::printValue(const Val* val, const std::string& label) {
   std::cout << "  " << getid(val) << " [label=\"" << label
-            << "\", shape=circle, color=green];\n";
+            << "\", shape=rect, color=green, fontsize=10];\n";
 }
 
 void IrGraphGenerator::print(const Fusion* fusion) {
   IrGraphGenerator ir_to_dot;
+  std::cout << "\n//-------------------------------------\n";
   std::cout << "digraph fusion_ir {\n"
-            << "  rankdir=LR;\n"
             << "  node [shape=circle, color=gray];\n"
             << "  edge [color=black];\n";
   for (const auto* expr : fusion->unordered_exprs()) {
@@ -67,52 +138,67 @@ void IrGraphGenerator::print(const Fusion* fusion) {
     ir_to_dot.handle(val);
   }
   std::cout << "}\n";
+  std::cout << "\n//-------------------------------------\n";
 }
 
 void IrGraphGenerator::handle(const TensorDomain* td) {
-  // TODO
-}
-
-void IrGraphGenerator::handle(const TensorView* tv) {
-  // TODO
+  std::cout << "  " << getid(td)
+            << " [label=\"TensorDomain\", shape=note, color=gray];\n";
+  for (auto iter_domain : td->domain()) {
+    printArc(iter_domain, td);
+  }
 }
 
 void IrGraphGenerator::handle(const IterDomain* id) {
-  // TODO
+  if (!id->start()->isZeroInt()) {
+    printArc(id->start(), id);
+  }
+  printArc(id->extent(), id);
+
+  std::cout << "  " << getid(id) << " [label=\"" << IrNodeLabel::gen(id)
+            << "\", shape=rect, color=gray, fontsize=10];\n";
 }
 
 void IrGraphGenerator::handle(const TensorIndex* ti) {
-  // TODO
+  OptInConstDispatch::handle(ti);
 }
 
 void IrGraphGenerator::handle(const Float* f) {
-  std::stringstream label;
-  if (f->isSymbolic()) {
-    label << "f" << f->name();
-  } else {
-    label << std::fixed << std::setprecision(2) << *(f->value());
-  }
-  printValue(f, label.str());
+  printValue(f, IrNodeLabel::gen(f));
 }
 
 void IrGraphGenerator::handle(const Int* i) {
-  std::stringstream label;
-  if (i->isSymbolic()) {
-    label << "i" << i->name();
-  } else {
-    label << *(i->value());
-  }
-  printValue(i, label.str());
+  printValue(i, IrNodeLabel::gen(i));
 }
 
 void IrGraphGenerator::handle(const NamedScalar* i) {
-  printValue(i, i->name());
+  printValue(i, IrNodeLabel::gen(i));
+}
+
+void IrGraphGenerator::handle(const TensorView* tv) {
+  std::stringstream label;
+  label << "{T" << tv->name() << "|";
+  label << "{";
+  bool first_axis = true;
+  for (auto iter_domain : tv->domain()->domain()) {
+    if (first_axis) {
+      first_axis = false;
+    } else {
+      label << "|";
+    }
+    label << IrNodeLabel::gen(iter_domain);
+  }
+  label << "}}";
+  std::cout << "  " << getid(tv) << " [label=\"" << label.str()
+            << "\", shape=Mrecord, color=brown];\n";
+
+  printArc(tv->domain(), tv, "[style=dashed, color=gray]");
 }
 
 void IrGraphGenerator::handle(const UnaryOp* uop) {
   // node
   std::stringstream label;
-  label << "UnaryOp(" << uop->getUnaryOpType() << ")";
+  label << uop->getUnaryOpType();
   printExpr(uop, label.str());
 
   // UnaryOp inputs & outputs
@@ -123,12 +209,12 @@ void IrGraphGenerator::handle(const UnaryOp* uop) {
 void IrGraphGenerator::handle(const BinaryOp* bop) {
   // node
   std::stringstream label;
-  label << "BinaryOp(" << bop->getBinaryOpType() << ")";
+  label << bop->getBinaryOpType();
   printExpr(bop, label.str());
 
   // BinaryOp inputs & outputs
   printArc(bop->lhs(), bop);
-  printArc(bop->rhs(), bop);
+  printArc(bop->rhs(), bop, "[color=green]");
   printArc(bop, bop->out());
 }
 
