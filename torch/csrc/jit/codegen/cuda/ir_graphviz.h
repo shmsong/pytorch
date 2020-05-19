@@ -4,9 +4,7 @@
 #include <torch/csrc/WindowsTorchApiMacro.h>
 #include <torch/csrc/jit/codegen/cuda/dispatch.h>
 
-#include <set>
 #include <string>
-#include <tuple>
 #include <unordered_map>
 
 namespace torch {
@@ -17,10 +15,10 @@ namespace fuser {
 // representation of the Fusion IR
 struct TORCH_CUDA_API IrGraphGenerator : public OptInConstDispatch {
  public:
-  static void print(const Fusion* fusion);
+  static void print(const Fusion* fusion, bool verbose);
 
  private:
-  IrGraphGenerator() = default;
+  explicit IrGraphGenerator(bool verbose) : verbose_(verbose) {}
   ~IrGraphGenerator() override = default;
 
   void handle(const Statement* s) override {
@@ -67,8 +65,8 @@ struct TORCH_CUDA_API IrGraphGenerator : public OptInConstDispatch {
   void printValue(const Val* val, const std::string& label);
 
  private:
+  const bool verbose_;
   std::unordered_map<const Statement*, std::string> id_map_;
-  std::set<std::tuple<const Statement*, const Statement*>> arcs_;
   int next_id_ = 1;
 };
 

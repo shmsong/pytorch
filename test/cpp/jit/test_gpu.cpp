@@ -112,7 +112,8 @@ void testGPU_FusionExprEvalBasic() {
   checkIntValue(tv3->axis(1)->rawExtent(), 4);
   checkIntValue(tv3->axis(2)->rawExtent(), 128);
 
-  IrGraphGenerator::print(&fusion);
+  IrGraphGenerator::print(&fusion, true);
+  IrGraphGenerator::print(&fusion, false);
 }
 
 void testGPU_FusionExprEvalComplex() {

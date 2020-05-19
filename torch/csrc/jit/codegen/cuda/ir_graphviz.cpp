@@ -96,11 +96,8 @@ void IrGraphGenerator::printArc(
     const Statement* src,
     const Statement* dst,
     const std::string& style) {
-  if (arcs_.find({src, dst}) == arcs_.end()) {
-    std::cout << "  " << getid(src) << " -> " << getid(dst) << " " << style
-              << ";\n";
-    arcs_.insert({src, dst});
-  }
+  std::cout << "  " << getid(src) << " -> " << getid(dst) << " " << style
+            << ";\n";
 }
 
 void IrGraphGenerator::printExpr(const Expr* expr, const std::string& label) {
@@ -110,14 +107,16 @@ void IrGraphGenerator::printExpr(const Expr* expr, const std::string& label) {
 
   // generic (IRInputOutput) inputs & outputs
   // (paranoid - just to make sure we're not missing anything)
-  /*
-  for (const auto* val : expr->inputs()) {
-    printArc(val, expr);
+#if 0
+  if (verbose_) {
+    for (const auto* val : expr->inputs()) {
+      printArc(val, expr);
+    }
+    for (const auto* val : expr->outputs()) {
+      printArc(expr, val);
+    }
   }
-  for (const auto* val : expr->outputs()) {
-    printArc(expr, val);
-  }
-  */
+#endif
 }
 
 void IrGraphGenerator::printValue(const Val* val, const std::string& label) {
@@ -125,8 +124,8 @@ void IrGraphGenerator::printValue(const Val* val, const std::string& label) {
             << "\", shape=rect, color=green, fontsize=10];\n";
 }
 
-void IrGraphGenerator::print(const Fusion* fusion) {
-  IrGraphGenerator ir_to_dot;
+void IrGraphGenerator::print(const Fusion* fusion, bool verbose) {
+  IrGraphGenerator ir_to_dot(verbose);
   std::cout << "\n//-------------------------------------\n";
   std::cout << "digraph fusion_ir {\n"
             << "  node [shape=circle, color=gray];\n"
