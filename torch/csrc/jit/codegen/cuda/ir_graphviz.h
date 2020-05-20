@@ -14,7 +14,7 @@ namespace fuser {
 
 // Generates a DOT (https://www.graphviz.org) graph
 // representation of the Fusion IR
-struct TORCH_CUDA_API IrGraphGenerator : public OptInConstDispatch {
+class TORCH_CUDA_API IrGraphGenerator : private OptInConstDispatch {
  public:
   static void print(const Fusion* fusion, bool verbose = false);
 

@@ -13,23 +13,26 @@ namespace fuser {
 
 namespace {
 
-struct TORCH_CUDA_API IrNodeLabel : public OptInConstDispatch {
+class IrNodeLabel : private OptInConstDispatch {
  public:
-  static std::string gen(const Statement* node) {
-    IrNodeLabel generator;
+  static std::string gen(const Statement* node, bool verbose = false) {
+    IrNodeLabel generator(verbose);
     generator.OptInConstDispatch::handle(node);
     return generator.label_.str();
   }
 
  private:
-  IrNodeLabel() = default;
+  explicit IrNodeLabel(bool verbose) : verbose_(verbose) {}
   ~IrNodeLabel() override = default;
 
   void handle(const Float* f) override {
     if (f->isSymbolic()) {
       label_ << "f" << f->name();
     } else {
-      label_ << std::fixed << std::setprecision(2) << *(f->value());
+      if (verbose_) {
+        label_ << "f" << f->name() << "=";
+      }
+      label_ << std::fixed << std::setprecision(2) << *f->value();
     }
   }
 
@@ -37,7 +40,10 @@ struct TORCH_CUDA_API IrNodeLabel : public OptInConstDispatch {
     if (i->isSymbolic()) {
       label_ << "i" << i->name();
     } else {
-      label_ << *(i->value());
+      if (verbose_) {
+        label_ << "i" << i->name() << "=";
+      }
+      label_ << *i->value();
     }
   }
 
@@ -96,6 +102,7 @@ struct TORCH_CUDA_API IrNodeLabel : public OptInConstDispatch {
 
  private:
   std::stringstream label_;
+  const bool verbose_;
 };
 
 } // anonymous namespace
@@ -197,15 +204,15 @@ void IrGraphGenerator::handle(const TensorIndex* ti) {
 }
 
 void IrGraphGenerator::handle(const Float* f) {
-  printValue(f, IrNodeLabel::gen(f));
+  printValue(f, IrNodeLabel::gen(f, verbose_));
 }
 
 void IrGraphGenerator::handle(const Int* i) {
-  printValue(i, IrNodeLabel::gen(i));
+  printValue(i, IrNodeLabel::gen(i, verbose_));
 }
 
 void IrGraphGenerator::handle(const NamedScalar* i) {
-  printValue(i, IrNodeLabel::gen(i));
+  printValue(i, IrNodeLabel::gen(i, verbose_));
 }
 
 void IrGraphGenerator::handle(const TensorView* tv) {
