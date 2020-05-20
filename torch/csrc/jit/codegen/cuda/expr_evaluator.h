@@ -6,51 +6,64 @@
 
 #include <c10/util/Optional.h>
 
+#include <unordered_map>
+
 namespace torch {
 namespace jit {
 namespace fuser {
 
-/*
- * TODO
- * 
- * Open questions:
- * - error handling (ex. div by zero)
- * - 
- */
-
-struct TORCH_CUDA_API ExpressionEvaluator : public OptInConstDispatch {
+// Encapsulates a set of value bindings on top of a Fusion IR
+// (used to provide known values to ExpressionEvaluator)
+//
+// NOTE: currently it only supports Int values
+//
+class TORCH_CUDA_API EvaluationContext {
  public:
-  static c10::optional<int> evaluate(const Statement* expr); // should be Expr*
+  explicit EvaluationContext(const Fusion* fusion) : fusion_(fusion) {}
+
+  // Set the concrete value for a Int*
+  void bind(const Val* value, int concrete_value);
+
+  // Retrieves the concrete value, or nullopt if not set
+  c10::optional<int> concreteValue(const Val* value) const;
+
+  const Fusion* fusion() const {
+    return fusion_;
+  }
+
+  // Debugging helper, prints all the currently set values
+  void print() const;
 
  private:
-  ExpressionEvaluator() = default;
+  std::unordered_map<const Val*, int> bindings_;
+  const Fusion* fusion_ = nullptr;
+};
+
+// Evaluates expressions in a Fusion IR, using the passed in
+// context (EvaluationContext) to query for concrete_values. The
+// evaluation context may override concrete values in the IR as well.
+class TORCH_CUDA_API ExpressionEvaluator : private OptInConstDispatch {
+ public:
+  // Returns the result of the specified expression, or nullopt if
+  // the result cannot be evaluated
+  static c10::optional<int> evaluate(
+      const Statement* expr,
+      const EvaluationContext* context);
+
+ private:
+  explicit ExpressionEvaluator(const EvaluationContext* context)
+      : context_(context) {}
+
   ~ExpressionEvaluator() override = default;
 
-  /*
-  void handle(const TensorDomain*) override;
-  void handle(const TensorView*) override;
-  void handle(const IterDomain*) override;
-  void handle(const TensorIndex*) override;
-  */
-
-  void handle(const Float*) override;
   void handle(const Int*) override;
   void handle(const NamedScalar*) override;
 
   void handle(const UnaryOp*) override;
   void handle(const BinaryOp*) override;
 
-  /*
-  void handle(const ForLoop*) override;
-  void handle(const IfThenElse*) override;
-  void handle(const Allocate*) override;
-
-  void handle(const Split*) override;
-  void handle(const Merge*) override;
-  void handle(const Reorder*) override;
-  */
-
  private:
+  const EvaluationContext* context_ = nullptr;
   c10::optional<int> result_;
 };
 

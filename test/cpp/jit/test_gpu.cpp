@@ -2,15 +2,16 @@
 #include <test/cpp/jit/test_base.h>
 
 #include <torch/csrc/jit/codegen/cuda/arith.h>
+#include <torch/csrc/jit/codegen/cuda/expr_evaluator.h>
 #include <torch/csrc/jit/codegen/cuda/fusion.h>
 #include <torch/csrc/jit/codegen/cuda/ir_all_nodes.h>
+#include <torch/csrc/jit/codegen/cuda/ir_graphviz.h>
 #include <torch/csrc/jit/codegen/cuda/ir_iostream.h>
 #include <torch/csrc/jit/codegen/cuda/kernel.h>
 #include <torch/csrc/jit/codegen/cuda/lower2device.h>
 #include <torch/csrc/jit/codegen/cuda/mutator.h>
 #include <torch/csrc/jit/codegen/cuda/tensor_meta.h>
 #include <torch/csrc/jit/codegen/cuda/transform_replay.h>
-#include <torch/csrc/jit/codegen/cuda/ir_graphviz.h>
 
 // fuser and IR parser
 #include <torch/csrc/jit/codegen/cuda/parser.h>
@@ -32,35 +33,14 @@ static TensorView* makeDummyTensor(int nDims) {
   return new TensorView(new TensorDomain(dom), DataType::Float);
 }
 
-static TensorView* makeSizedDummyTensor(const std::vector<int>& sizes) {
-  std::vector<IterDomain*> dom;
-  for (int extent : sizes) {
-    dom.push_back(new IterDomain(new Int(0), new Int(extent)));
-  }
-  return new TensorView(new TensorDomain(dom), DataType::Float);
-}
-
-static void checkIntValue(const Val* val, int expected_value) {
+static void checkIntValue(
+    const EvaluationContext* eval_context,
+    const Val* val,
+    int expected_value) {
   TORCH_CHECK(val->isAnInt());
-  const auto actual_value = val->as<Int>()->evaluate();
+  const auto actual_value = ExpressionEvaluator::evaluate(val, eval_context);
   TORCH_CHECK(actual_value.has_value());
   TORCH_CHECK(actual_value.value() == expected_value);
-}
-
-// tmp
-static void printIntValue(const Val* val, int expected_value) {
-  TORCH_CHECK(val->isAnInt());
-  const auto actual_value = val->as<Int>()->evaluate();
-  TORCH_CHECK(actual_value.has_value());
-  std::cout << "Value = " << actual_value.value() << "\n";
-}
-
-static void printTv(const TensorView* tv) {
-  std::cout << "------------------------\n";
-  std::cout << "dims: " << tv->domain()->nDims() << "\n";
-  for (const auto axis : tv->domain()->domain()) {
-    printIntValue(axis->rawExtent(), 100);
-  }
 }
 
 // 1. Test cases are void() functions.
@@ -71,8 +51,8 @@ void testGPU_FusionExprEvalBasic() {
   FusionGuard fg(&fusion);
 
   // Set up your input tensor views
-  TensorView* tv0 = makeSizedDummyTensor({6, 128});
-  TensorView* tv1 = makeSizedDummyTensor({6, 128});
+  TensorView* tv0 = makeDummyTensor(2);
+  TensorView* tv1 = makeDummyTensor(2);
 
   // Register your inputs
   fusion.addInput(tv0);
@@ -100,27 +80,43 @@ void testGPU_FusionExprEvalBasic() {
   tv2->axis(-1)->parallelize(ParallelType::TIDx);
   tv3->axis(-1)->parallelize(ParallelType::TIDx);
 
-  // Evaluate and check extent values
+  // 1. Create an evaluation context
+  EvaluationContext eval_context(&fusion);
+
+  // 2. Bind values
+  //
+  // NOTE: the bindings are only as stable as the 
+  //  Vals are in the fusion graph
+  //
+  eval_context.bind(tv0->axis(0)->extent(), 6);
+  eval_context.bind(tv0->axis(1)->extent(), 128);
+  eval_context.bind(tv1->axis(0)->extent(), 6);
+  eval_context.bind(tv1->axis(1)->extent(), 128);
+
+  //eval_context.print();
+
+  // 3. Evaluate and check extent values
   TORCH_CHECK(tv2->domain()->nDims() == 3);
-  checkIntValue(tv2->axis(0)->rawExtent(), 2);
-  checkIntValue(tv2->axis(1)->rawExtent(), 4);
-  checkIntValue(tv2->axis(2)->rawExtent(), 128);
+  checkIntValue(&eval_context, tv2->axis(0)->rawExtent(), 2);
+  checkIntValue(&eval_context, tv2->axis(1)->rawExtent(), 4);
+  checkIntValue(&eval_context, tv2->axis(2)->rawExtent(), 128);
 
-  // Evaluate and check extent values
   TORCH_CHECK(tv3->domain()->nDims() == 3);
-  checkIntValue(tv3->axis(0)->rawExtent(), 2);
-  checkIntValue(tv3->axis(1)->rawExtent(), 4);
-  checkIntValue(tv3->axis(2)->rawExtent(), 128);
+  checkIntValue(&eval_context, tv3->axis(0)->rawExtent(), 2);
+  checkIntValue(&eval_context, tv3->axis(1)->rawExtent(), 4);
+  checkIntValue(&eval_context, tv3->axis(2)->rawExtent(), 128);
 
+#if 0
   IrGraphGenerator::print(&fusion, true);
   IrGraphGenerator::print(&fusion, false);
+#endif
 }
 
 void testGPU_FusionExprEvalComplex() {
   Fusion fusion;
   FusionGuard fg(&fusion);
 
-  TensorView* tv0 = makeSizedDummyTensor({129, 127});
+  TensorView* tv0 = makeDummyTensor(2);
   fusion.addInput(tv0);
 
   TensorView* tv1 = static_cast<TensorView*>(mul(tv0, new Float(-1.0)));
@@ -154,22 +150,29 @@ void testGPU_FusionExprEvalComplex() {
     }
   }
 
+  // 1. Create an evaluation context
+  EvaluationContext eval_context(&fusion);
+
+  // 2. Bind values
+  eval_context.bind(tv0->axis(0)->extent(), 129);
+  eval_context.bind(tv0->axis(1)->extent(), 127);
+
   // Evaluate and check extent values
   TORCH_CHECK(tv0->domain()->nDims() == 2);
-  checkIntValue(tv0->axis(0)->rawExtent(), 129);
-  checkIntValue(tv0->axis(1)->rawExtent(), 127);
+  checkIntValue(&eval_context, tv0->axis(0)->rawExtent(), 129);
+  checkIntValue(&eval_context, tv0->axis(1)->rawExtent(), 127);
 
   TORCH_CHECK(tv5->domain()->nDims() == 3);
-  checkIntValue(tv5->axis(0)->rawExtent(), 32);
-  checkIntValue(tv5->axis(1)->rawExtent(), 4);
-  checkIntValue(tv5->axis(2)->rawExtent(), 128);
+  checkIntValue(&eval_context, tv5->axis(0)->rawExtent(), 32);
+  checkIntValue(&eval_context, tv5->axis(1)->rawExtent(), 4);
+  checkIntValue(&eval_context, tv5->axis(2)->rawExtent(), 128);
 
   TORCH_CHECK(tv6->domain()->nDims() == 3);
-  checkIntValue(tv6->axis(0)->rawExtent(), 32);
-  checkIntValue(tv6->axis(1)->rawExtent(), 4);
-  checkIntValue(tv6->axis(2)->rawExtent(), 128);
+  checkIntValue(&eval_context, tv6->axis(0)->rawExtent(), 32);
+  checkIntValue(&eval_context, tv6->axis(1)->rawExtent(), 4);
+  checkIntValue(&eval_context, tv6->axis(2)->rawExtent(), 128);
 
-  IrGraphGenerator::print(&fusion);
+  // IrGraphGenerator::print(&fusion);
 }
 
 void testGPU_FusionDispatch() {

@@ -72,12 +72,9 @@ struct TORCH_CUDA_API Int : public Val {
   virtual bool isConst() const {
     return maybe_value_.has_value();
   }
-  virtual c10::optional<int> value() const noexcept {
+  virtual const c10::optional<int>& value() const noexcept {
     return maybe_value_;
   }
-
-  // this could end up in value()
-  c10::optional<int> evaluate() const;
 
   virtual bool sameAs(const Int* const other) const;
 

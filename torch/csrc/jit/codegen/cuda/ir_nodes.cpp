@@ -4,7 +4,6 @@
 #include <torch/csrc/jit/codegen/cuda/ir_iostream.h>
 #include <torch/csrc/jit/codegen/cuda/transform_iter.h>
 #include <torch/csrc/jit/codegen/cuda/ir_iostream.h>
-#include <torch/csrc/jit/codegen/cuda/expr_evaluator.h>
 
 #include <sstream>
 
@@ -62,15 +61,6 @@ bool Int::sameAs(const Int* const other) const {
   if (isConst() && other->isConst())
     return *value() == *(other->value());
   return this == other;
-}
-
-c10::optional<int> Int::evaluate() const {
-  if (!maybe_value_.has_value()) {
-    if (const auto* def = fusion()->origin(this)) {
-      return ExpressionEvaluator::evaluate(def);
-    }
-  }
-  return maybe_value_;
 }
 
 UnaryOp::UnaryOp(UnaryOpType _type, Val* _out, Val* _in)
