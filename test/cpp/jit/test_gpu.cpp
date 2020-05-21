@@ -85,7 +85,7 @@ void testGPU_FusionExprEvalBasic() {
 
   // 2. Bind values
   //
-  // NOTE: the bindings are only as stable as the 
+  // NOTE: the bindings are only as stable as the
   //  Vals are in the fusion graph
   //
   eval_context.bind(tv0->axis(0)->extent(), 6);
@@ -93,7 +93,7 @@ void testGPU_FusionExprEvalBasic() {
   eval_context.bind(tv1->axis(0)->extent(), 6);
   eval_context.bind(tv1->axis(1)->extent(), 128);
 
-  //eval_context.print();
+  // eval_context.print();
 
   // 3. Evaluate and check extent values
   TORCH_CHECK(tv2->domain()->nDims() == 3);
@@ -107,8 +107,9 @@ void testGPU_FusionExprEvalBasic() {
   checkIntValue(&eval_context, tv3->axis(2)->rawExtent(), 128);
 
 #if 0
-  IrGraphGenerator::print(&fusion, true);
-  IrGraphGenerator::print(&fusion, false);
+  IrGraphGenerator::print(&fusion);
+  IrGraphGenerator::print(&fusion, IrGraphGenerator::DetailLevel::Explicit);
+  IrGraphGenerator::print(&fusion, IrGraphGenerator::DetailLevel::Everything);
 #endif
 }
 
@@ -162,6 +163,7 @@ void testGPU_FusionExprEvalComplex() {
   checkIntValue(&eval_context, tv0->axis(0)->rawExtent(), 129);
   checkIntValue(&eval_context, tv0->axis(1)->rawExtent(), 127);
 
+#if 0 // see https://github.com/csarofeen/pytorch/issues/41
   TORCH_CHECK(tv5->domain()->nDims() == 3);
   checkIntValue(&eval_context, tv5->axis(0)->rawExtent(), 32);
   checkIntValue(&eval_context, tv5->axis(1)->rawExtent(), 4);
@@ -171,8 +173,12 @@ void testGPU_FusionExprEvalComplex() {
   checkIntValue(&eval_context, tv6->axis(0)->rawExtent(), 32);
   checkIntValue(&eval_context, tv6->axis(1)->rawExtent(), 4);
   checkIntValue(&eval_context, tv6->axis(2)->rawExtent(), 128);
+#endif
 
-  // IrGraphGenerator::print(&fusion);
+#if 0
+  IrGraphGenerator::print(&fusion);
+  IrGraphGenerator::print(&fusion, IrGraphGenerator::DetailLevel::Explicit);
+#endif
 }
 
 void testGPU_FusionDispatch() {

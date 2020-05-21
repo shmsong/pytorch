@@ -14,22 +14,28 @@ namespace fuser {
 namespace {
 
 class IrNodeLabel : private OptInConstDispatch {
+  using DetailLevel = IrGraphGenerator::DetailLevel;
+
  public:
-  static std::string gen(const Statement* node, bool verbose = false) {
-    IrNodeLabel generator(verbose);
+  static std::string gen(
+      const Statement* node,
+      DetailLevel detail_level = DetailLevel::Minimal) {
+    IrNodeLabel generator(detail_level);
     generator.OptInConstDispatch::handle(node);
     return generator.label_.str();
   }
 
  private:
-  explicit IrNodeLabel(bool verbose) : verbose_(verbose) {}
+  explicit IrNodeLabel(DetailLevel detail_level)
+      : detail_level_(detail_level) {}
+
   ~IrNodeLabel() override = default;
 
   void handle(const Float* f) override {
     if (f->isSymbolic()) {
       label_ << "f" << f->name();
     } else {
-      if (verbose_) {
+      if (detail_level_ > DetailLevel::Minimal) {
         label_ << "f" << f->name() << "=";
       }
       label_ << std::fixed << std::setprecision(2) << *f->value();
@@ -40,7 +46,7 @@ class IrNodeLabel : private OptInConstDispatch {
     if (i->isSymbolic()) {
       label_ << "i" << i->name();
     } else {
-      if (verbose_) {
+      if (detail_level_ > DetailLevel::Minimal) {
         label_ << "i" << i->name() << "=";
       }
       label_ << *i->value();
@@ -102,13 +108,15 @@ class IrNodeLabel : private OptInConstDispatch {
 
  private:
   std::stringstream label_;
-  const bool verbose_;
+  const DetailLevel detail_level_;
 };
 
 } // anonymous namespace
 
-IrGraphGenerator::IrGraphGenerator(const Fusion* fusion, bool verbose)
-    : verbose_(verbose) {
+IrGraphGenerator::IrGraphGenerator(
+    const Fusion* fusion,
+    DetailLevel detail_level)
+    : detail_level_(detail_level), fusion_(fusion) {
   // setup inputs & outputs
   // (indexes used to quickly check if a value is fusion input or output)
   for (const auto* input : fusion->inputs()) {
@@ -154,20 +162,33 @@ void IrGraphGenerator::printValue(const Val* val, const std::string& label) {
             << "\", shape=rect, color=green, fontsize=10];\n";
 }
 
-void IrGraphGenerator::print(const Fusion* fusion, bool verbose) {
-  IrGraphGenerator ir_to_dot(fusion, verbose);
+// This is the public interface to IrGraphGenerator
+void IrGraphGenerator::print(const Fusion* fusion, DetailLevel detail_level) {
+  IrGraphGenerator ir_to_dot(fusion, detail_level);
   std::cout << "\n//-------------------------------------\n\n";
   std::cout << "digraph fusion_ir {\n"
             << "  node [shape=circle, color=gray];\n"
             << "  edge [color=black];\n";
 
-  // all expressions
-  for (const auto* expr : fusion->unordered_exprs()) {
-    ir_to_dot.handle(expr);
+  // inputs
+  for (const auto* input : fusion->inputs()) {
+    ir_to_dot.handle(input);
   }
 
-  // all values (verbose only)
-  if (verbose) {
+  // outputs
+  for (const auto* output : fusion->outputs()) {
+    ir_to_dot.handle(output);
+  }
+
+  // all expressions
+  if (detail_level >= DetailLevel::Explicit) {
+    for (const auto* expr : fusion->unordered_exprs()) {
+      ir_to_dot.handle(expr);
+    }
+  }
+
+  // all values
+  if (detail_level >= DetailLevel::Everything) {
     for (const auto* val : fusion->vals()) {
       ir_to_dot.handle(val);
     }
@@ -176,6 +197,27 @@ void IrGraphGenerator::print(const Fusion* fusion, bool verbose) {
   std::cout << "}\n";
   std::cout << "\n//-------------------------------------\n\n";
 }
+
+void IrGraphGenerator::handle(const Statement* s) {
+  OptInConstDispatch::handle(s);
+};
+
+void IrGraphGenerator::handle(const Val* v) {
+  if (!visited(v)) {
+    visited_.insert(v);
+    if (const auto* def = fusion_->origin(v)) {
+      handle(def);
+    }
+    OptInConstDispatch::handle(v);
+  }
+};
+
+void IrGraphGenerator::handle(const Expr* e) {
+  if (!visited(e)) {
+    visited_.insert(e);
+    OptInConstDispatch::handle(e);
+  }
+};
 
 void IrGraphGenerator::handle(const TensorDomain* td) {
   std::cout << "  " << getid(td) << " [label=\"TensorDomain\", "
@@ -193,7 +235,7 @@ void IrGraphGenerator::handle(const IterDomain* id) {
     printArc(id->start(), id, "[color=gray]");
   }
   printArc(id->rawExtent(), id, "[color=gray]");
-  if (verbose_ && id->rawExtent() != id->extent()) {
+  if (detail_level_ > DetailLevel::Minimal && id->rawExtent() != id->extent()) {
     printArc(id->extent(), id, "[color=gray, style=dashed]");
   }
 }
@@ -204,15 +246,15 @@ void IrGraphGenerator::handle(const TensorIndex* ti) {
 }
 
 void IrGraphGenerator::handle(const Float* f) {
-  printValue(f, IrNodeLabel::gen(f, verbose_));
+  printValue(f, IrNodeLabel::gen(f, detail_level_));
 }
 
 void IrGraphGenerator::handle(const Int* i) {
-  printValue(i, IrNodeLabel::gen(i, verbose_));
+  printValue(i, IrNodeLabel::gen(i, detail_level_));
 }
 
 void IrGraphGenerator::handle(const NamedScalar* i) {
-  printValue(i, IrNodeLabel::gen(i, verbose_));
+  printValue(i, IrNodeLabel::gen(i, detail_level_));
 }
 
 void IrGraphGenerator::handle(const TensorView* tv) {

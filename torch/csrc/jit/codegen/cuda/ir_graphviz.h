@@ -16,29 +16,24 @@ namespace fuser {
 // representation of the Fusion IR
 class TORCH_CUDA_API IrGraphGenerator : private OptInConstDispatch {
  public:
-  static void print(const Fusion* fusion, bool verbose = false);
+  enum class DetailLevel {
+    Minimal,
+    Explicit,
+    Everything,
+  };
+
+ public:
+  static void print(
+      const Fusion* fusion,
+      DetailLevel detail_level = DetailLevel::Minimal);
 
  private:
-  IrGraphGenerator(const Fusion* fusion, bool verbose);
+  IrGraphGenerator(const Fusion* fusion, DetailLevel detail_level);
   ~IrGraphGenerator() override = default;
 
-  void handle(const Statement* s) override {
-    if (!processed(s)) {
-      OptInConstDispatch::handle(s);
-    }
-  };
-
-  void handle(const Val* v) override {
-    if (!processed(v)) {
-      OptInConstDispatch::handle(v);
-    }
-  };
-
-  void handle(const Expr* e) override {
-    if (!processed(e)) {
-      OptInConstDispatch::handle(e);
-    }
-  };
+  void handle(const Statement*) override;
+  void handle(const Val*) override;
+  void handle(const Expr*) override;
 
   void handle(const TensorDomain*) override;
   void handle(const TensorView*) override;
@@ -63,8 +58,8 @@ class TORCH_CUDA_API IrGraphGenerator : private OptInConstDispatch {
   // lookup the graph id, creating one if not found
   std::string getid(const Statement* stm);
 
-  bool processed(const Statement* s) const {
-    return id_map_.find(s) != id_map_.end();
+  bool visited(const Statement* s) const {
+    return visited_.find(s) != visited_.end();
   }
 
   void printArc(
@@ -76,8 +71,10 @@ class TORCH_CUDA_API IrGraphGenerator : private OptInConstDispatch {
   void printValue(const Val* val, const std::string& label);
 
  private:
-  const bool verbose_;
+  const DetailLevel detail_level_;
+  const Fusion* const fusion_;
   std::unordered_map<const Statement*, std::string> id_map_;
+  std::unordered_set<const Statement*> visited_;
   std::unordered_set<const Val*> inputs_;
   std::unordered_set<const Val*> outputs_;
   int next_id_ = 1;
