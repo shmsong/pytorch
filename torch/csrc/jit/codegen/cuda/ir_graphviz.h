@@ -8,6 +8,7 @@
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
+#include <vector>
 
 namespace torch {
 namespace jit {
@@ -36,6 +37,9 @@ class TORCH_CUDA_API IrGraphGenerator : private OptInConstDispatch {
   ~IrGraphGenerator() override = default;
 
   std::string generate();
+
+  void generateComputeGraph();
+  void generateScheduleGraph();
 
   void handle(const Statement*) override;
   void handle(const Val*) override;
@@ -68,7 +72,7 @@ class TORCH_CUDA_API IrGraphGenerator : private OptInConstDispatch {
     return visited_.find(s) != visited_.end();
   }
 
-  void printArc(
+  void addArc(
       const Statement* src,
       const Statement* dst,
       const std::string& style = "");
@@ -84,6 +88,8 @@ class TORCH_CUDA_API IrGraphGenerator : private OptInConstDispatch {
   std::unordered_set<const Statement*> visited_;
   std::unordered_set<const Val*> inputs_;
   std::unordered_set<const Val*> outputs_;
+  std::vector<const TensorView*> tensor_views_;
+  std::vector<std::string> arcs_;
   int next_id_ = 1;
 };
 

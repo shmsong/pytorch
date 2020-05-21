@@ -155,25 +155,28 @@ std::string IrGraphGenerator::getid(const Statement* stm) {
   }
 }
 
-// We automatically visit (handle) the arc's source and destination
-void IrGraphGenerator::printArc(
+void IrGraphGenerator::addArc(
     const Statement* src,
     const Statement* dst,
     const std::string& style) {
+  // We automatically visit (handle) the arc's source and destination
   handle(src);
   handle(dst);
-  graph_def_ << "  " << getid(src) << " -> " << getid(dst) << " " << style
-             << ";\n";
+
+  // generate and queue the arc definition
+  std::stringstream arc_def;
+  arc_def << getid(src) << " -> " << getid(dst) << " " << style;
+  arcs_.push_back(arc_def.str());
 }
 
 void IrGraphGenerator::printExpr(const Expr* expr, const std::string& label) {
-  graph_def_ << "  " << getid(expr) << " "
+  graph_def_ << "    " << getid(expr) << " "
              << "[label=\"" << label << "\", shape=oval, color=blue, "
              << "style=filled, fillcolor=azure];\n";
 }
 
 void IrGraphGenerator::printValue(const Val* val, const std::string& label) {
-  graph_def_ << "  " << getid(val) << " [label=\"" << label
+  graph_def_ << "    " << getid(val) << " [label=\"" << label
              << "\", shape=rect, color=green, fontsize=10];\n";
 }
 
@@ -182,6 +185,7 @@ std::string IrGraphGenerator::generate() {
   TORCH_CHECK(graph_def_.str().empty());
   TORCH_CHECK(visited_.empty());
 
+  // record detail level
   graph_def_ << "// detail level: ";
   switch (detail_level_) {
     case DetailLevel::ComputeOnly:
@@ -204,28 +208,28 @@ std::string IrGraphGenerator::generate() {
              << "  node [shape=circle, color=gray];\n"
              << "  edge [color=black];\n";
 
-  // inputs
-  for (const auto* input : fusion_->inputs()) {
-    handle(input);
+  // Compute graph
+  generateComputeGraph();
+
+  // Schedule graph
+  if (detail_level_ > DetailLevel::ComputeOnly) {
+    generateScheduleGraph();
   }
 
-  // outputs
-  for (const auto* output : fusion_->outputs()) {
-    handle(output);
-  }
-
-  // all expressions
-  if (detail_level_ >= DetailLevel::Explicit) {
+  // All expressions & values
+  // (These are otherwise unreacheable (dead) nodes)
+  if (detail_level_ >= DetailLevel::Verbose) {
     for (const auto* expr : fusion_->unordered_exprs()) {
       handle(expr);
     }
-  }
-
-  // all values
-  if (detail_level_ >= DetailLevel::Verbose) {
     for (const auto* val : fusion_->vals()) {
       handle(val);
     }
+  }
+
+  // Finally, print all arc definitions
+  for (const auto& arc : arcs_) {
+    graph_def_ << "  " << arc << ";\n";
   }
 
   graph_def_ << "}\n";
@@ -236,6 +240,38 @@ std::string IrGraphGenerator::generate() {
   }
 
   return graph_def_.str();
+}
+
+void IrGraphGenerator::generateComputeGraph() {
+  graph_def_ << "  subgraph cluster_compute {\n"
+             << "    label=\"compute\";\n"
+             << "    style=dashed;\n";
+
+  // Inputs
+  for (const auto* input : fusion_->inputs()) {
+    handle(input);
+  }
+
+  // Outputs
+  for (const auto* output : fusion_->outputs()) {
+    handle(output);
+  }
+
+  graph_def_ << "  }\n";
+}
+
+void IrGraphGenerator::generateScheduleGraph() {
+  graph_def_ << "  subgraph cluster_schedule {\n"
+             << "    label=\"schedule\";\n"
+             << "    style=dashed;\n";
+
+  // Connect TensorView with their TensorDomain
+  // (this will trigger the traversal of the schedule graph)
+  for (auto tv : tensor_views_) {
+    addArc(tv->domain(), tv, "[style=dashed]");
+  }
+
+  graph_def_ << "  }\n";
 }
 
 void IrGraphGenerator::handle(const Statement* s) {
@@ -260,24 +296,24 @@ void IrGraphGenerator::handle(const Expr* e) {
 };
 
 void IrGraphGenerator::handle(const TensorDomain* td) {
-  graph_def_ << "  " << getid(td) << " [label=\"TensorDomain\", "
+  graph_def_ << "    " << getid(td) << " [label=\"TensorDomain\", "
              << "shape=note, color=gray, "
              << "style=filled, fillcolor=gray90, fontsize=10];\n";
   for (auto iter_domain : td->domain()) {
-    printArc(iter_domain, td, "[color=gray]");
+    addArc(iter_domain, td, "[color=gray]");
   }
 }
 
 void IrGraphGenerator::handle(const IterDomain* id) {
-  graph_def_ << "  " << getid(id) << " [label=\"" << IrNodeLabel::gen(id)
+  graph_def_ << "    " << getid(id) << " [label=\"" << IrNodeLabel::gen(id)
              << "\", shape=cds, color=gray, fontsize=10];\n";
 
   if (!id->start()->isZeroInt()) {
-    printArc(id->start(), id, "[color=gray]");
+    addArc(id->start(), id, "[color=gray]");
   }
-  printArc(id->rawExtent(), id, "[color=gray]");
+  addArc(id->rawExtent(), id, "[color=gray]");
   if (detail_level_ > DetailLevel::Basic && id->rawExtent() != id->extent()) {
-    printArc(id->extent(), id, "[color=gray, style=dashed]");
+    addArc(id->extent(), id, "[color=gray, style=dashed]");
   }
 }
 
@@ -320,19 +356,17 @@ void IrGraphGenerator::handle(const TensorView* tv) {
                                : is_output ? "style=filled, fillcolor=lightblue"
                                            : "style=filled, fillcolor=beige";
 
-  graph_def_ << "  " << getid(tv) << " [label=\"" << label.str()
+  graph_def_ << "    " << getid(tv) << " [label=\"" << label.str()
              << "\", shape=Mrecord, color=brown, " << style << "];\n";
 
   if (const auto* compute_at_view = tv->getComputeAtView()) {
     std::stringstream arc_style;
     arc_style << "[color=red, style=dashed, label=\""
               << "ComputeAt(" << tv->getComputeAtAxis() << ")\"]";
-    printArc(tv, compute_at_view, arc_style.str());
+    addArc(tv, compute_at_view, arc_style.str());
   }
 
-  if (detail_level_ > DetailLevel::ComputeOnly) {
-    printArc(tv->domain(), tv, "[style=dashed, color=gray]");
-  }
+  tensor_views_.push_back(tv);
 }
 
 void IrGraphGenerator::handle(const UnaryOp* uop) {
@@ -342,8 +376,8 @@ void IrGraphGenerator::handle(const UnaryOp* uop) {
   printExpr(uop, label.str());
 
   // UnaryOp inputs & outputs
-  printArc(uop->in(), uop);
-  printArc(uop, uop->out());
+  addArc(uop->in(), uop);
+  addArc(uop, uop->out());
 }
 
 void IrGraphGenerator::handle(const BinaryOp* bop) {
@@ -353,9 +387,9 @@ void IrGraphGenerator::handle(const BinaryOp* bop) {
   printExpr(bop, label.str());
 
   // BinaryOp inputs & outputs
-  printArc(bop->lhs(), bop);
-  printArc(bop->rhs(), bop, "[color=blue]");
-  printArc(bop, bop->out());
+  addArc(bop->lhs(), bop);
+  addArc(bop->rhs(), bop, "[color=blue]");
+  addArc(bop, bop->out());
 }
 
 void IrGraphGenerator::handle(const ForLoop* for_loop) {
@@ -375,20 +409,20 @@ void IrGraphGenerator::handle(const Allocate* allocate) {
 
 void IrGraphGenerator::handle(const Split* split) {
   printExpr(split, IrNodeLabel::gen(split));
-  printArc(split->in(), split);
-  printArc(split, split->out());
+  addArc(split->in(), split);
+  addArc(split, split->out());
 }
 
 void IrGraphGenerator::handle(const Merge* merge) {
   printExpr(merge, IrNodeLabel::gen(merge));
-  printArc(merge->in(), merge);
-  printArc(merge, merge->out());
+  addArc(merge->in(), merge);
+  addArc(merge, merge->out());
 }
 
 void IrGraphGenerator::handle(const Reorder* reorder) {
   printExpr(reorder, IrNodeLabel::gen(reorder));
-  printArc(reorder->in(), reorder);
-  printArc(reorder, reorder->out());
+  addArc(reorder->in(), reorder);
+  addArc(reorder, reorder->out());
 }
 
 } // namespace fuser
