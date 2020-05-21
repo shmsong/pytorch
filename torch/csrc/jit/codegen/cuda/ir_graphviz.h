@@ -4,6 +4,7 @@
 #include <torch/csrc/WindowsTorchApiMacro.h>
 #include <torch/csrc/jit/codegen/cuda/dispatch.h>
 
+#include <sstream>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
@@ -23,13 +24,17 @@ class TORCH_CUDA_API IrGraphGenerator : private OptInConstDispatch {
   };
 
  public:
+  // This is the public interface to IrGraphGenerator
   static void print(
       const Fusion* fusion,
+      const std::string& filename,
       DetailLevel detail_level = DetailLevel::Minimal);
 
  private:
   IrGraphGenerator(const Fusion* fusion, DetailLevel detail_level);
   ~IrGraphGenerator() override = default;
+
+  std::string generate();
 
   void handle(const Statement*) override;
   void handle(const Val*) override;
@@ -73,6 +78,7 @@ class TORCH_CUDA_API IrGraphGenerator : private OptInConstDispatch {
  private:
   const DetailLevel detail_level_;
   const Fusion* const fusion_;
+  std::stringstream graph_def_;
   std::unordered_map<const Statement*, std::string> id_map_;
   std::unordered_set<const Statement*> visited_;
   std::unordered_set<const Val*> inputs_;

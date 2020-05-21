@@ -4,8 +4,7 @@
 #include <torch/csrc/jit/codegen/cuda/ir_graphviz.h>
 #include <torch/csrc/jit/codegen/cuda/type.h>
 
-#include <iostream>
-#include <sstream>
+#include <fstream>
 
 namespace torch {
 namespace jit {
@@ -13,6 +12,7 @@ namespace fuser {
 
 namespace {
 
+// Private helper, generating node labels for IrGraphGenerator
 class IrNodeLabel : private OptInConstDispatch {
   using DetailLevel = IrGraphGenerator::DetailLevel;
 
@@ -113,6 +113,19 @@ class IrNodeLabel : private OptInConstDispatch {
 
 } // anonymous namespace
 
+void IrGraphGenerator::print(
+    const Fusion* fusion,
+    const std::string& filename,
+    DetailLevel detail_level) {
+  // output file
+  std::ofstream dot_file(filename);
+  TORCH_CHECK(dot_file.good(), "Failed to open the IR graph file");
+
+  // generate the dot graph definition
+  IrGraphGenerator ir_graph(fusion, detail_level);
+  dot_file << ir_graph.generate();
+}
+
 IrGraphGenerator::IrGraphGenerator(
     const Fusion* fusion,
     DetailLevel detail_level)
@@ -132,6 +145,7 @@ IrGraphGenerator::IrGraphGenerator(
 std::string IrGraphGenerator::getid(const Statement* stm) {
   const auto it = id_map_.find(stm);
   if (it == id_map_.end()) {
+    // First reference, generate a new id
     std::stringstream new_id;
     new_id << "stm_" << next_id_++;
     id_map_.insert({stm, new_id.str()});
@@ -141,61 +155,84 @@ std::string IrGraphGenerator::getid(const Statement* stm) {
   }
 }
 
+// We automatically visit (handle) the arc's source and destination
 void IrGraphGenerator::printArc(
     const Statement* src,
     const Statement* dst,
     const std::string& style) {
   handle(src);
   handle(dst);
-  std::cout << "  " << getid(src) << " -> " << getid(dst) << " " << style
-            << ";\n";
+  graph_def_ << "  " << getid(src) << " -> " << getid(dst) << " " << style
+             << ";\n";
 }
 
 void IrGraphGenerator::printExpr(const Expr* expr, const std::string& label) {
-  std::cout << "  " << getid(expr) << " "
-            << "[label=\"" << label << "\", shape=oval, color=blue, "
-            << "style=filled, fillcolor=azure];\n";
+  graph_def_ << "  " << getid(expr) << " "
+             << "[label=\"" << label << "\", shape=oval, color=blue, "
+             << "style=filled, fillcolor=azure];\n";
 }
 
 void IrGraphGenerator::printValue(const Val* val, const std::string& label) {
-  std::cout << "  " << getid(val) << " [label=\"" << label
-            << "\", shape=rect, color=green, fontsize=10];\n";
+  graph_def_ << "  " << getid(val) << " [label=\"" << label
+             << "\", shape=rect, color=green, fontsize=10];\n";
 }
 
-// This is the public interface to IrGraphGenerator
-void IrGraphGenerator::print(const Fusion* fusion, DetailLevel detail_level) {
-  IrGraphGenerator ir_to_dot(fusion, detail_level);
-  std::cout << "\n//-------------------------------------\n\n";
-  std::cout << "digraph fusion_ir {\n"
-            << "  node [shape=circle, color=gray];\n"
-            << "  edge [color=black];\n";
+std::string IrGraphGenerator::generate() {
+  // IrGraphGenerator instances are not reusable
+  TORCH_CHECK(graph_def_.str().empty());
+  TORCH_CHECK(visited_.empty());
+
+  graph_def_ << "// detail level: ";
+  switch (detail_level_) {
+    case DetailLevel::Minimal:
+      graph_def_ << "minimal\n";
+      break;
+    case DetailLevel::Explicit:
+      graph_def_ << "explicit\n";
+      break;
+    case DetailLevel::Everything:
+      graph_def_ << "everything\n";
+      break;
+    default:
+      TORCH_CHECK(!"Unexpected detail level");
+  }
+
+  graph_def_ << "digraph fusion_ir {\n"
+             << "  node [shape=circle, color=gray];\n"
+             << "  edge [color=black];\n";
 
   // inputs
-  for (const auto* input : fusion->inputs()) {
-    ir_to_dot.handle(input);
+  for (const auto* input : fusion_->inputs()) {
+    handle(input);
   }
 
   // outputs
-  for (const auto* output : fusion->outputs()) {
-    ir_to_dot.handle(output);
+  for (const auto* output : fusion_->outputs()) {
+    handle(output);
   }
 
   // all expressions
-  if (detail_level >= DetailLevel::Explicit) {
-    for (const auto* expr : fusion->unordered_exprs()) {
-      ir_to_dot.handle(expr);
+  if (detail_level_ >= DetailLevel::Explicit) {
+    for (const auto* expr : fusion_->unordered_exprs()) {
+      handle(expr);
     }
   }
 
   // all values
-  if (detail_level >= DetailLevel::Everything) {
-    for (const auto* val : fusion->vals()) {
-      ir_to_dot.handle(val);
+  if (detail_level_ >= DetailLevel::Everything) {
+    for (const auto* val : fusion_->vals()) {
+      handle(val);
     }
   }
 
-  std::cout << "}\n";
-  std::cout << "\n//-------------------------------------\n\n";
+  graph_def_ << "}\n";
+
+  // Make sure that all referenced nodes have been visited
+  for (const auto& kv : id_map_) {
+    TORCH_CHECK(visited(kv.first));
+  }
+
+  return graph_def_.str();
 }
 
 void IrGraphGenerator::handle(const Statement* s) {
@@ -220,16 +257,16 @@ void IrGraphGenerator::handle(const Expr* e) {
 };
 
 void IrGraphGenerator::handle(const TensorDomain* td) {
-  std::cout << "  " << getid(td) << " [label=\"TensorDomain\", "
-            << "shape=note, color=gray, fontsize=10];\n";
+  graph_def_ << "  " << getid(td) << " [label=\"TensorDomain\", "
+             << "shape=note, color=gray, fontsize=10];\n";
   for (auto iter_domain : td->domain()) {
     printArc(iter_domain, td, "[color=gray]");
   }
 }
 
 void IrGraphGenerator::handle(const IterDomain* id) {
-  std::cout << "  " << getid(id) << " [label=\"" << IrNodeLabel::gen(id)
-            << "\", shape=cds, color=gray, fontsize=10];\n";
+  graph_def_ << "  " << getid(id) << " [label=\"" << IrNodeLabel::gen(id)
+             << "\", shape=cds, color=gray, fontsize=10];\n";
 
   if (!id->start()->isZeroInt()) {
     printArc(id->start(), id, "[color=gray]");
@@ -279,8 +316,8 @@ void IrGraphGenerator::handle(const TensorView* tv) {
                                : is_output ? "style=filled, fillcolor=lightblue"
                                            : "style=filled, fillcolor=beige";
 
-  std::cout << "  " << getid(tv) << " [label=\"" << label.str()
-            << "\", shape=Mrecord, color=brown, " << style << "];\n";
+  graph_def_ << "  " << getid(tv) << " [label=\"" << label.str()
+             << "\", shape=Mrecord, color=brown, " << style << "];\n";
 
   if (const auto* compute_at_view = tv->getComputeAtView()) {
     std::stringstream arc_style;

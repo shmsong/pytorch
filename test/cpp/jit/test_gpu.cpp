@@ -106,11 +106,15 @@ void testGPU_FusionExprEvalBasic() {
   checkIntValue(&eval_context, tv3->axis(1)->rawExtent(), 4);
   checkIntValue(&eval_context, tv3->axis(2)->rawExtent(), 128);
 
-#if 0
-  IrGraphGenerator::print(&fusion);
-  IrGraphGenerator::print(&fusion, IrGraphGenerator::DetailLevel::Explicit);
-  IrGraphGenerator::print(&fusion, IrGraphGenerator::DetailLevel::Everything);
-#endif
+  IrGraphGenerator::print(&fusion, "/home/lemo/temp/simple_default.dot");
+  IrGraphGenerator::print(
+      &fusion,
+      "/home/lemo/temp/simple_explicit.dot",
+      IrGraphGenerator::DetailLevel::Explicit);
+  IrGraphGenerator::print(
+      &fusion,
+      "/home/lemo/temp/simple_everything.dot",
+      IrGraphGenerator::DetailLevel::Everything);
 }
 
 void testGPU_FusionExprEvalComplex() {
