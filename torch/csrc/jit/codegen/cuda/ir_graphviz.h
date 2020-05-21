@@ -18,9 +18,10 @@ namespace fuser {
 class TORCH_CUDA_API IrGraphGenerator : private OptInConstDispatch {
  public:
   enum class DetailLevel {
-    Minimal,
-    Explicit,
-    Everything,
+    ComputeOnly, // Only dataflow (compute) nodes
+    Basic, // Compute + schedule, with minimal details (default)
+    Explicit, // Additional details (ex. symbolic names for scalar constants)
+    Verbose, // Includes all values and dead definitions
   };
 
  public:
@@ -28,7 +29,7 @@ class TORCH_CUDA_API IrGraphGenerator : private OptInConstDispatch {
   static void print(
       const Fusion* fusion,
       const std::string& filename,
-      DetailLevel detail_level = DetailLevel::Minimal);
+      DetailLevel detail_level = DetailLevel::Basic);
 
  private:
   IrGraphGenerator(const Fusion* fusion, DetailLevel detail_level);

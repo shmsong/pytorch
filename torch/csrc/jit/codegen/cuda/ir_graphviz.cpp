@@ -19,7 +19,7 @@ class IrNodeLabel : private OptInConstDispatch {
  public:
   static std::string gen(
       const Statement* node,
-      DetailLevel detail_level = DetailLevel::Minimal) {
+      DetailLevel detail_level = DetailLevel::Basic) {
     IrNodeLabel generator(detail_level);
     generator.OptInConstDispatch::handle(node);
     return generator.label_.str();
@@ -35,7 +35,7 @@ class IrNodeLabel : private OptInConstDispatch {
     if (f->isSymbolic()) {
       label_ << "f" << f->name();
     } else {
-      if (detail_level_ > DetailLevel::Minimal) {
+      if (detail_level_ > DetailLevel::Basic) {
         label_ << "f" << f->name() << "=";
       }
       label_ << std::fixed << std::setprecision(2) << *f->value();
@@ -46,7 +46,7 @@ class IrNodeLabel : private OptInConstDispatch {
     if (i->isSymbolic()) {
       label_ << "i" << i->name();
     } else {
-      if (detail_level_ > DetailLevel::Minimal) {
+      if (detail_level_ > DetailLevel::Basic) {
         label_ << "i" << i->name() << "=";
       }
       label_ << *i->value();
@@ -184,14 +184,17 @@ std::string IrGraphGenerator::generate() {
 
   graph_def_ << "// detail level: ";
   switch (detail_level_) {
-    case DetailLevel::Minimal:
+    case DetailLevel::ComputeOnly:
+      graph_def_ << "compute only\n";
+      break;
+    case DetailLevel::Basic:
       graph_def_ << "minimal\n";
       break;
     case DetailLevel::Explicit:
       graph_def_ << "explicit\n";
       break;
-    case DetailLevel::Everything:
-      graph_def_ << "everything\n";
+    case DetailLevel::Verbose:
+      graph_def_ << "verbose\n";
       break;
     default:
       TORCH_CHECK(!"Unexpected detail level");
@@ -219,7 +222,7 @@ std::string IrGraphGenerator::generate() {
   }
 
   // all values
-  if (detail_level_ >= DetailLevel::Everything) {
+  if (detail_level_ >= DetailLevel::Verbose) {
     for (const auto* val : fusion_->vals()) {
       handle(val);
     }
@@ -258,7 +261,8 @@ void IrGraphGenerator::handle(const Expr* e) {
 
 void IrGraphGenerator::handle(const TensorDomain* td) {
   graph_def_ << "  " << getid(td) << " [label=\"TensorDomain\", "
-             << "shape=note, color=gray, fontsize=10];\n";
+             << "shape=note, color=gray, "
+             << "style=filled, fillcolor=gray90, fontsize=10];\n";
   for (auto iter_domain : td->domain()) {
     printArc(iter_domain, td, "[color=gray]");
   }
@@ -272,7 +276,7 @@ void IrGraphGenerator::handle(const IterDomain* id) {
     printArc(id->start(), id, "[color=gray]");
   }
   printArc(id->rawExtent(), id, "[color=gray]");
-  if (detail_level_ > DetailLevel::Minimal && id->rawExtent() != id->extent()) {
+  if (detail_level_ > DetailLevel::Basic && id->rawExtent() != id->extent()) {
     printArc(id->extent(), id, "[color=gray, style=dashed]");
   }
 }
@@ -326,7 +330,9 @@ void IrGraphGenerator::handle(const TensorView* tv) {
     printArc(tv, compute_at_view, arc_style.str());
   }
 
-  printArc(tv->domain(), tv, "[style=dashed, color=gray]");
+  if (detail_level_ > DetailLevel::ComputeOnly) {
+    printArc(tv->domain(), tv, "[style=dashed, color=gray]");
+  }
 }
 
 void IrGraphGenerator::handle(const UnaryOp* uop) {
