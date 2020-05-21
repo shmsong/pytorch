@@ -270,17 +270,17 @@ const std::set<Expr*>& Fusion::unordered_exprs() const noexcept {
   return expr_set_;
 }
 
-std::set<Expr*> Fusion::uses(Val* val) const {
+std::set<Expr*, Fusion::StmCmp> Fusion::uses(Val* val) const {
   assertInFusion(val, "Cannot detect where val was used, ");
   if (uses_.find(val) != uses_.end()) {
     auto ret = uses_.find(val)->second;
     return ret;
   }
-  return std::set<Expr*>();
+  return std::set<Expr*, StmCmp>();
 }
 
 Expr* Fusion::origin(Val* val) const {
-  assertInFusion(val, "Cannot dettect the origin of val, ");
+  assertInFusion(val, "Cannot detect the origin of val, ");
   auto it = origin_.find(val);
 
   if (it == origin_.end())
@@ -290,7 +290,7 @@ Expr* Fusion::origin(Val* val) const {
 }
 
 const Expr* Fusion::origin(const Val* val) const {
-  assertInFusion(val, "Cannot dettect the origin of val, ");
+  assertInFusion(val, "Cannot detect the origin of val, ");
   auto it = origin_.find(const_cast<Val*>(val));
   if (it == origin_.end())
     return nullptr;

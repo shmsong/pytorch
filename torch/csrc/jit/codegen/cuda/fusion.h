@@ -106,6 +106,13 @@ struct InputsOf : public IterVisitor {
  */
 
 struct TORCH_CUDA_API Fusion : public IRInputOutput {
+  struct StmCmp {
+    bool operator()(const Statement* lhs, const Statement* rhs) const {
+      return lhs->name() < rhs->name();
+    }
+  };
+
+ public:
   Fusion() {}
 
   // Not copyable
@@ -186,7 +193,7 @@ struct TORCH_CUDA_API Fusion : public IRInputOutput {
   const std::set<Expr*>& unordered_exprs() const noexcept;
 
   // Return all Exprs that use val
-  std::set<Expr*> uses(Val* val) const;
+  std::set<Expr*, StmCmp> uses(Val* val) const;
 
   // Return the Expr that produces val
   Expr* origin(Val* val) const; // rename to def?
@@ -218,7 +225,7 @@ struct TORCH_CUDA_API Fusion : public IRInputOutput {
 
   // Dependency tracking for Vals. Where did it come from? Where is it used?
   std::unordered_map<Val*, Expr*> origin_;
-  std::unordered_map<Val*, std::set<Expr*>> uses_;
+  std::unordered_map<Val*, std::set<Expr*, StmCmp>> uses_;
 };
 
 } // namespace fuser

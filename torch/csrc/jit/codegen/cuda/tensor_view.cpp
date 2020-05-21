@@ -145,7 +145,7 @@ TensorView* TensorView::computeAt(TensorView* consumer, int axis) {
   // consumer
   for (Expr* other_use : FusionGuard::getCurFusion()->uses(this)) {
     for (Val* maybe_other_consumer : other_use->outputs()) {
-      if (*(maybe_other_consumer->getValType()) != ValType::TensorView)
+      if (maybe_other_consumer->getValType().value() != ValType::TensorView)
         continue;
 
       TensorView* other_consumer =
