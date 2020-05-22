@@ -399,7 +399,7 @@ struct TORCH_CUDA_API ForLoop : public Expr {
     return parent_scope_;
   }
   bool hasParentScope() const noexcept {
-    return parent_scope_ == nullptr;
+    return parent_scope_ == nullptr; // != nullptr? is it really needed?
   }
 
  private:

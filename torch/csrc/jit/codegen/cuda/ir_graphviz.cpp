@@ -311,15 +311,23 @@ void IrGraphGenerator::handle(const IterDomain* id) {
   if (!id->start()->isZeroInt()) {
     addArc(id->start(), id, "[color=gray]");
   }
+
   addArc(id->rawExtent(), id, "[color=gray]");
+
   if (detail_level_ > DetailLevel::Basic && id->rawExtent() != id->extent()) {
     addArc(id->extent(), id, "[color=gray, style=dashed]");
   }
 }
 
 void IrGraphGenerator::handle(const TensorIndex* ti) {
-  // TODO
-  OptInConstDispatch::handle(ti);
+  graph_def_ << "    " << getid(ti) << " [label=\"TensorIndex\", "
+             << "shape=rarrow, color=gray, fontsize=10];\n";
+
+  addArc(ti, ti->view());
+
+  for (const auto index : ti->indices()) {
+    addArc(index, ti);
+  }
 }
 
 void IrGraphGenerator::handle(const Float* f) {
@@ -393,18 +401,26 @@ void IrGraphGenerator::handle(const BinaryOp* bop) {
 }
 
 void IrGraphGenerator::handle(const ForLoop* for_loop) {
-  // TODO
-  OptInConstDispatch::handle(for_loop);
+  printExpr(for_loop, "ForLoop");
+  addArc(for_loop->index(), for_loop);
+  addArc(for_loop->iter_domain(), for_loop);
+  if (for_loop->parentScope()) {
+    addArc(for_loop, for_loop->parentScope());
+  }
 }
 
 void IrGraphGenerator::handle(const IfThenElse* if_then_else) {
-  // TODO
-  OptInConstDispatch::handle(if_then_else);
+  printExpr(if_then_else, "IfThenElse");
+  addArc(if_then_else->cond(), if_then_else);
+  if (if_then_else->parentScope()) {
+    addArc(if_then_else, if_then_else->parentScope());
+  }
 }
 
 void IrGraphGenerator::handle(const Allocate* allocate) {
-  // TODO
-  OptInConstDispatch::handle(allocate);
+  printExpr(allocate, "Allocate");
+  addArc(allocate->extent(), allocate);
+  addArc(allocate->buffer(), allocate);
 }
 
 void IrGraphGenerator::handle(const Split* split) {
