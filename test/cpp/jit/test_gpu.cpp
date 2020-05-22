@@ -106,7 +106,19 @@ void testGPU_FusionExprEvalBasic() {
   checkIntValue(&eval_context, tv3->axis(1)->rawExtent(), 4);
   checkIntValue(&eval_context, tv3->axis(2)->rawExtent(), 128);
 
-  IrGraphGenerator::print(&fusion, "/home/lemo/temp/simple_default.dot");
+  // lower the IR
+  std::stringstream str_stream;
+  GPULower gpulw(&fusion);
+  gpulw.printKernel(str_stream, "KERNEL_NAME");
+
+  IrGraphGenerator::print(
+      &fusion,
+      "/home/lemo/temp/simple_compute.dot",
+      IrGraphGenerator::DetailLevel::ComputeOnly);
+  IrGraphGenerator::print(
+      &fusion,
+      "/home/lemo/temp/simple_default.dot",
+      IrGraphGenerator::DetailLevel::Basic);
   IrGraphGenerator::print(
       &fusion,
       "/home/lemo/temp/simple_explicit.dot",
@@ -114,7 +126,7 @@ void testGPU_FusionExprEvalBasic() {
   IrGraphGenerator::print(
       &fusion,
       "/home/lemo/temp/simple_everything.dot",
-      IrGraphGenerator::DetailLevel::Everything);
+      IrGraphGenerator::DetailLevel::Verbose);
 }
 
 void testGPU_FusionExprEvalComplex() {
@@ -177,11 +189,6 @@ void testGPU_FusionExprEvalComplex() {
   checkIntValue(&eval_context, tv6->axis(0)->rawExtent(), 32);
   checkIntValue(&eval_context, tv6->axis(1)->rawExtent(), 4);
   checkIntValue(&eval_context, tv6->axis(2)->rawExtent(), 128);
-#endif
-
-#if 0
-  IrGraphGenerator::print(&fusion);
-  IrGraphGenerator::print(&fusion, IrGraphGenerator::DetailLevel::Explicit);
 #endif
 }
 
