@@ -29,7 +29,7 @@ class TORCH_CUDA_API IrGraphGenerator : private OptInConstDispatch {
   // This is the public interface to IrGraphGenerator
   static void print(
       const Fusion* fusion,
-      const std::string& filename,
+      const char* filename,
       DetailLevel detail_level = DetailLevel::Basic);
 
  private:

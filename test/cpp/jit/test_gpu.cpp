@@ -106,11 +106,6 @@ void testGPU_FusionExprEvalBasic() {
   checkIntValue(&eval_context, tv3->axis(1)->rawExtent(), 4);
   checkIntValue(&eval_context, tv3->axis(2)->rawExtent(), 128);
 
-  // lower the IR
-  std::stringstream str_stream;
-  GPULower gpulw(&fusion);
-  gpulw.printKernel(str_stream, "KERNEL_NAME");
-
   IrGraphGenerator::print(
       &fusion,
       "/home/lemo/temp/simple_compute.dot",

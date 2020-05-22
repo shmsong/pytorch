@@ -115,7 +115,7 @@ class IrNodeLabel : private OptInConstDispatch {
 
 void IrGraphGenerator::print(
     const Fusion* fusion,
-    const std::string& filename,
+    const char* filename,
     DetailLevel detail_level) {
   // output file
   std::ofstream dot_file(filename);
