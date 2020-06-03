@@ -29,52 +29,24 @@ namespace {
 typedef Val* CgValue;
 typedef Expr* CgOp;
 
-typedef void (*ParseFuncPtr)(const Node*, std::unordered_map<size_t, CgValue>&);
-typedef bool (*MergeQueryFuncPtr)(const Node*);
-
-std::vector<int> reductionAxes(TensorView* tv) {
-  size_t n_dims = tv->nDims();
-  std::vector<int> reduction_axes;
-  for (size_t i = 0; i < n_dims; i++) {
-    if (tv->axis(i)->isReduction()) {
-      reduction_axes.emplace_back(i);
-    }
-  }
-  return reduction_axes;
-}
-
-// coalesces all reduction to the right side and returns total number of
-// reduction axes
-size_t coalescReduction(TensorView* tv) {
-  auto reduction_axes = reductionAxes(tv);
-  size_t n_dims = tv->nDims();
-  std::unordered_map<int, int> coalesc_permute;
-  for (size_t i = 0; i < reduction_axes.size(); i++) {
-    size_t new_pos = i + n_dims - reduction_axes.size();
-    if (new_pos == size_t(reduction_axes[i])) {
-      break;
-    } else {
-      coalesc_permute[reduction_axes[i]] = new_pos;
-    }
-  }
-  if (!coalesc_permute.empty()) {
-    tv->reorder(coalesc_permute);
-  }
-  return reduction_axes.size();
-}
+typedef void (
+    *ParseFuncPtr)(const Node* const, std::unordered_map<size_t, CgValue>&);
+typedef bool (
+    *MergeQueryFuncPtr)(const Node* const);
 
 // TODO: add a mutex to make it thread safe.
 class IrParser {
   class RegistrationEntry {
    public:
     RegistrationEntry(ParseFuncPtr parse_f, MergeQueryFuncPtr merge_f = nullptr)
-        : parse_f_(parse_f), merge_f_(merge_f) {}
+     : parse_f_(parse_f), merge_f_(merge_f) {}
 
-    void parse(const Node* node, std::unordered_map<size_t, CgValue>& values) {
+    void parse(const Node* const node, std::unordered_map<size_t, CgValue>& values) {
       parse_f_(node, values);
     }
 
-    bool is_compatible(const Node* node) {
+    bool is_compatible(const Node* const node) {
+      return true;
       if (merge_f_ == nullptr) {
         return true;
       }
@@ -348,17 +320,9 @@ class IrParser {
   static void registerParseRule(
       std::shared_ptr<Operator>& op,
       ParseFuncPtr parse_fn,
-      MergeQueryFuncPtr merge_query_fn = nullptr,
-      bool is_reduction = false) {
+      MergeQueryFuncPtr merge_query_fn = nullptr) {
     jit_operator_registry_[Symbol::fromQualString(op->schema().name())]
-        .emplace_back(
-            std::piecewise_construct,
-            std::forward_as_tuple(op),
-            std::forward_as_tuple(parse_fn, merge_query_fn));
-    if (is_reduction) {
-      jit_reduction_op_registry_.emplace(
-          Symbol::fromQualString(op->schema().name()));
-    }
+        .emplace_back(std::piecewise_construct, std::forward_as_tuple(op), std::forward_as_tuple(parse_fn, merge_query_fn));
   }
 
  private:
@@ -804,8 +768,7 @@ class IrParser {
 
 std::unordered_map<
     Symbol,
-    std::vector<
-        std::pair<std::shared_ptr<Operator>, IrParser::RegistrationEntry>>>
+    std::vector<std::pair<std::shared_ptr<Operator>, IrParser::RegistrationEntry>>>
     IrParser::jit_operator_registry_;
 std::unordered_set<Symbol> IrParser::jit_reduction_op_registry_;
 bool IrParser::init_registry_ = true;
