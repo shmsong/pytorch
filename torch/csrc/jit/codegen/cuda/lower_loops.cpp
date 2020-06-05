@@ -275,7 +275,9 @@ void LoopNestGenerator::pushAlloc(TensorView* tv) {
   std::vector<Val*> alloc_dims;
   for (auto i = alloc_pos; i < tv->nDims(); i++) {
     IterDomain* dim = tv->getComputeAtAxis(i).first;
-    if (dim->isThreadDim() || dim->isReduction())
+    if ((tv->memory_type_ == MemoryType::Shared && dim->isBlockDim()) ||
+        (tv->memory_type_ == MemoryType::Local && dim->isThread()) ||
+        dim->isReduction())
       continue;
     alloc_dims.push_back(dim->extent());
   }
