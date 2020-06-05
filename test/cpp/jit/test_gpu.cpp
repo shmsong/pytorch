@@ -1,4 +1,4 @@
-#if defined(USE_CUDA)
+// #if defined(USE_CUDA)
 #include <test/cpp/jit/test_base.h>
 
 #include <torch/csrc/jit/codegen/cuda/arith.h>
@@ -2536,13 +2536,14 @@ void testGPU_FusionReduction4() {
   int tidy = 4;
   int tidx = 5;
 
-  tv1->split(-2, tidy);
+  int dim1 = 11;
 
+  tv1->split(-2, tidy);
+  
   TensorView* tv2 = tv1->rFactor({-3});
 
   tv0->computeAt(tv1, 1);
-  tv2->computeAt(tv1, 1);
-
+    
   tv1->axis(0)->parallelize(ParallelType::BIDy);
 
   for (auto* val : fusion.vals()) {
@@ -2559,7 +2560,7 @@ void testGPU_FusionReduction4() {
   torch::jit::fuser::cuda::compileKernel(&prog);
 
   auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
-  at::Tensor input = at::randn({bidy, tidy, bidx}, options);
+  at::Tensor input = at::randn({bidy, dim1, bidx}, options);
 
   at::Tensor cg_output = at::empty({bidy, bidx}, options);
 
@@ -2615,4 +2616,4 @@ void testGPU_FusionSimpleBCast() {
 
 } // namespace jit
 } // namespace torch
-#endif // #if defined(USE_CUDA)
+// #endif // #if defined(USE_CUDA)
