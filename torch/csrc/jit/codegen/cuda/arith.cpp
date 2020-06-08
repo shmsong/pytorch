@@ -397,7 +397,7 @@ TensorView* newForReduction(TensorView* tv, std::vector<unsigned int> axes) {
 
 TensorView* reductionOp(
     BinaryOpType reduction_op_type,
-    const std::vector<int>& axes,
+    const std::vector<int64_t>& axes,
     Val* init,
     TensorView* tv) {
   TORCH_CHECK(
@@ -409,9 +409,9 @@ TensorView* reductionOp(
       "Reducing a tensor once it's gone under transformations is not permitted at this time. Please set reductions before calling split/merge/computeAt.");
 
   std::vector<unsigned int> uint_axes;
-  for (int axis : axes) {
+  for (int64_t axis : axes) {
     if (axis < 0)
-      axis += int(tv->nDims());
+      axis += int64_t(tv->nDims());
 
     TORCH_CHECK(
         axis >= 0 && (unsigned int)axis < tv->nDims(),
@@ -431,7 +431,7 @@ TensorView* reductionOp(
   return out;
 }
 
-TORCH_CUDA_API TensorView* sum(TensorView* v1, const std::vector<int>& axes) {
+TORCH_CUDA_API TensorView* sum(TensorView* v1, const std::vector<int64_t>& axes) {
   Val* init;
   switch (v1->getDataType().value()) {
     case (DataType::Float):
