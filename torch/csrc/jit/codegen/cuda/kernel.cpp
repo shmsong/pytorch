@@ -325,6 +325,7 @@ void compileKernel(CudaKernel* entry) {
   std::string code;
   std::string func_name;
   std::tie(func_name, code) = codeGeneration(entry->fusion_.get());
+  std::cout << "\n---code gen---\n" << code << "\n------\n" <<std::endl;
 
   static int32_t compiled_kernel_id = 0;
 
