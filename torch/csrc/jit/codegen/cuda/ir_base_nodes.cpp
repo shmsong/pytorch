@@ -64,20 +64,24 @@ class ConstCheck : OptOutConstDispatch {
  private:
   bool is_const_ = true;
 
-  void handle(const Bool* b) override {
+  void handle(const Bool* const b) override {
     is_const_ = is_const_ && b->isConst();
   }
 
-  void handle(const Float* f) override {
+  void handle(const Float* const f) override {
     is_const_ = is_const_ && f->isConst();
   }
 
-  void handle(const Half* h) override {
+  void handle(const Half* const h) override {
     is_const_ = is_const_ && h->isConst();
   }
 
-  void handle(const Int* i) override {
+  void handle(const Int* const i) override {
     is_const_ = is_const_ && i->isConst();
+  }
+
+  void handle(const NamedScalar* const ns) override {
+    is_const_ = is_const_ && false;
   }
 
   void handle(const NamedScalar* ns) override {
@@ -90,7 +94,7 @@ class ConstCheck : OptOutConstDispatch {
     }
   }
 
-  void handle(const Val* val) override {
+  void handle(const Val* const val) override {
     const Expr* orig = FusionGuard::getCurFusion()->origin(val);
     if (orig != nullptr)
       handle(orig);
