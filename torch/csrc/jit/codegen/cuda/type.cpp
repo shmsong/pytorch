@@ -475,6 +475,13 @@ std::string stringifyThread(const ParallelType ptype) {
   return parallel_type2string(ptype);
 }
 
+std::string stringifyThread(const ParallelType ptype) {
+  TORCH_INTERNAL_ASSERT(
+      parallel_type_string_map.count(ptype) != 0,
+      "No string found for provided parallel type.");
+  return parallel_type_string_map[ptype];
+}
+
 TORCH_CUDA_API c10::optional<std::string> cast_func_str(
     const std::pair<DataType, DataType>& cast) {
   const char* str = supported_casts2string(cast);

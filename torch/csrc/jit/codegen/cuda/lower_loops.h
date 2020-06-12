@@ -38,6 +38,10 @@ struct TORCH_CUDA_API LoopNestGenerator : public OptOutDispatch {
   // Track the active computeAt scope, and what view we're "computeAt-ing" into
   std::vector<std::pair<IterDomain*, TensorView*>> compute_at_scope;
 
+  // Predicates from ThreadPredicates that we will extend to reduction buffer
+  // initialization
+  std::unordered_map<const TensorView*, Bool*>& thread_predicates_;
+
   // Create, place, and return the allocation for tv
   Expr* pushAlloc(TensorView*);
 
