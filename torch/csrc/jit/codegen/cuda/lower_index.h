@@ -10,8 +10,9 @@ namespace torch {
 namespace jit {
 namespace fuser {
 
-class TORCH_CUDA_API IndexLowering : public OptOutMutator {
+struct TORCH_CUDA_API IndexLowering : public OptOutMutator {
  private:
+  Fusion* const fusion_;
   std::vector<Expr*> lowered_exprs;
   Expr* active_scope = nullptr;
 
@@ -36,12 +37,14 @@ class TORCH_CUDA_API IndexLowering : public OptOutMutator {
   Statement* mutate(BroadcastOp*) final;
   void generate(const std::vector<Expr*>& exprs);
 
+  IndexLowering(Fusion* _fusion) : fusion_(_fusion) {}
+
  public:
   static std::vector<Expr*> getIndexedExprs(
       Fusion* fusion,
       std::vector<Expr*> incoming_exprs) {
     FusionGuard fg(fusion);
-    IndexLowering il;
+    IndexLowering il(fusion);
     il.generate(incoming_exprs);
     return il.lowered_exprs;
   }

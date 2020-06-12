@@ -24,7 +24,7 @@ namespace fuser {
  * nests to initialize reduction buffers.
  *
  */
-class TORCH_CUDA_API LoopNestGenerator : public OptOutDispatch {
+struct TORCH_CUDA_API LoopNestGenerator : public OptOutDispatch {
  private:
   // Lowered exprs to return
   std::vector<Expr*> lowered_exprs;
@@ -37,9 +37,6 @@ class TORCH_CUDA_API LoopNestGenerator : public OptOutDispatch {
 
   // Track the active computeAt scope, and what view we're "computeAt-ing" into
   std::vector<std::pair<IterDomain*, TensorView*>> compute_at_scope;
-
-  // Create, place, and return the allocation for tv
-  Expr* pushAlloc(TensorView*);
 
   // Create, place, and return the allocation for tv
   Expr* pushAlloc(TensorView*);
@@ -59,9 +56,9 @@ class TORCH_CUDA_API LoopNestGenerator : public OptOutDispatch {
   // more details
   void updateLoopNest(TensorView*);
 
-  // Update for loop structure based on this TensorView, if there's an
-  // allocation stmt, send it in so we can make sure that we insert this
-  // initialization after it
+  // Initialize a buffer to init_val. If this buffer is in smem or registers,
+  // pass in its allocation statement so we can make sure that we insert this
+  // initialization comes after the allocation.
   void initReduction(TensorView* tv, Val* init_val, Expr* alloc_expr = nullptr);
 
   // Check if expr is a TV op and handle accordingly.

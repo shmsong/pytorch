@@ -307,9 +307,8 @@ class TORCH_CUDA_API TensorView : public Val {
   friend TORCH_CUDA_API TransformReplay;
   friend TORCH_CUDA_API OptOutMutator;
   friend TORCH_CUDA_API LoopNestGenerator;
-  friend ComputeAt;
-  friend void IrFixComputeAt(Fusion*);
-  friend void IrAdjustMemoryTypes(Fusion* fusion);
+  friend void IRFixComputeAt(Fusion*);
+  friend void IRReplaceSizes();
 
  protected:
   // Make an exact copy of this tensor (similar to clone()), however, also grabs
