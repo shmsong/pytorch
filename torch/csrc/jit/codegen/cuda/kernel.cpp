@@ -542,29 +542,46 @@ void runKernel(
 
   // TODO: Proper API to establish reasonable launch configurations;
   // Naive launch config;
-  const size_t numel = outputs[0].numel();
+  size_t numel = outputs[0].numel();
 
-  int blocks = 1;
-  int thread_x = 1;
-  int thread_y = 1;
+  int blocks;
+  int thread_x;
+  int thread_y;
   if (!entry->reduction_axes_.empty()) {
     // TODO: MAJOR HACK! Expr evaluation makes launch configuration much easier
     blocks = numel;
-    // Translated to `fcd_reduction`
-    if (entry->reduction_axes_.back() ==
-        outputs[0].dim() + ((int)entry->reduction_axes_.size()) - 1) {
-      thread_x = kFcdReductionThreadX;
+    if (entry->reduction_axes_.back() == outputs[0].dim()-1) {
+      thread_x = 128;
       thread_y = 1;
     } else {
-      thread_x = kNonFcdReductionThreadX;
-      thread_y = kNonFcdReductionThreadY;
+      thread_x = 32;
+      thread_y = 4;
     }
+    // for (auto& input : inputs) {
+    //   // TODO: MAJOR HACK! This assumes all inputs are of the same shape, hence
+    //   //       we decide the launch config on the shape of first tensor input
+    //   if (input.isTensor()) {
+    //     size_t inp_numel = input.toTensor().numel();
+    //     // check if we are doing fastest channel dimension reduction;
+    //     if (entry->reduction_axes_.back() == outputs[0].dim()-1) {
+    //       thread_x = 128;
+    //       thread_y = 1;
+    //     } else {
+    //       thread_x = 32;
+    //       thread_y = 4;
+    //     }
+    //     blocks = 
+    //     break;
+    //   } else {
+    //     continue;
+    //   }
+    // }
   } else {
-    // TODO: we can't randomly clap down this until we got striding.
-    blocks = ceilDiv(numel, kPwThreadX * entry->unroll_factor_);
-    thread_x = kPwThreadX;
+    blocks = ceilDiv(numel, 128 * entry->unroll_factor_);
+    thread_x = 128;
     thread_y = 1;
   }
+  // TODO: we can't randomly clap down this until we got striding.
   const auto nBlocks = blocks;
   const auto nThreadx = thread_x;
   const auto nThready = thread_y;
@@ -576,7 +593,12 @@ void runKernel(
   // from I/O expected by the generated CUDA kernel.
   for (auto& input : inputs) {
     if (input.isTensor()) {
-      kernel_args.push(input.toTensor(), broadcasted_shape);
+      //if (has_reduction) {
+      if (!entry->reduction_axes_.empty()) {
+        kernel_args.push(input.toTensor());
+      } else {
+        kernel_args.push(input.toTensor(), outputs[0].sizes());
+      }
     } else {
       kernel_args.push(input);
     }
