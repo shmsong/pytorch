@@ -504,6 +504,21 @@ size_t dataTypeSize(DataType type) {
   }
 }
 
+size_t dataTypeSize(DataType type) {
+  switch (type) {
+    case DataType::Bool:
+      return sizeof(bool);
+    case DataType::Float:
+      return 4;
+    case DataType::Half:
+      return 2;
+    case DataType::Int:
+      return 4;
+    default:
+      TORCH_INTERNAL_ASSERT(false, "Size undefined for data type, ", type);
+  }
+}
+
 } // namespace fuser
 } // namespace jit
 } // namespace torch
