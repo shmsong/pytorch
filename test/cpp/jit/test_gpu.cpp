@@ -65,9 +65,10 @@ void testGPU_IrGraphGenerator() {
   TensorView* tv0 = makeDummyTensor(2);
   fusion.addInput(tv0);
 
+  TensorView* tv1 = mul(tv0, new Float(-1.0));
   TensorView* tv2 = add(tv0, new Float(3.141));
   TensorView* tv3 = broadcast(tv0, {false, true, false, true});
-  TensorView* tv4 = reductionOp(BinaryOpType::Add, {2}, new Float(0), tv3);
+  TensorView* tv4 = reductionOp(BinaryOpType::Add, {1}, new Float(0), tv3);
   TensorView* tv5 = clamp(tv4, new Float(0.f), new Float(1.f));
   TensorView* tv6 = add(tv2, tv2);
 
