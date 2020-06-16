@@ -78,8 +78,7 @@ class CudaFusionManager {
       int32_t kernel_id,
       std::shared_ptr<Graph>& graph,
       const at::ArrayRef<IValue> inputs,
-      const std::vector<at::Tensor>& outputs,
-      const std::vector<int64_t>& broadcasted_shape) {
+      const std::vector<at::Tensor>& outputs) {
     std::lock_guard<std::mutex> guard(mutex_);
     TORCH_CHECK(
         kernel_cache_.count(kernel_id) != 0, "kernel id not recognized");

@@ -35,7 +35,7 @@ Expr* Statement::asExpr() {
   return static_cast<Expr*>(this);
 }
 
-void Statement::print() const {
+void Statement::print() {
   IRPrinter ir_printer(std::cout);
   ir_printer.handle(this);
   std::cout << std::endl;

@@ -532,8 +532,7 @@ void compileKernel(CudaKernel* entry) {
 void runKernel(
     CudaKernel* entry,
     const at::ArrayRef<IValue> inputs,
-    const std::vector<at::Tensor>& outputs,
-    const std::vector<int64_t>& broadcasted_shape) {
+    const std::vector<at::Tensor>& outputs) {
   validateKernelArgs(*entry, inputs, outputs);
 
   const auto prior_device = at::cuda::current_device();
