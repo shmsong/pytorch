@@ -3058,6 +3058,19 @@ void testGPU_FusionGridReduction6() {
 }
 
 bool reduction_scheduler(Fusion *fusion, const at::ArrayRef<IValue> &inputs) {
+  // TODO: I am making a larger initial assumption that reductions are
+  //       2D at this point to make the issue easier, right now.
+
+  // Find Reduction TensorView
+  TensorView* red_tv = nullptr;
+  for (auto &expr : fusion->exprs(/*from_outputs_only*/true)) {
+	if(expr->type() == ExprType::ReductionOp) {
+      red_tv = static_cast<TensorView*>(expr->output(0));
+    }
+  }
+  if (red_tv == nullptr) // No reduction found
+    return false;
+
   EvaluationContext eval_context(fusion);
 
   // I am making some basic assumptions
@@ -3074,20 +3087,14 @@ bool reduction_scheduler(Fusion *fusion, const at::ArrayRef<IValue> &inputs) {
     }
   }
 
-  // Find Reduction TensorView
-  TensorView* red_tv = nullptr;
-  for (auto &expr : fusion->exprs(/*from_outputs_only*/true)) {
-	if(expr->type() == ExprType::ReductionOp) {
-      red_tv = static_cast<TensorView*>(expr->output(0));
-    }
-  }
-  TORCH_CHECK(red_tv != nullptr, "No reduction found in fusion graph!");
-
   // Evaluate Dimensions of Reduction TensorView
   auto red_ids = red_tv->domain()->domain();
-  std::vector<Int::ScalarType> red_dims(red_ids.size());
+  std::vector<Int::ScalarType> red_dims(red_ids.size(), 0);
+  size_t red_idx = 0;
   for(size_t i = 0; i < red_ids.size(); ++i) {
     red_dims[i] = ExpressionEvaluator::evaluate(red_ids[i]->extent(), &eval_context).value();
+    if (red_ids[i]->isReduction())
+      red_idx = i;
   }
 
   std::cout << "Reduction Dims: [";
@@ -3096,7 +3103,33 @@ bool reduction_scheduler(Fusion *fusion, const at::ArrayRef<IValue> &inputs) {
   }
   std::cout << "]" << std::endl;
 
-  return false;
+  // Heuristic Definition
+  // TODO: Need to factor in unrolling
+  // TODO: Need to get rid of magic numbers.  These should be defined elsewhere.
+  if (red_idx == (red_dims.size()-1)) {
+    if(red_dims[red_idx] >= 128) {
+      red_tv->split(red_idx, 128);
+      auto red_rf_tv = red_tv->rFactor({-2});
+
+      // TODO: How do I set blocks and threads to other tensors besides those of the reduction?
+
+      red_rf_tv->axis(0)->parallelize(ParallelType::BIDx);
+      red_tv->axis(0)->parallelize(ParallelType::BIDx);
+
+      red_rf_tv->axis(-1)->parallelize(ParallelType::TIDx);
+      red_tv->axis(-1)->parallelize(ParallelType::TIDx);
+    } else {
+      // Simply Set blocks/threads
+      red_tv->axis(0)->parallelize(ParallelType::BIDx);
+      red_tv->axis(-1)->parallelize(ParallelType::TIDx);
+    }
+  } else {
+    red_tv->split(-1, 64);
+    red_tv->axis(0)->parallelize(ParallelType::BIDx);
+    red_tv->axis(-1)->parallelize(ParallelType::TIDx);
+  }
+
+  return true;
 }
 
 void testGPU_FusionReductionScheduler() {
@@ -3120,9 +3153,18 @@ void testGPU_FusionReductionScheduler() {
 
   auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
   at::Tensor input = at::rand({bid_x, tid_x}, options);
+  at::Tensor cg_output = at::empty({bid_x}, options);
 
+  // Apply reduction heuristic
   const at::ArrayRef<IValue> inputs({input});
-  bool success = reduction_scheduler(prog.fusion_.get(), inputs);
+  TORCH_CHECK(reduction_scheduler(prog.fusion_.get(), inputs),
+              "Reduction is not found!");
+
+  torch::jit::fuser::cuda::compileKernel(&prog);
+  torch::jit::fuser::cuda::runTestKernel(&prog, {input}, {cg_output});
+
+  auto aten_output = input.sum({1});
+  TORCH_CHECK(aten_output.allclose(cg_output));
 }
 
 } // namespace jit
