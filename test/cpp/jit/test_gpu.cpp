@@ -3056,6 +3056,75 @@ void testGPU_FusionGridReduction6() {
   auto aten_output = input.sum({1, 2});
   TORCH_CHECK(aten_output.allclose(cg_output));
 }
+
+bool reduction_scheduler(Fusion *fusion, const at::ArrayRef<IValue> &inputs) {
+  EvaluationContext eval_context(fusion);
+
+  // I am making some basic assumptions
+  // 1.) I am only binding Tensor Dimension sizes.  I am not binding scalar values.
+  // 2.) I am only binding the IterDomain.extent().  Do I need to worry about the start?
+  for(size_t i = 0; i < inputs.size(); ++i) {
+    if(inputs[i].type()->kind() == c10::TypeKind::TensorType) {
+      TensorView* tv = static_cast<TensorView*>(fusion->inputs()[i]);
+      size_t dims = tv->getRootDomain().size();
+	  for(size_t j = 0; j < dims; ++j) {
+        IterDomain* id = tv->getRootDomain()[j];
+        eval_context.bind(id->extent(), inputs[i].toTensor().size(j));
+      }
+    }
+  }
+
+  // Find Reduction TensorView
+  TensorView* red_tv = nullptr;
+  for (auto &expr : fusion->exprs(/*from_outputs_only*/true)) {
+	if(expr->type() == ExprType::ReductionOp) {
+      red_tv = static_cast<TensorView*>(expr->output(0));
+    }
+  }
+  TORCH_CHECK(red_tv != nullptr, "No reduction found in fusion graph!");
+
+  // Evaluate Dimensions of Reduction TensorView
+  auto red_ids = red_tv->domain()->domain();
+  std::vector<Int::ScalarType> red_dims(red_ids.size());
+  for(size_t i = 0; i < red_ids.size(); ++i) {
+    red_dims[i] = ExpressionEvaluator::evaluate(red_ids[i]->extent(), &eval_context).value();
+  }
+
+  std::cout << "Reduction Dims: [";
+  for(auto &dim : red_dims) {
+	std::cout << dim << ",";
+  }
+  std::cout << "]" << std::endl;
+
+  return false;
+}
+
+void testGPU_FusionReductionScheduler() {
+  torch::jit::fuser::cuda::CudaKernel prog;
+  Fusion& fusion = *prog.fusion_;
+  FusionGuard fg(&fusion);
+
+  // Set up your input tensor views
+  TensorView* tv0 = makeDummyTensor(2);
+  fusion.addInput(tv0);
+
+  TensorView* tv1 = reductionOp(BinaryOpType::Add, {1}, new Float(0), tv0);
+  fusion.addOutput(tv1);
+
+  int bid_x = 80;
+  int tid_x = 128;
+
+  prog.device_ = 0;
+  prog.grid(bid_x);
+  prog.block(tid_x);
+
+  auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
+  at::Tensor input = at::rand({bid_x, tid_x}, options);
+
+  const at::ArrayRef<IValue> inputs({input});
+  bool success = reduction_scheduler(prog.fusion_.get(), inputs);
+}
+
 } // namespace jit
 } // namespace torch
 #endif // #if defined(USE_CUDA)
