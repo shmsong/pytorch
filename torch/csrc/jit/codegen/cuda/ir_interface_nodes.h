@@ -187,7 +187,7 @@ class GPULower;
  * The reason we need both TensorView and TensorDomain is that we need to have a
  * record of both what is being computed and how it is being computed. For
  * Example we may have the operation: TV3[I, J, K] = TV2[I, J, K] + TV1[I, J, K]
- * The mathematical operationss here are on the tensor views TV1, TV2, and TV3.
+ * The mathematical operations here are on the tensor views TV1, TV2, and TV3.
  * This operation is a pointwise operation. To compute this pointwise operation
  * we iterate over the 3D TensorDomain [I, J, K], where K is the fastest
  * changing dimension.
@@ -300,6 +300,16 @@ class TORCH_CUDA_API TensorView : public Val {
   //
   TensorView* rFactor(const std::vector<int>& axes);
 
+  // Create a TensorView before the original tensor. A common use case is to
+  // read original tensor into shared memory or local registers. Analogous to
+  // TVM Cache_Write
+  TensorView* cache_before();
+
+  // Create a TensorView after the original tensor. A common use case is to
+  // write results into shared memory or local registers before moving to global
+  // memory. Analogous to TVM Cache_Read
+  TensorView* cache_after();
+
   MemoryType getMemoryType() const {
     return memory_type_;
   }
@@ -342,6 +352,15 @@ class TORCH_CUDA_API TensorView : public Val {
   }
 
  private:
+  // Create New Expr given consumer - [output of the expression]
+  void createExprConsumer(Expr* expr, TensorView* consumer);
+
+  // Create New Expr given producer - [an input for the expression]
+  void createExprProducer(
+      Expr* expr,
+      TensorView* current,
+      TensorView* producer);
+
   // Make a copy of the domain (used for Tensor based constructor), likely to be
   // removed soon.
   void copyDomain(const TensorDomain* td);
