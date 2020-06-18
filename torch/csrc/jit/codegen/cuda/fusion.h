@@ -219,30 +219,12 @@ class TORCH_CUDA_API Fusion final {
   bool hasGridReduction();
   size_t gridReductionTempBufferSize();
 
-  void setValuesMap(std::unordered_map<Val*, Val*> values_map) {
-    values_map_ = std::move(values_map);
-  }
-
-  Val* loweredVal(Val* value) const {
-    auto it = values_map_.find(value);
-    return it != values_map_.end() ? it->second : value;
-  }
-
-  const Val* loweredVal(const Val* value) const {
-    auto it = values_map_.find(const_cast<Val*>(value));
-    return it != values_map_.end() ? it->second : value;
-  }
-
-  const auto& inputs() const {
-    return inputs_;
-  }
-
-  const auto& outputs() const {
-    return outputs_;
-  }
-
-  bool hasInput(const Val* val) const;
-  bool hasOutput(const Val* val) const;
+ private:
+  // Sets of all Vals/Exprs registered with this fusion
+  // (val_deque_ is not owning the objects)
+  std::unordered_set<Val*> val_set_;
+  std::deque<Val*> val_deque_;
+  std::unordered_set<Expr*> expr_set_;
 
   void replaceInput(Val* replace, Val* with);
   void replaceOutput(Val* replace, Val* with);

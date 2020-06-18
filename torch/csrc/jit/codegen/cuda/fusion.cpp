@@ -60,80 +60,12 @@ std::unordered_set<Val*> InputsOf::output(Fusion* fusion, Val* output_) {
   return io.inputs;
 }
 
-void swap(Fusion& a, Fusion& b) noexcept {
-  using std::swap;
-
-  // Swap the content
-  swap(a.val_set_, b.val_set_);
-  swap(a.expr_set_, b.expr_set_);
-  swap(a.val_deque_, b.val_deque_);
-
-  swap(a.val_type_name_map_, b.val_type_name_map_);
-  swap(a.val_name_counter_, b.val_name_counter_);
-  swap(a.expr_name_counter_, b.expr_name_counter_);
-
-  swap(a.origin_, b.origin_);
-  swap(a.uses_, b.uses_);
-  swap(a.values_map_, b.values_map_);
-
-  swap(a.inputs_, b.inputs_);
-  swap(a.outputs_, b.outputs_);
-
-  // Fixup the Statement::fusion_ links for a
-  for (auto val : a.val_set_) {
-    val->fusion_ = &a;
+Fusion::~Fusion() {
+  for (auto ptr : val_set_) {
+    delete ptr;
   }
-  for (auto expr : a.expr_set_) {
-    expr->fusion_ = &a;
-  }
-
-  // Fixup the Statement::fusion_ links for b
-  for (auto val : b.val_set_) {
-    val->fusion_ = &b;
-  }
-  for (auto expr : b.expr_set_) {
-    expr->fusion_ = &b;
-  }
-}
-
-Fusion::Fusion(const Fusion& other) {
-  IrCloner ir_cloner(this);
-
-  for (auto val : other.val_set_) {
-    val_set_.insert(ir_cloner.clone(val));
-  }
-
-  for (auto expr : other.expr_set_) {
-    expr_set_.insert(ir_cloner.clone(expr));
-  }
-
-  for (auto val : other.val_deque_) {
-    val_deque_.push_back(ir_cloner.clone(val));
-  }
-
-  val_type_name_map_ = other.val_type_name_map_;
-  val_name_counter_ = other.val_name_counter_;
-  expr_name_counter_ = other.expr_name_counter_;
-
-  for (const auto& kv : other.origin_) {
-    auto val = ir_cloner.clone(kv.first);
-    auto expr = ir_cloner.clone(kv.second);
-    origin_.insert({val, expr});
-  }
-
-  for (const auto& kv : other.uses_) {
-    auto val = ir_cloner.clone(kv.first);
-    std::unordered_set<Expr*> val_uses;
-    for (auto expr : kv.second) {
-      val_uses.insert(ir_cloner.clone(expr));
-    }
-    uses_.insert({val, std::move(val_uses)});
-  }
-
-  for (const auto& kv : other.values_map_) {
-    auto from_val = ir_cloner.clone(kv.first);
-    auto to_val = ir_cloner.clone(kv.second);
-    values_map_.insert({from_val, to_val});
+  for (auto ptr : expr_set_) {
+    delete ptr;
   }
 
   inputs_ = ir_cloner.clone(other.inputs_);
