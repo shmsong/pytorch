@@ -3124,8 +3124,8 @@ bool reduction_scheduler(Fusion *fusion, const at::ArrayRef<IValue> &inputs) {
       red_tv->axis(-1)->parallelize(ParallelType::TIDx);
     }
   } else {
-    red_tv->split(-1, 64);
-    red_tv->axis(0)->parallelize(ParallelType::BIDx);
+    red_tv->split(-1, 2);
+    red_tv->axis(-2)->parallelize(ParallelType::BIDx);
     red_tv->axis(-1)->parallelize(ParallelType::TIDx);
   }
 
@@ -3133,6 +3133,10 @@ bool reduction_scheduler(Fusion *fusion, const at::ArrayRef<IValue> &inputs) {
 }
 
 void testGPU_FusionReductionScheduler() {
+  int bid_x = 3;
+  int tid_x = 2;
+  int red_dim = 0;
+
   torch::jit::fuser::cuda::CudaKernel prog;
   Fusion& fusion = *prog.fusion_;
   FusionGuard fg(&fusion);
@@ -3141,11 +3145,96 @@ void testGPU_FusionReductionScheduler() {
   TensorView* tv0 = makeDummyTensor(2);
   fusion.addInput(tv0);
 
-  TensorView* tv1 = reductionOp(BinaryOpType::Add, {1}, new Float(0), tv0);
+  TensorView* tv1 = reductionOp(BinaryOpType::Add, {red_dim}, new Float(0), tv0);
   fusion.addOutput(tv1);
 
-  int bid_x = 80;
-  int tid_x = 128;
+  prog.device_ = 0;
+  prog.grid(1);
+  prog.block(bid_x*tid_x);
+
+  auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
+  at::Tensor input = at::rand({16, bid_x * tid_x}, options);
+  at::Tensor cg_output = at::empty({bid_x * tid_x}, options);
+
+  // Apply reduction heuristic
+  const at::ArrayRef<IValue> inputs({input});
+  TORCH_CHECK(reduction_scheduler(prog.fusion_.get(), inputs),
+              "Reduction is not found!");
+
+  torch::jit::fuser::cuda::compileKernel(&prog);
+  torch::jit::fuser::cuda::runTestKernel(&prog, {input}, {cg_output});
+  GPULower gpulw(&fusion);
+  gpulw.printKernel(std::cout);
+
+  auto aten_output = input.sum({red_dim});
+
+  std::cout << aten_output << std::endl;
+  std::cout << cg_output << std::endl;
+  TORCH_CHECK(aten_output.allclose(cg_output),
+              "Error of: ",
+              aten_output.sub(cg_output).abs().max());
+}
+
+void testGPU_FusionNonRedAxisBind() {
+  int bid_x = 3;
+  int tid_x = 2;
+  int red_dim = 0;
+
+  torch::jit::fuser::cuda::CudaKernel prog;
+  Fusion& fusion = *prog.fusion_;
+  FusionGuard fg(&fusion);
+
+  // Set up your input tensor views
+  TensorView* tv0 = makeDummyTensor(2);
+  fusion.addInput(tv0);
+
+  TensorView* tv1 = reductionOp(BinaryOpType::Add, {red_dim}, new Float(0), tv0);
+  fusion.addOutput(tv1);
+
+  tv1->split(-1, tid_x);
+  tv1->axis(-2)->parallelize(ParallelType::BIDx);
+  tv1->axis(-1)->parallelize(ParallelType::TIDx);
+
+  prog.device_ = 0;
+  prog.grid(bid_x);
+  prog.block(tid_x);
+
+  auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
+  at::Tensor input = at::rand({16, bid_x * tid_x}, options);
+  at::Tensor cg_output = at::empty({bid_x * tid_x}, options);
+
+  torch::jit::fuser::cuda::compileKernel(&prog);
+  torch::jit::fuser::cuda::runTestKernel(&prog, {input}, {cg_output});
+  GPULower gpulw(&fusion);
+  gpulw.printKernel(std::cout);
+
+  auto aten_output = input.sum({red_dim});
+
+  std::cout << aten_output << std::endl;
+  std::cout << cg_output << std::endl;
+  TORCH_CHECK(aten_output.allclose(cg_output),
+              "Error of: ",
+              aten_output.sub(cg_output).abs().max());
+}
+
+void testGPU_FusionRedFailsOnTidxBind() {
+  int bid_x = 3;
+  int tid_x = 2;
+  int red_dim = 1;
+
+  torch::jit::fuser::cuda::CudaKernel prog;
+  Fusion& fusion = *prog.fusion_;
+  FusionGuard fg(&fusion);
+
+  // Set up your input tensor views
+  TensorView* tv0 = makeDummyTensor(2);
+  fusion.addInput(tv0);
+
+  TensorView* tv1 = reductionOp(BinaryOpType::Add, {red_dim}, new Float(0), tv0);
+  fusion.addOutput(tv1);
+
+  tv1->axis(-2)->parallelize(ParallelType::BIDx);
+  tv1->axis(-1)->parallelize(ParallelType::TIDx);
 
   prog.device_ = 0;
   prog.grid(bid_x);
@@ -3155,16 +3244,18 @@ void testGPU_FusionReductionScheduler() {
   at::Tensor input = at::rand({bid_x, tid_x}, options);
   at::Tensor cg_output = at::empty({bid_x}, options);
 
-  // Apply reduction heuristic
-  const at::ArrayRef<IValue> inputs({input});
-  TORCH_CHECK(reduction_scheduler(prog.fusion_.get(), inputs),
-              "Reduction is not found!");
-
   torch::jit::fuser::cuda::compileKernel(&prog);
   torch::jit::fuser::cuda::runTestKernel(&prog, {input}, {cg_output});
+  GPULower gpulw(&fusion);
+  gpulw.printKernel(std::cout);
 
-  auto aten_output = input.sum({1});
-  TORCH_CHECK(aten_output.allclose(cg_output));
+  auto aten_output = input.sum({red_dim});
+
+  std::cout << aten_output << std::endl;
+  std::cout << cg_output << std::endl;
+  TORCH_CHECK(aten_output.allclose(cg_output),
+              "Error of: ",
+              aten_output.sub(cg_output).abs().max());
 }
 
 } // namespace jit
