@@ -209,8 +209,6 @@ class TORCH_CUDA_API TensorView : public Val {
   TensorView(const std::shared_ptr<Value>& jit_value)
       : TensorView(jit_value->type()->cast<c10::TensorType>()) {}
 
-  TensorView(const TensorView* src, IrCloner* ir_cloner);
-
   TensorDomain* domain() const {
     return domain_;
   }
@@ -349,7 +347,6 @@ class TORCH_CUDA_API TensorView : public Val {
   int getComputeAtRelPos(int pos);
   void setThisComputeAtAxis();
 
- private:
   TensorDomain* domain_ = nullptr;
   TensorView* compute_at_view_ = nullptr;
   // compute at axis in compute at view

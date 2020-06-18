@@ -57,7 +57,7 @@ class Exprs : public IterVisitor {
 //
 // If error_on_failure = false, replay will replay everything it can, and ignore
 // operations it can't.
-class TORCH_CUDA_API ReplayTransformations : public IterVisitor {
+struct TORCH_CUDA_API ReplayTransformations : public IterVisitor {
  protected:
   const std::vector<IterDomain*>& target_domain_;
   std::unordered_map<IterDomain*, IterDomain*> id_map_;

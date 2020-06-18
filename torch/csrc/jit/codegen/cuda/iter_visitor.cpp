@@ -91,10 +91,8 @@ void IterVisitor::traverseFrom(
   FusionGuard fg(fusion);
   std::unordered_set<Statement*> visited;
   stmt_stack.clear();
-  stmt_stack.emplace_back(from.rbegin(), from.rend());
-  // true when returning to a node after vistiting all its input
-  // nodes. Nodes are only visited when this is true.
-  bool all_inputs_visited = false;
+  if (!from.empty())
+    stmt_stack.emplace_back(from.rbegin(), from.rend());
 
   while (!stmt_stack.empty()) {
     auto& current_inputs = stmt_stack.back();

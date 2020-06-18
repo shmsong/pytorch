@@ -179,7 +179,7 @@ TensorDomain* TransformReplay::fullSelfReplay(
 // really want to do is validate if we replayed these axes to the ones they
 // mapped to in the consumer the operations would all be the same. then we want
 // to start the replay of the producer from the rfactor root axes, not the root.
-std::pair<TensorDomain*, unsigned int> TransformReplay::replayPasC(
+TensorDomain* TransformReplay::replayPasC(
     const TensorDomain* producer,
     const TensorDomain* consumer,
     int consumer_compute_at_axis) {
@@ -371,7 +371,8 @@ std::pair<TensorDomain*, unsigned int> TransformReplay::replayPasC(
   return {replayed, producer_compute_at_axis};
 }
 
-std::pair<TensorDomain*, unsigned int> TransformReplay::replayCasP(
+// Replay consumer as producer.
+TensorDomain* TransformReplay::replayCasP(
     const TensorDomain* consumer,
     const TensorDomain* producer,
     int producer_compute_at_axis) {

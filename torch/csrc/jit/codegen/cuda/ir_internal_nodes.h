@@ -484,8 +484,6 @@ class TORCH_CUDA_API Split : public Expr {
 
   Split(IterDomain* _outer, IterDomain* _inner, IterDomain* _in, Int* _factor);
 
-  Split(const Split* src, IrCloner* ir_cloner);
-
   IterDomain* outer() const {
     return outer_;
   }
