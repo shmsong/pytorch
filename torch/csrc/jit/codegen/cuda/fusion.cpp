@@ -195,7 +195,7 @@ void Fusion::addInput(Val* const input) {
       input->getOrigin(),
       ").");
 
-  inputs_.push_back(input);
+  IRInputOutput::addInput(input);
 }
 
 void Fusion::addOutput(Val* const output) {
