@@ -261,7 +261,7 @@ class TORCH_CUDA_API Val : public Statement {
   const DataType dtype_;
 };
 
-class TORCH_CUDA_API Scope {
+struct TORCH_CUDA_API Scope {
  public:
   Scope() = default;
   Scope(const Scope* src, IrCloner* ir_cloner);

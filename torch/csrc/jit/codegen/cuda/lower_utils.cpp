@@ -199,7 +199,7 @@ class CloneLoopNest : public OptOutMutator {
   }
 };
 
-class ReplaceExprsInScope : public OptOutDispatch {
+struct ReplaceExprsInScope : public OptOutDispatch {
  public:
   static void replace(
       Expr* scope,
