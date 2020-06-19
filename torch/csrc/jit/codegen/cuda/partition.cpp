@@ -57,7 +57,7 @@ inline bool isFusableNode(const Node* node) {
   return (isNodeParsible(node) || node->kind() == prim::CudaFusionGroup);
 }
 
-bool hasReductionOperation(const Node* node) {
+bool hasReductionOperation(const Node* const node) {
   if (isReductionNode(node)) {
     return true;
   }
@@ -80,7 +80,9 @@ bool isFusableCudaFusionGroup(const Node* node) {
   return false;
 }
 
-bool isFusableCudaFusionGroup(const Node* fusion, const Node* node) {
+bool isFusableCudaFusionGroup(
+    const Node* const fusion,
+    const Node* const node) {
   // TODO: lift the restriction of not fusing producer containing reduction when
   //       we have proper scheduling.
   if (isFusableCudaFusionGroup(node) && !hasReductionOperation(node)) {

@@ -26,14 +26,7 @@ namespace jit {
 namespace fuser {
 namespace cuda {
 
-constexpr int kPwThreadX = 128;
-constexpr int kFcdReductionThreadX = 128;
-constexpr int kNonFcdReductionThreadX = 32;
-constexpr int kNonFcdReductionThreadY = 32;
-
-TORCH_CUDA_API bool hasReductionNode(const Block* block);
-
-TORCH_CUDA_API bool isReductionNode(const Node* node);
+TORCH_CUDA_API bool isReductionNode(const Node* const node);
 
 // returns whether or not a parsing function exists for the given node type.
 TORCH_CUDA_API bool isNodeParsible(const Node* node);

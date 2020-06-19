@@ -347,7 +347,7 @@ class IrParser {
     return false;
   }
 
-  static bool isReductionNode(const Node* node) {
+  static bool isReductionNode(const Node* const node) {
     if (init_registry_) {
       // TODO: mutex this guy;
       registerJitOperator();
@@ -363,9 +363,13 @@ class IrParser {
   static void registerParseRule(
       std::shared_ptr<Operator>& op,
       ParseFuncPtr parse_fn,
-      MergeQueryFuncPtr merge_query_fn = nullptr) {
+      MergeQueryFuncPtr merge_query_fn = nullptr,
+      bool is_reduction = false) {
     jit_operator_registry_[Symbol::fromQualString(op->schema().name())]
         .emplace_back(std::piecewise_construct, std::forward_as_tuple(op), std::forward_as_tuple(parse_fn, merge_query_fn));
+    if (is_reduction) {
+      jit_reduction_op_registry_.emplace(Symbol::fromQualString(op->schema().name()));
+    }
   }
 
  private:
@@ -687,7 +691,8 @@ class IrParser {
               return false;
             }
             return true;
-          });
+          },
+          true);
     }
   }
 
@@ -806,25 +811,11 @@ bool IrParser::init_registry_ = true;
 
 } // namespace
 
-bool hasReductionNode(const Block* block) {
-  for (auto node : block->nodes()) {
-    if (isReductionNode(node)) {
-      return true;
-    }
-    for (auto block : node->blocks()) {
-      if (hasReductionNode(block)) {
-        return true;
-      }
-    }
-  }
-  return false;
-}
-
-bool isReductionNode(const Node* node) {
+bool isReductionNode(const Node* const node) {
   return IrParser::isReductionNode(node);
 }
 
-bool isNodeParsible(const Node* node) {
+bool isNodeParsible(const Node* const node) {
   return IrParser::canParseNode(node);
 }
 
