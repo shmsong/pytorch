@@ -61,7 +61,7 @@ Expr* LoopNestGenerator::pushAlloc(TensorView* tv) {
 
   // Multiply all the dimensions we're going to use for the allocation together
   // to get the total size
-  Val* size;
+  Val* size = nullptr;
   if (alloc_dims.size() == 0) {
     size = new Int(1);
   } else {

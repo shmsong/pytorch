@@ -376,11 +376,9 @@ void OptInDispatch::handle(Val* v) {
 void OptOutConstDispatch::handle(const Statement* s) {
   Statement::constDispatch(this, s);
 }
-
 void OptOutConstDispatch::handle(const Expr* e) {
   Expr::constDispatch(this, e);
 }
-
 void OptOutConstDispatch::handle(const Val* v) {
   Val::constDispatch(this, v);
 }
@@ -388,11 +386,9 @@ void OptOutConstDispatch::handle(const Val* v) {
 void OptInConstDispatch::handle(const Statement* s) {
   Statement::constDispatch(this, s);
 }
-
 void OptInConstDispatch::handle(const Expr* e) {
   Expr::constDispatch(this, e);
 }
-
 void OptInConstDispatch::handle(const Val* v) {
   Val::constDispatch(this, v);
 }

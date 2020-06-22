@@ -35,7 +35,7 @@ Expr* Statement::asExpr() {
   return static_cast<Expr*>(this);
 }
 
-void Statement::print() {
+void Statement::print() const {
   IRPrinter ir_printer(std::cout);
   ir_printer.handle(this);
   std::cout << std::endl;
@@ -64,24 +64,20 @@ class ConstCheck : OptOutConstDispatch {
  private:
   bool is_const_ = true;
 
-  void handle(const Bool* const b) override {
+  void handle(const Bool* b) override {
     is_const_ = is_const_ && b->isConst();
   }
 
-  void handle(const Float* const f) override {
+  void handle(const Float* f) override {
     is_const_ = is_const_ && f->isConst();
   }
 
-  void handle(const Half* const h) override {
+  void handle(const Half* h) override {
     is_const_ = is_const_ && h->isConst();
   }
 
-  void handle(const Int* const i) override {
+  void handle(const Int* i) override {
     is_const_ = is_const_ && i->isConst();
-  }
-
-  void handle(const NamedScalar* const ns) override {
-    is_const_ = is_const_ && false;
   }
 
   void handle(const NamedScalar* ns) override {
@@ -94,7 +90,7 @@ class ConstCheck : OptOutConstDispatch {
     }
   }
 
-  void handle(const Val* const val) override {
+  void handle(const Val* val) override {
     const Expr* orig = FusionGuard::getCurFusion()->origin(val);
     if (orig != nullptr)
       handle(orig);
@@ -197,6 +193,76 @@ bool Scope::sameAs(const Scope& other) const {
 
 void Scope::clear() {
   this->exprs_ = std::vector<Expr*>();
+}
+
+bool IRInputOutput::hasInput(const Val* input) const {
+  for (auto val : inputs_)
+    if (val == input)
+      return true;
+  return false;
+}
+
+bool IRInputOutput::hasOutput(const Val* output) const {
+  for (auto val : outputs_)
+    if (val == output)
+      return true;
+  return false;
+}
+
+void IRInputOutput::replaceInput(Val* replace, Val* with) {
+  bool changed = false;
+  for (decltype(inputs_.size()) i{0}; i < inputs_.size(); i++) {
+    if (inputs_[i] == replace) {
+      inputs_[i] = with;
+      changed = true;
+      break;
+    }
+  }
+  TORCH_INTERNAL_ASSERT(
+      changed,
+      "Error detected when trying to replace input ",
+      replace,
+      " with ",
+      with,
+      " .");
+}
+
+void IRInputOutput::replaceOutput(Val* replace, Val* with) {
+  bool changed = false;
+  for (decltype(outputs_.size()) i{0}; i < outputs_.size(); i++) {
+    if (outputs_[i] == replace) {
+      outputs_[i] = with;
+      changed = true;
+      break;
+    }
+  }
+  TORCH_INTERNAL_ASSERT(
+      changed,
+      "Error detected when trying to replace output ",
+      replace,
+      " with ",
+      with,
+      " .");
+}
+
+void IRInputOutput::removeInput(Val* val) {
+  auto it = inputs_.begin();
+  for (; it != inputs_.end(); ++it) {
+    if ((*it) == val)
+      break;
+  }
+  TORCH_INTERNAL_ASSERT(it != inputs_.end());
+  inputs_.erase(it);
+}
+
+void IRInputOutput::removeOutput(Val* val) {
+  auto it = outputs_.begin();
+  for (; it != outputs_.end(); ++it) {
+    if ((*it) == val)
+      break;
+  }
+  TORCH_INTERNAL_ASSERT(it != outputs_.end());
+  outputs_.erase(it);
 }
 
 // We don't register with the active fusion in Expr as this needs to be done

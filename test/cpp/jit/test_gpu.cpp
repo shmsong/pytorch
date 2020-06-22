@@ -345,230 +345,6 @@ void testGPU_FusionExprEvalPostLower() {
   checkIntValue(&eval_context, tid_x, 128);
 }
 
-void testGPU_FusionClear() {
-  torch::jit::fuser::cuda::CudaKernel prog;
-  Fusion& fusion = *prog.fusion_;
-  FusionGuard fg(&fusion);
-
-  // 1. Create a dummy IR
-
-  {
-    TensorView* tv0 = makeDummyTensor(2);
-    TensorView* tv1 = makeDummyTensor(2);
-
-    fusion.addInput(tv0);
-    fusion.addInput(tv1);
-
-    TensorView* tv2 = add(tv1, new Float(2.0));
-    TensorView* tv3 = add(tv0, tv2);
-
-    fusion.addOutput(tv3);
-
-    tv3->split(0, 4);
-    tv0->computeAt(tv3, 1);
-    tv1->computeAt(tv3, 1);
-
-    tv3->axis(0)->parallelize(ParallelType::BIDx);
-    tv2->axis(1)->parallelize(ParallelType::Unroll);
-    tv3->axis(-1)->parallelize(ParallelType::TIDx);
-  }
-
-  // 2. Clear the IR
-
-  fusion.clear();
-
-  TORCH_CHECK(fusion.exprs().empty());
-  TORCH_CHECK(fusion.vals().empty());
-
-  TORCH_CHECK(fusion.inputs().empty());
-  TORCH_CHECK(fusion.outputs().empty());
-
-  TORCH_CHECK(!fusion.hasReduction());
-  TORCH_CHECK(!fusion.hasBlockReduction());
-  TORCH_CHECK(!fusion.hasGridReduction());
-
-  // 3. Rebuild the IR
-
-  {
-    TensorView* tv0 = makeDummyTensor(3);
-    TensorView* tv1 = makeDummyTensor(3);
-    TensorView* tv2 = add(tv1, new Float(2.0));
-    TensorView* tv3 = add(tv0, tv2);
-
-    fusion.addInput(tv0);
-    fusion.addInput(tv1);
-    fusion.addOutput(tv3);
-
-    tv3->reorder({{0, 2}, {2, 0}});
-    tv3->split(-1, 4);
-    tv3->reorder({{2, 0}, {3, 1}, {0, 3}});
-    tv0->computeAt(tv3, -1);
-    tv1->computeAt(tv3, -1);
-  }
-
-  prog.device_ = 0;
-  prog.grid(4);
-  prog.block(8);
-
-  auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
-
-  at::Tensor input1 = at::randn({16, 8, 8}, options);
-  at::Tensor input2 = at::randn_like(input1);
-  at::Tensor output = at::empty_like(input1);
-
-  torch::jit::fuser::cuda::compileKernel(&prog);
-  torch::jit::fuser::cuda::runTestKernel(&prog, {input1, input2}, {output});
-
-  at::Tensor tv2_ref = input2 + 2.0;
-  at::Tensor output_ref = input1 + tv2_ref;
-
-  TORCH_CHECK(output_ref.equal(output));
-}
-
-void testGPU_FusionCopy() {
-  Fusion original_fusion;
-
-  // Create the test IR
-  {
-    FusionGuard fg(&original_fusion);
-
-    auto tv0 = makeDummyTensor(3);
-    auto tv1 = makeDummyTensor(3);
-    auto tv2 = add(tv1, new Float(2.0));
-    auto tv3 = sub(add(tv0, mul(tv2, tv2)), tv2);
-
-    original_fusion.addInput(tv0);
-    original_fusion.addInput(tv1);
-    original_fusion.addOutput(tv3);
-
-    tv3->reorder({{0, 2}, {2, 0}});
-    tv3->split(-1, 4);
-    tv3->reorder({{2, 0}, {3, 1}, {0, 3}});
-
-    tv0->computeAt(tv3, -1);
-    tv1->computeAt(tv3, -1);
-
-    tv3->axis(0)->parallelize(ParallelType::BIDx);
-    tv3->axis(-1)->parallelize(ParallelType::TIDx);
-  }
-
-  // Test copy before lowering
-  Fusion clone = original_fusion;
-
-  // Compare IR dumps
-  std::stringstream original_ir;
-  std::stringstream clone_ir;
-  original_ir << original_fusion;
-  clone_ir << clone;
-  ASSERT_EQ(original_ir.str(), clone_ir.str());
-
-  // Lower original fusion
-  std::stringstream original_kernel;
-  {
-    GPULower lower(&original_fusion);
-    lower.printKernel(original_kernel);
-  }
-
-  // Make sure the "before lowering" clone was not mutated
-  // while lowering the original fusion IR
-  std::stringstream before_lowering_ir;
-  before_lowering_ir << clone;
-  ASSERT_EQ(original_ir.str(), before_lowering_ir.str());
-
-  // Test copy after lowering (including assignment operator)
-  Fusion before_lowering = clone;
-  clone = original_fusion;
-
-  // Compare IR dumps
-  std::stringstream original_lowered_ir;
-  std::stringstream clone_lowered_ir;
-  original_lowered_ir << original_fusion;
-  clone_lowered_ir << clone;
-  ASSERT_EQ(original_lowered_ir.str(), clone_lowered_ir.str());
-
-  // Lower the "before lowering" and compare kernels
-  std::stringstream clone_kernel;
-  {
-    GPULower lower(&before_lowering);
-    lower.printKernel(clone_kernel);
-  }
-  ASSERT_EQ(original_kernel.str(), clone_kernel.str());
-}
-
-void testGPU_FusionMove() {
-  Fusion fusion;
-
-  // Create the test IR
-  {
-    FusionGuard fg(&fusion);
-
-    auto tv0 = makeDummyTensor(3);
-    auto tv1 = makeDummyTensor(3);
-    auto tv2 = add(tv1, new Float(2.0));
-    auto tv3 = sub(add(tv0, mul(tv2, tv2)), tv2);
-
-    fusion.addInput(tv0);
-    fusion.addInput(tv1);
-    fusion.addOutput(tv3);
-
-    tv3->reorder({{0, 2}, {2, 0}});
-    tv3->split(-1, 4);
-    tv3->reorder({{2, 0}, {3, 1}, {0, 3}});
-
-    tv0->computeAt(tv3, -1);
-    tv1->computeAt(tv3, -1);
-
-    tv3->axis(0)->parallelize(ParallelType::BIDx);
-    tv3->axis(-1)->parallelize(ParallelType::TIDx);
-  }
-
-  std::stringstream original_ir;
-  original_ir << fusion;
-
-  // Test move before lowering
-  Fusion another_fusion = std::move(fusion);
-
-  // Check that the original fusion is "empty"
-  //
-  // IMPORTANT: these checks assume knowledge of the internal
-  //    implementation of the move operations. General uses
-  //    should only assume that the moved-from object is in
-  //    a valid, but unspecified state. This is similar to the
-  //    standard library containers:
-  //    https://en.cppreference.com/w/cpp/utility/move
-  //
-  TORCH_CHECK(fusion.exprs().empty());
-  TORCH_CHECK(fusion.vals().empty());
-  TORCH_CHECK(fusion.inputs().empty());
-  TORCH_CHECK(fusion.outputs().empty());
-
-  // clear() has no pre-conditions so it's valid to call on a moved-from object
-  fusion.clear();
-
-  // Compare IR dumps
-  std::stringstream another_ir;
-  another_ir << another_fusion;
-  ASSERT_EQ(original_ir.str(), another_ir.str());
-
-  // Lower the fusion IR
-  std::stringstream kernel;
-  {
-    GPULower lower(&another_fusion);
-    lower.printKernel(kernel);
-  }
-
-  std::stringstream lowered_ir;
-  lowered_ir << another_fusion;
-
-  // Test move assignment after lowering
-  fusion = std::move(another_fusion);
-
-  // Compare IR dumps
-  std::stringstream moved_lowered_ir;
-  moved_lowered_ir << fusion;
-  ASSERT_EQ(lowered_ir.str(), moved_lowered_ir.str());
-}
-
 void testGPU_FusionSimpleArith() {
   std::stringstream ss1, ss2;
 
@@ -1012,40 +788,44 @@ void testGPU_FusionParser() {
   prog.device_ = 0;
   fuser::cuda::parseJitIR(g, &prog);
 
-  std::stringstream ref;
-  ref << "__global__ void CUDAGeneratedKernel(Tensor<float, 1> T0, Tensor<float, 1> T1, Tensor<float, 1> T3){\n"
-      << "  float T2[4];\n"
-      << "  if ( ( ( ( ( ( blockIdx.x * 4 ) + ( 4 - 1 ) ) * 128 ) + threadIdx.x ) < T3.size[0] ) ) { \n"
-      << "    for(size_t i64 = 0; i64 < 4; ++i64 ) {\n"
-      << "      T2[ i64 ]\n"
-      << "         = T0[ ( ( ( ( ( blockIdx.x * 4 ) + i64 ) * 128 ) + threadIdx.x ) * T0.stride[0] ) ]\n"
-      << "         * T1[ ( ( ( ( ( blockIdx.x * 4 ) + i64 ) * 128 ) + threadIdx.x ) * T1.stride[0] ) ];\n"
-      << "    }\n"
-      << "  } else { \n"
-      << "    for(size_t i64 = 0; i64 < 4; ++i64 ) {\n"
-      << "      if ( ( ( ( ( ( blockIdx.x * 4 ) + i64 ) * 128 ) + threadIdx.x ) < T3.size[0] ) ) { \n"
-      << "        T2[ i64 ]\n"
-      << "           = T0[ ( ( ( ( ( blockIdx.x * 4 ) + i64 ) * 128 ) + threadIdx.x ) * T0.stride[0] ) ]\n"
-      << "           * T1[ ( ( ( ( ( blockIdx.x * 4 ) + i64 ) * 128 ) + threadIdx.x ) * T1.stride[0] ) ];\n"
-      << "      }\n"
-      << "    }\n"
-      << "  }\n"
-      << "  if ( ( ( ( ( ( blockIdx.x * 4 ) + ( 4 - 1 ) ) * 128 ) + threadIdx.x ) < T3.size[0] ) ) { \n"
-      << "    for(size_t i65 = 0; i65 < 4; ++i65 ) {\n"
-      << "      T3[ ( ( ( ( ( blockIdx.x * 4 ) + i65 ) * 128 ) + threadIdx.x ) * T3.stride[0] ) ]\n"
-      << "         = T2[ i65 ]\n"
-      << "         * T0[ ( ( ( ( ( blockIdx.x * 4 ) + i65 ) * 128 ) + threadIdx.x ) * T0.stride[0] ) ];\n"
-      << "    }\n"
-      << "  } else { \n"
-      << "    for(size_t i65 = 0; i65 < 4; ++i65 ) {\n"
-      << "      if ( ( ( ( ( ( blockIdx.x * 4 ) + i65 ) * 128 ) + threadIdx.x ) < T3.size[0] ) ) { \n"
-      << "        T3[ ( ( ( ( ( blockIdx.x * 4 ) + i65 ) * 128 ) + threadIdx.x ) * T3.stride[0] ) ]\n"
-      << "           = T2[ i65 ]\n"
-      << "           * T0[ ( ( ( ( ( blockIdx.x * 4 ) + i65 ) * 128 ) + threadIdx.x ) * T0.stride[0] ) ];\n"
-      << "      }\n"
-      << "    }\n"
-      << "  }\n"
-      << "}\n";
+  // CONSIDER:
+  // 1. this can be moved to a dedicated "golden" file
+  // 2. use a fuzzy compare (ignore non-significant whitespaces for example)
+  const std::string expected_kernel = R"(
+__global__ void CUDAGeneratedKernel(Tensor<float, 1> T0, Tensor<float, 1> T1, Tensor<float, 1> T3){
+  float T2[4];
+  if ( ( ( ( ( ( blockIdx.x * 4 ) + ( 4 - 1 ) ) * 128 ) + threadIdx.x ) < T3.size[0] ) ) { 
+    for(size_t i40 = 0; i40 < 4; ++i40 ) {
+      T2[ i40 ]
+         = T0[ ( ( ( ( ( blockIdx.x * 4 ) + i40 ) * 128 ) + threadIdx.x ) * T0.stride[0] ) ]
+         * T1[ ( ( ( ( ( blockIdx.x * 4 ) + i40 ) * 128 ) + threadIdx.x ) * T1.stride[0] ) ];
+    }
+  } else { 
+    for(size_t i40 = 0; i40 < 4; ++i40 ) {
+      if ( ( ( ( ( ( blockIdx.x * 4 ) + i40 ) * 128 ) + threadIdx.x ) < T3.size[0] ) ) { 
+        T2[ i40 ]
+           = T0[ ( ( ( ( ( blockIdx.x * 4 ) + i40 ) * 128 ) + threadIdx.x ) * T0.stride[0] ) ]
+           * T1[ ( ( ( ( ( blockIdx.x * 4 ) + i40 ) * 128 ) + threadIdx.x ) * T1.stride[0] ) ];
+      }
+    }
+  }
+  if ( ( ( ( ( ( blockIdx.x * 4 ) + ( 4 - 1 ) ) * 128 ) + threadIdx.x ) < T3.size[0] ) ) { 
+    for(size_t i41 = 0; i41 < 4; ++i41 ) {
+      T3[ ( ( ( ( ( blockIdx.x * 4 ) + i41 ) * 128 ) + threadIdx.x ) * T3.stride[0] ) ]
+         = T2[ i41 ]
+         * T0[ ( ( ( ( ( blockIdx.x * 4 ) + i41 ) * 128 ) + threadIdx.x ) * T0.stride[0] ) ];
+    }
+  } else { 
+    for(size_t i41 = 0; i41 < 4; ++i41 ) {
+      if ( ( ( ( ( ( blockIdx.x * 4 ) + i41 ) * 128 ) + threadIdx.x ) < T3.size[0] ) ) { 
+        T3[ ( ( ( ( ( blockIdx.x * 4 ) + i41 ) * 128 ) + threadIdx.x ) * T3.stride[0] ) ]
+           = T2[ i41 ]
+           * T0[ ( ( ( ( ( blockIdx.x * 4 ) + i41 ) * 128 ) + threadIdx.x ) * T0.stride[0] ) ];
+      }
+    }
+  }
+}
+)";
 
   GPULower gpulw(&fusion);
   std::stringstream actual_kernel;

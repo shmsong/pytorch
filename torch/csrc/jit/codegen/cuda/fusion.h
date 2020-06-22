@@ -219,6 +219,20 @@ class TORCH_CUDA_API Fusion final {
   bool hasGridReduction();
   size_t gridReductionTempBufferSize();
 
+  void setValuesMap(std::unordered_map<Val*, Val*> values_map) {
+    values_map_ = std::move(values_map);
+  }
+
+  Val* loweredVal(Val* value) const {
+    auto it = values_map_.find(value);
+    return it != values_map_.end() ? it->second : value;
+  }
+
+  const Val* loweredVal(const Val* value) const {
+    auto it = values_map_.find(const_cast<Val*>(value));
+    return it != values_map_.end() ? it->second : value;
+  }
+
  private:
   // Sets of all Vals/Exprs registered with this fusion
   // (val_deque_ is not owning the objects)
@@ -259,10 +273,6 @@ class TORCH_CUDA_API Fusion final {
 
   // Map a subset of values to the lowered equivalent (ex. sizes)
   std::unordered_map<Val*, Val*> values_map_;
-
-  // Fusion inputs and outputs
-  std::vector<Val*> inputs_;
-  std::vector<Val*> outputs_;
 };
 
 } // namespace fuser

@@ -151,7 +151,7 @@ class TORCH_CUDA_API Statement {
     return this == other;
   }
 
-  void print();
+  void print() const;
 
  protected:
   StmtNameType name_ = UNINITIALIZED_STMTNAMETYPE;
