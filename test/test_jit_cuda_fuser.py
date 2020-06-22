@@ -398,7 +398,7 @@ class TestCudaFuser(JitTestCase):
     def _compare(self, desc, inp1, inp2, error):
         a = inp1.clone().detach().cpu().numpy()
         b = inp2.clone().detach().cpu().numpy()
-        close = np.allclose(a,b, error, error)
+        close = np.allclose(a, b, error, error)
         if not close:
             print(desc, close)
             z = a - b
@@ -458,7 +458,8 @@ class TestCudaFuser(JitTestCase):
         x = torch.randn(sizes, dtype=dtype, device=device)
         y = torch.randn(sizes, dtype=dtype, device=device)
         z = torch.randn(sizes, dtype=dtype, device=device)
-        def t(x: torch.Tensor, y: torch.Tensor, z : torch.Tensor):
+
+        def t(x: torch.Tensor, y: torch.Tensor, z: torch.Tensor):
             o = torch.add(x, y)
             o = torch.sum(o, dim=[0])
             o = torch.add(o, z)
@@ -482,7 +483,8 @@ class TestCudaFuser(JitTestCase):
         x = torch.randn([7, 4, 8], dtype=dtype, device=device)
         y = torch.randn([4, 8], dtype=dtype, device=device)
         z = torch.randn([1, 4, 8], dtype=dtype, device=device)
-        def t(x: torch.Tensor, y: torch.Tensor, z : torch.Tensor):
+
+        def t(x: torch.Tensor, y: torch.Tensor, z: torch.Tensor):
             o = torch.add(x, y)
             o = torch.add(o, z)
             o = torch.sum(o, dim=[0])
@@ -495,6 +497,7 @@ class TestCudaFuser(JitTestCase):
             self.assertEqual(oo.dtype, jit_oo.dtype)
             self.assertEqual(oo, jit_oo)
         self.assertGraphContains(t_jit.graph_for(x, y, z), FUSION_GROUP)
+
 
 class TestPassManagerCudaFuser(JitTestCase):
 
