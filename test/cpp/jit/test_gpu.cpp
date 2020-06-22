@@ -1,4 +1,4 @@
-#if defined(USE_CUDA)
+// #if defined(USE_CUDA)
 #include <test/cpp/jit/test_base.h>
 
 #include <torch/csrc/jit/codegen/cuda/arith.h>
@@ -3260,546 +3260,542 @@ void testGPU_FusionGridReduction6() {
   auto aten_output = input.sum({1, 2});
   TORCH_CHECK(aten_output.allclose(cg_output));
 }
-void checkStmtPrint(Statement* stmt, const std::string& exp_string) {
-  std::stringstream ss;
-  ss << stmt;
+
+// Compare two strings to see if they're equivelent, ignore whitespace
+// Taken from https://www.techiedelight.com/remove-whitespaces-string-cpp/
+bool fzy_str_eq(std::string str1, std::string str2) {
+  str1.erase(
+      std::remove_if(
+          str1.begin(),
+          str1.end(),
+          [](char& c) {
+            return std::isspace<char>(c, std::locale::classic());
+          }),
+      str1.end());
+
+  str2.erase(
+      std::remove_if(
+          str2.begin(),
+          str2.end(),
+          [](char& c) {
+            return std::isspace<char>(c, std::locale::classic());
+          }),
+      str2.end());
+
+  return str1.size() == str2.size() && str1.compare(str2) == 0;
+}
+
+void checkStmtPrint(
+    Statement* stmt,
+    const std::string& expected_str,
+    int line_number) {
+  std::stringstream actual_str;
+  actual_str << stmt;
   TORCH_INTERNAL_ASSERT(
-      ss.str() == exp_string,
+      fzy_str_eq(expected_str, actual_str.str()),
       "Looks like printing of ",
-      ss.str(),
+      actual_str.str(),
       " has changed, it used to be ",
-      exp_string,
+      expected_str,
+      "\nfound on line: ",
+      line_number,
       ". Please make sure to update the manual.");
 }
 
-void checkFusionMath(Fusion& f, const std::stringstream& exp_ss) {
-  std::stringstream ss;
+void checkFusionMath(
+    Fusion& f,
+    const std::string& expected_str,
+    int line_number) {
+  std::stringstream actual_str;
   for (auto expr : f.exprs(true))
-    ss << expr;
+    actual_str << expr;
 
   TORCH_INTERNAL_ASSERT(
-      ss.str() == exp_ss.str(),
+      fzy_str_eq(expected_str, actual_str.str()),
       "Looks like printing of the fusion\n",
-      ss.str(),
+      actual_str.str(),
       " has changed, it used to be\n",
-      exp_ss.str(),
+      expected_str,
+      "\nfound on line: ",
+      line_number,
       "\nPlease make sure to update the manual.");
 }
 
-void checkFusionPrint(Fusion& f, const std::stringstream& exp_ss) {
-  std::stringstream ss;
-  ss << f;
+void checkFusionPrint(
+    Fusion& f,
+    const std::string& expected_str,
+    int line_number) {
+  std::stringstream actual_str;
+  actual_str << f;
 
   TORCH_INTERNAL_ASSERT(
-      ss.str() == exp_ss.str(),
+      fzy_str_eq(expected_str, actual_str.str()),
       "Looks like printing of the fusion\n",
-      ss.str(),
+      actual_str.str(),
       " has changed, it used to be\n",
-      exp_ss.str(),
+      expected_str,
+      "\nfound on line: ",
+      line_number,
       "\nPlease make sure to update the manual.");
 }
 
-void checkFusionLower(Fusion& f, const std::stringstream& exp_ss) {
-  std::stringstream ss;
+void checkFusionLower(
+    Fusion& f,
+    const std::string& expected_kernel,
+    int line_number) {
+  std::stringstream actual_kernel;
   GPULower lower(&f);
-  lower.printKernel(ss);
+  lower.printKernel(actual_kernel);
 
   TORCH_INTERNAL_ASSERT(
-      ss.str() == exp_ss.str(),
+      fzy_str_eq(expected_kernel, actual_kernel.str()),
       "Looks like printing of the fusion\n",
-      ss.str(),
+      actual_kernel.str(),
       " has changed, it used to be\n",
-      exp_ss.str(),
+      expected_kernel,
+      "\nfound on line: ",
+      line_number,
       "\nPlease make sure to update the manual.");
 }
 
 // Tests to check when we need to update the manual
 void testGPU_FusionManual() {
-  // // Basics: TensorView
-  // {
-  //   Fusion fusion;
-  //   FusionGuard fg(&fusion);
-
-  //   // Create a constant Int of 0
-  //   Int* zero = new Int(0);
-
-  //   // First dimension, goes from zero to a run-time integer size
-  //   IterDomain* dim0 = new IterDomain(zero, new Int());
-
-  //   // Second dimension, goes from zero to another run-time integer size
-  //   IterDomain* dim1 = new IterDomain(zero, new Int());
-
-  //   // Create our domain where dim0 will be the outer dimension, and dim1 the
-  //   // inner dimension
-  //   TensorDomain* td0 = new TensorDomain({dim0, dim1});
-
-  //   // Create a 2D float tensor
-  //   TensorView* tv0 = new TensorView(td0, DataType::Float);
-  // }
-
-  // // Basics: TensorView
-  // {
-  //   Fusion fusion;
-  //   FusionGuard fg(&fusion);
-
-  //   // Create a constant Int of 0
-  //   Int* zero = new Int(0);
-  //   Int* one = new Int(1);
-  //   // std::cout << zero << std::endl;
-  //   checkStmtPrint(zero, "0");
-  //   // Prints "0"
-
-  //   // First dimension, goes from zero to a run-time integer size
-  //   IterDomain* dim0 = new IterDomain(zero, new Int());
-  //   // std::cout << dim0 << std::endl;
-  //   checkStmtPrint(dim0, "iS{i2}");
-  //   // Prints "iS{i2}"
-
-  //   // Second dimension, goes from zero to another run-time integer size
-  //   IterDomain* dim1 = new IterDomain(one, new Int());
-  //   // std::cout << dim1 << std::endl;
-  //   checkStmtPrint(dim1, "iS{1 : i3}");
-  //   // Prints "iS{1 : i3}"
-
-  //   // Create our domain where dim0 will be the outer dimension, and dim1 the
-  //   // inner dimension
-  //   TensorDomain* td0 = new TensorDomain({dim0, dim1});
-  //   // std::cout << td0 << std::endl;
-  //   checkStmtPrint(td0, "[ iS{i2}, iS{1 : i3} ]");
-  //   // Prints "[ iS{i2}, iS{1 : i3} ]"
-
-  //   // Create a 2D float tensor
-  //   TensorView* tv0 = new TensorView(td0, DataType::Float);
-  //   // std::cout << tv0 << std::endl;
-  //   checkStmtPrint(tv0, "T0[ iS{i2}, iS{1 : i3} ]");
-  //   // Prints "T0[ iS{i2}, iS{1 : i3} ]"
-  // }
-
-  // // Basics: Arithmetic
-  // {
-  //   Fusion fusion;
-  //   FusionGuard fg(&fusion);
-
-  //   // Create a run-time Float
-  //   Float* f0 = new Float();
-  //   // Create a second run-time Float
-  //   Float* f1 = new Float();
-  //   // Multiply them and create a 3rd Floateger, but it returns as a val
-  //   Val* f2 = add(f0, f1);
-
-  //   // Create a 2D tensor:
-  //   TensorView* tv0 = makeTensor(2);
-  //   // Multiply with the 3rd integer, which returns a TensorView
-  //   TensorView* tv1 = mul(f2, tv0);
-
-  //   TensorView* tv3 = unaryOp(UnaryOpType::Abs, tv1);
-  //   TensorView* tv4 = binaryOp(BinaryOpType::NE, tv1, tv0);
-
-  //   // std::cout<<fusion<<std::endl;
-  //   std::stringstream ss;
-  //   ss << "f2 = f0 + f1;\n"
-  //      << "T1[ iS{i4}, iS{i6} ]\n"
-  //      << "   = f2\n"
-  //      << "   * T0[ iS{i4}, iS{i6} ];\n"
-  //      << "T2[ iS{i4}, iS{i6} ]\n"
-  //      << "   = fabs(T1[ iS{i4}, iS{i6} ]);\n"
-  //      << "T4[ iS{i4}, iS{i6} ]\n"
-  //      << "   = T1[ iS{i4}, iS{i6} ]\n"
-  //      << "   != T0[ iS{i4}, iS{i6} ];\n";
-  //   checkFusionPrint(fusion, ss);
-
-  //   fusion.addInput(f0);
-  //   fusion.addInput(f1);
-  //   fusion.addInput(tv0);
-  //   fusion.addOutput(tv1);
-
-  //   // fusion.printMath();
-
-  //   ss = std::stringstream();
-  //   ss << "f2 = f0 + f1;\n"
-  //      << "T1[ iS{i4}, iS{i6} ]\n"
-  //      << "   = f2\n"
-  //      << "   * T0[ iS{i4}, iS{i6} ];\n";
-  //   checkFusionMath(fusion, ss);
-
-  //   ss = std::stringstream();
-  //   ss << "__global__ void CUDAGeneratedKernel(float f0, float f1,
-  //   Tensor<float, 2> T0, Tensor<float, 2> T1){\n"
-  //      << "  float f2;\n"
-  //      << "  f2 = f0 + f1;\n"
-  //      << "  for(size_t i10 = 0; i10 < T1.size[0]; ++i10 ) {\n"
-  //      << "    for(size_t i11 = 0; i11 < T1.size[1]; ++i11 ) {\n"
-  //      << "      T1[ ( i10 * T1.stride[0] ) + ( i11 * T1.stride[1] ) ]\n"
-  //      << "         = f2\n"
-  //      << "         * T0[ ( i10 * T0.stride[0] ) + ( i11 * T0.stride[1] )
-  //      ];\n"
-  //      << "    }\n"
-  //      << "  }\n"
-  //      << "}\n";
-  //   // GPULower lower(&fusion);
-  //   // lower.printKernel(std::cout);
-  //   checkFusionLower(fusion, ss);
-  // }
-
-  // // Arith pointwise operations
-  // {
-  //   Fusion fusion;
-  //   FusionGuard fg(&fusion);
-
-  //   IterDomain* id2 = new IterDomain(new Int(0), new Int(2));
-  //   IterDomain* id3 = new IterDomain(new Int(0), new Int(3));
-  //   IterDomain* id4 = new IterDomain(new Int(0), new Int(4));
-
-  //   TensorDomain* dom0 = new TensorDomain({id2, id3, id4});
-  //   TensorView* tv0 = new TensorView(dom0, DataType::Float);
-  //   TensorView* tv1 = new TensorView(dom0, DataType::Float);
-
-  //   TensorView* tv2 = add(tv0, tv1);
-
-  //   fusion.addInput(tv0);
-  //   fusion.addInput(tv1);
-  //   fusion.addOutput(tv2);
-
-  //   // GPULower lower(&fusion);
-  //   // lower.printKernel(std::cout);
-
-  //   std::stringstream ss;
-  //   ss << "__global__ void CUDAGeneratedKernel(Tensor<float, 3> T0,
-  //   Tensor<float, 3> T1, Tensor<float, 3> T2){\n"
-  //      << "  for(size_t i9 = 0; i9 < T2.size[0]; ++i9 ) {\n"
-  //      << "    for(size_t i10 = 0; i10 < T2.size[1]; ++i10 ) {\n"
-  //      << "      for(size_t i11 = 0; i11 < T2.size[2]; ++i11 ) {\n"
-  //      << "        T2[ ( i9 * T2.stride[0] ) + ( i10 * T2.stride[1] ) + ( i11
-  //      * T2.stride[2] ) ]\n"
-  //      << "           = T0[ ( i9 * T0.stride[0] ) + ( i10 * T0.stride[1] ) +
-  //      ( i11 * T0.stride[2] ) ]\n"
-  //      << "           + T1[ ( i9 * T1.stride[0] ) + ( i10 * T1.stride[1] ) +
-  //      ( i11 * T1.stride[2] ) ];\n"
-  //      << "      }\n"
-  //      << "    }\n"
-  //      << "  }\n"
-  //      << "}\n";
-  //   checkFusionLower(fusion, ss);
-  // }
-
-  // // Arith reduction operations
-  // {
-  //   Fusion fusion;
-  //   FusionGuard fg(&fusion);
-
-  //   IterDomain* id2 = new IterDomain(new Int(0), new Int(2));
-  //   IterDomain* id3 = new IterDomain(new Int(0), new Int(3));
-  //   IterDomain* id4 = new IterDomain(new Int(0), new Int(4));
-
-  //   TensorDomain* dom0 = new TensorDomain({id2, id3, id4});
-  //   TensorView* tv0 = new TensorView(dom0, DataType::Float);
-
-  //   TensorView* tv1 = sum(tv0, {0, 2});
-
-  //   fusion.addInput(tv0);
-  //   fusion.addOutput(tv1);
-
-  //   // GPULower lower(&fusion);
-  //   // lower.printKernel(std::cout);
-
-  //   std::stringstream ss;
-  //   ss << "__device__ void reduction_add_float(float& a, const float b) {\n"
-  //      << "  a = a + b;\n"
-  //      << "}\n"
-  //      << "__global__ void CUDAGeneratedKernel(Tensor<float, 3> T0,
-  //      Tensor<float, 1> T1){\n"
-  //      << "  for(size_t i9 = 0; i9 < T1.size[1]; ++i9 ) {\n"
-  //      << "    T1[ ( i9 * T1.stride[0] ) ]\n"
-  //      << "       = float(0);\n"
-  //      << "  }\n"
-  //      << "  for(size_t i10 = 0; i10 < T0.size[0]; ++i10 ) {\n"
-  //      << "    for(size_t i11 = 0; i11 < T1.size[1]; ++i11 ) {\n"
-  //      << "      for(size_t i12 = 0; i12 < T0.size[2]; ++i12 ) {\n"
-  //      << "        T1[ ( i11 * T1.stride[0] ) ]\n"
-  //      << "           = T1[ ( i11 * T1.stride[0] ) ]\n"
-  //      << "           + T0[ ( i10 * T0.stride[0] ) + ( i11 * T0.stride[1] ) +
-  //      ( i12 * T0.stride[2] ) ];\n"
-  //      << "      }\n"
-  //      << "    }\n"
-  //      << "  }\n"
-  //      << "}\n";
-  //   checkFusionLower(fusion, ss);
-  // }
-
-  // {
-  //   Fusion fusion;
-  //   FusionGuard fg(&fusion);
-
-  //   IterDomain* id2 = new IterDomain(new Int(0), new Int(2));
-  //   IterDomain* id3 = new IterDomain(new Int(0), new Int(3));
-  //   IterDomain* id4 = new IterDomain(new Int(0), new Int(4));
-
-  //   TensorDomain* dom0 = new TensorDomain({id2, id3, id4});
-  //   TensorView* tv0 = new TensorView(dom0, DataType::Float);
-
-  //   TensorView* tv1 =
-  //       reductionOp(BinaryOpType::Mul, {0, 2}, new Float(1.0), tv0);
-
-  //   fusion.addInput(tv0);
-  //   fusion.addOutput(tv1);
-
-  //   // GPULower lower(&fusion);
-  //   // lower.printKernel(std::cout);
-
-  //   std::stringstream ss;
-  //   ss << "__device__ void reduction_mul_float(float& a, const float b) {\n"
-  //      << "  a = a * b;\n"
-  //      << "}\n"
-  //      << "__global__ void CUDAGeneratedKernel(Tensor<float, 3> T0,
-  //      Tensor<float, 1> T1){\n"
-  //      << "  for(size_t i9 = 0; i9 < T1.size[1]; ++i9 ) {\n"
-  //      << "    T1[ ( i9 * T1.stride[0] ) ]\n"
-  //      << "       = float(1);\n"
-  //      << "  }\n"
-  //      << "  for(size_t i10 = 0; i10 < T0.size[0]; ++i10 ) {\n"
-  //      << "    for(size_t i11 = 0; i11 < T1.size[1]; ++i11 ) {\n"
-  //      << "      for(size_t i12 = 0; i12 < T0.size[2]; ++i12 ) {\n"
-  //      << "        T1[ ( i11 * T1.stride[0] ) ]\n"
-  //      << "           = T1[ ( i11 * T1.stride[0] ) ]\n"
-  //      << "           * T0[ ( i10 * T0.stride[0] ) + ( i11 * T0.stride[1] ) +
-  //      ( i12 * T0.stride[2] ) ];\n"
-  //      << "      }\n"
-  //      << "    }\n"
-  //      << "  }\n"
-  //      << "}\n";
-  //   checkFusionLower(fusion, ss);
-  // }
-
-  // // Broadcast operation
-  // {
-  //   Fusion fusion;
-  //   FusionGuard fg(&fusion);
-
-  //   IterDomain* id2 = new IterDomain(new Int(0), new Int(2));
-  //   IterDomain* id3 = new IterDomain(new Int(0), new Int(3));
-  //   IterDomain* id4 = new IterDomain(new Int(0), new Int(4));
-
-  //   TensorDomain* input_dom = new TensorDomain({id2, id3});
-  //   TensorDomain* output_dom = new TensorDomain({id2, id3, id4});
-  //   TensorView* tv0 = new TensorView(input_dom, DataType::Float);
-  //   TensorView* tv1 = new TensorView(output_dom, DataType::Float);
-  //   fusion.addInput(tv0);
-  //   fusion.addInput(tv1);
-
-  //   TensorView* tv2 = broadcast(tv0, {false, true, false});
-  //   TensorView* tv3 = add(tv2, tv1);
-  //   fusion.addOutput(tv3);
-
-  //   tv2->computeAt(tv3, -1);
-
-  //   // GPULower lower(&fusion);
-  //   // lower.printKernel(std::cout);
-
-  //   std::stringstream ss;
-  //   ss << "__global__ void CUDAGeneratedKernel(Tensor<float, 2> T0,
-  //   Tensor<float, 3> T1, Tensor<float, 3> T3){\n"
-  //      << "  for(size_t i12 = 0; i12 < T3.size[0]; ++i12 ) {\n"
-  //      << "    for(size_t i13 = 0; i13 < T3.size[2]; ++i13 ) {\n"
-  //      << "      for(size_t i14 = 0; i14 < T3.size[2]; ++i14 ) {\n"
-  //      << "        float T2[1];\n"
-  //      << "        T2[ 0 ]\n"
-  //      << "           = T0[ ( i12 * T0.stride[0] ) + ( i14 * T0.stride[1] )
-  //      ];\n"
-  //      << "        T3[ ( i12 * T3.stride[0] ) + ( i13 * T3.stride[1] ) + (
-  //      i14 * T3.stride[2] ) ]\n"
-  //      << "           = T2[ 0 ]\n"
-  //      << "           + T1[ ( i12 * T1.stride[0] ) + ( i13 * T1.stride[1] ) +
-  //      ( i14 * T1.stride[2] ) ];\n"
-  //      << "      }\n"
-  //      << "    }\n"
-  //      << "  }\n"
-  //      << "}\n";
-  //   checkFusionLower(fusion, ss);
-  // }
-
-  // // Compiling and running a fusion
-  // {
-  //   // First create a program, this will generate its own fusion to be used
-  //   in
-  //   // compilation
-  //   torch::jit::fuser::cuda::CudaKernel prog;
-
-  //   // Get the programs fusion to use
-  //   Fusion& fusion = *prog.fusion_;
-  //   FusionGuard fg(&fusion);
-
-  //   // Helper functions to make 3D float tensors
-  //   TensorView* tv0 = makeTensor(3);
-  //   TensorView* tv1 = makeTensor(3);
-
-  //   // Register your inputs
-  //   fusion.addInput(tv0);
-  //   fusion.addInput(tv1);
-
-  //   // Do some basic math, it returns a `Val*` but can be static_casted back
-  //   to
-  //   // TensorView
-  //   TensorView* tv2 = add(tv0, tv1);
-
-  //   // Register outputs
-  //   fusion.addOutput(tv2);
-
-  //   prog.device_ = 0;
-  //   prog.grid(1);
-  //   prog.block(1);
-
-  //   // Specify float tensor to be put on CUDA device 0
-  //   auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA,
-  //   0);
-
-  //   // Create tensors with PyTorch's ATen
-  //   // tv0 -> input0
-  //   at::Tensor input0 = at::randn({2, 3, 4}, options);
-  //   // tv1 -> input1
-  //   at::Tensor input1 = at::rand_like(input0);
-
-  //   // Create a buffer for the kernels output
-  //   // tv2 -> output2
-  //   at::Tensor output2 = at::empty_like(input1);
-
-  //   // Compile the generated kernel
-  //   torch::jit::fuser::cuda::compileKernel(&prog);
-
-  //   // Run the program
-  //   torch::jit::fuser::cuda::runTestKernel(&prog, {input0, input1},
-  //   {output2});
-
-  //   // Validate the kernel with PyTorch eager mode
-  //   at::allclose(output2, input0.add(input1));
-  // }
-  // // Split, merge, reorder
-  // {
-  //   Fusion fusion;
-  //   FusionGuard fg(&fusion);
-
-  //   // Helper functions to make 3D float tensors
-  //   TensorView* tv0 = makeTensor(1);
-
-  //   // Register your inputs
-  //   fusion.addInput(tv0);
-
-  //   // Do some basic math, it returns a `Val*` but can be static_casted back
-  //   to
-  //   // TensorView
-  //   TensorView* tv1 = mul(tv0, new Float(2.0));
-  //   fusion.addOutput(tv1);
-
-  //   std::stringstream ss;
-  //   ss << "__global__ void CUDAGeneratedKernel(Tensor<float, 1> T0,
-  //   Tensor<float, 1> T1){\n"
-  //      << "  for(size_t i5 = 0; i5 < T1.size[0]; ++i5 ) {\n"
-  //      << "    T1[ ( i5 * T1.stride[0] ) ]\n"
-  //      << "       = T0[ ( i5 * T0.stride[0] ) ]\n"
-  //      << "       * float(2);\n"
-  //      << "  }\n"
-  //      << "}\n";
-  //   checkFusionLower(fusion, ss);
-
-  //   checkStmtPrint(tv1, "T1[ iS{T1.size[0]} ]");
-  //   tv1->split(0, 128);
-  //   checkStmtPrint(tv1, "T1[ iS{( ceilDiv(T1.size[0], 128) )}, iS{128} ]");
-
-  //   checkStmtPrint(tv0, "T0[ iS{T1.size[0]} ]");
-
-  //   ss = std::stringstream();
-  //   ss << "__global__ void CUDAGeneratedKernel(Tensor<float, 1> T0,
-  //   Tensor<float, 1> T1){\n"
-  //      << "  for(size_t i18 = 0; i18 < ( ceilDiv(T1.size[0], 128) ); ++i18 )
-  //      {\n"
-  //      << "    for(size_t i19 = 0; i19 < 128; ++i19 ) {\n"
-  //      << "      if ( ( ( ( i18 * 128 ) + i19 ) < T1.size[0] ) ) { \n"
-  //      << "        T1[ ( ( ( i18 * 128 ) + i19 ) * T1.stride[0] ) ]\n"
-  //      << "           = T0[ ( ( ( i18 * 128 ) + i19 ) * T0.stride[0] ) ]\n"
-  //      << "           * float(2);\n"
-  //      << "      }\n"
-  //      << "    }\n"
-  //      << "  }\n"
-  //      << "}\n";
-
-  //   checkFusionLower(fusion, ss);
-
-  //   tv1->reorder({{0, 1}});
-  //   checkStmtPrint(tv1, "T1[ iS{128}, iS{( ceilDiv(T1.size[0], 128) )} ]");
-
-  //   ss = std::stringstream();
-  //   ss << "__global__ void CUDAGeneratedKernel(Tensor<float, 1> T0,
-  //   Tensor<float, 1> T1){\n"
-  //      << "  for(size_t i39 = 0; i39 < 128; ++i39 ) {\n"
-  //      << "    for(size_t i40 = 0; i40 < ( ceilDiv(T1.size[0], 128) ); ++i40
-  //      ) {\n"
-  //      << "      if ( ( ( ( i40 * 128 ) + i39 ) < T1.size[0] ) ) { \n"
-  //      << "        T1[ ( ( ( i40 * 128 ) + i39 ) * T1.stride[0] ) ]\n"
-  //      << "           = T0[ ( ( ( i40 * 128 ) + i39 ) * T0.stride[0] ) ]\n"
-  //      << "           * float(2);\n"
-  //      << "      }\n"
-  //      << "    }\n"
-  //      << "  }\n"
-  //      << "}\n";
-  //   checkFusionLower(fusion, ss);
-
-  //   tv1->reorder({{0, 1}});
-  //   tv1->merge(0, 1);
-  //   checkStmtPrint(tv1, "T1[ iS{( ( ceilDiv(T1.size[0], 128) ) * 128 )} ]");
-
-  //   ss = std::stringstream();
-  //   ss << "__global__ void CUDAGeneratedKernel(Tensor<float, 1> T0,
-  //   Tensor<float, 1> T1){\n"
-  //      << "  for(size_t i64 = 0; i64 < ( ( ceilDiv(T1.size[0], 128) ) * 128
-  //      ); ++i64 ) {\n"
-  //      << "    if ( ( ( ( ( i64 / 128 ) * 128 ) + ( i64 % 128 ) ) <
-  //      T1.size[0] ) ) { \n"
-  //      << "      T1[ ( ( ( ( i64 / 128 ) * 128 ) + ( i64 % 128 ) ) *
-  //      T1.stride[0] ) ]\n"
-  //      << "         = T0[ ( ( ( ( i64 / 128 ) * 128 ) + ( i64 % 128 ) ) *
-  //      T0.stride[0] ) ]\n"
-  //      << "         * float(2);\n"
-  //      << "    }\n"
-  //      << "  }\n"
-  //      << "}\n";
-
-  //   checkFusionLower(fusion, ss);
-  // }
-  // // Parallelize
-  // {
-  //   Fusion fusion;
-  //   FusionGuard fg(&fusion);
-
-  //   // Helper functions to make 3D float tensors
-  //   TensorView* tv0 = makeTensor(1);
-
-  //   // Register your inputs
-  //   fusion.addInput(tv0);
-
-  //   // Do some basic math, it returns a `Val*` but can be static_casted back
-  //   to
-  //   // TensorView
-  //   TensorView* tv1 = mul(tv0, new Float(2.0));
-  //   fusion.addOutput(tv1);
-
-  //   tv1->split(0, 128);
-  //   tv1->axis(1)->parallelize(ParallelType::TIDx);
-  //   checkStmtPrint(
-  //       tv1, "T1[ iS{( ceilDiv(i1, 128) )}, ithreadIdx.x{128} ]");
-  //   std::stringstream ss;
-  //   ss << "__global__ void CUDAGeneratedKernel(Tensor<float, 1> T0,
-  //   Tensor<float, 1> T1){\n"
-  //      << "  for(size_t i12 = 0; i12 < ( ceilDiv(T1.size[0], 128) ); ++i12 )
-  //      {\n"
-  //      << "    if ( ( ( ( i12 * 128 ) + threadIdx.x ) < T1.size[0] ) ) { \n"
-  //      << "      T1[ ( ( ( i12 * 128 ) + threadIdx.x ) * T1.stride[0] ) ]\n"
-  //      << "         = T0[ ( ( ( i12 * 128 ) + threadIdx.x ) * T0.stride[0] )
-  //      ]\n"
-  //      << "         * float(2);\n"
-  //      << "    }\n"
-  //      << "  }\n"
-  //      << "}\n";
-  //   checkFusionLower(fusion, ss);
-  // }
+  // Basics: TensorView
+  {
+    Fusion fusion;
+    FusionGuard fg(&fusion);
+
+    // Create a constant Int of 0
+    Int* zero = new Int(0);
+
+    // First dimension, goes from zero to a run-time integer size
+    IterDomain* dim0 = new IterDomain(zero, new Int());
+
+    // Second dimension, goes from zero to another run-time integer size
+    IterDomain* dim1 = new IterDomain(zero, new Int());
+
+    // Create our domain where dim0 will be the outer dimension, and dim1 the
+    // inner dimension
+    TensorDomain* td0 = new TensorDomain({dim0, dim1});
+
+    // Create a 2D float tensor
+    TensorView* tv0 = new TensorView(td0, DataType::Float);
+  }
+
+  // Basics: TensorView
+  {
+    Fusion fusion;
+    FusionGuard fg(&fusion);
+
+    // Create a constant Int of 0
+    Int* zero = new Int(0);
+    Int* one = new Int(1);
+
+    checkStmtPrint(zero, "0", __LINE__);
+    // Prints "0"
+
+    // First dimension, goes from zero to a run-time integer size
+    IterDomain* dim0 = new IterDomain(zero, new Int());
+    checkStmtPrint(dim0, "iS{i2}", __LINE__);
+
+    // Second dimension, goes from zero to another run-time integer size
+    IterDomain* dim1 = new IterDomain(one, new Int());
+    checkStmtPrint(dim1, "iS{1 : i3}", __LINE__);
+
+    // Create our domain where dim0 will be the outer dimension, and dim1 the
+    // inner dimension
+    TensorDomain* td0 = new TensorDomain({dim0, dim1});
+    checkStmtPrint(td0, "[ iS{i2}, iS{1 : i3} ]", __LINE__);
+
+    // Create a 2D float tensor
+    TensorView* tv0 = new TensorView(td0, DataType::Float);
+    checkStmtPrint(tv0, "T0[ iS{i2}, iS{1 : i3} ]", __LINE__);
+  }
+
+  // Basics: Arithmetic
+  {
+    Fusion fusion;
+    FusionGuard fg(&fusion);
+
+    // Create a run-time Float
+    Float* f0 = new Float();
+    // Create a second run-time Float
+    Float* f1 = new Float();
+    // Multiply them and create a 3rd Floateger, but it returns as a val
+    Val* f2 = add(f0, f1);
+
+    // Create a 2D tensor:
+    TensorView* tv0 = makeTensor(2);
+    // Multiply with the 3rd integer, which returns a TensorView
+    TensorView* tv1 = mul(f2, tv0);
+
+    TensorView* tv3 = unaryOp(UnaryOpType::Abs, tv1);
+    TensorView* tv4 = binaryOp(BinaryOpType::NE, tv1, tv0);
+
+    std::string str = R"(
+      f2 = f0 + f1;
+      T1[ iS{i4}, iS{i6} ]
+         = f2
+         * T0[ iS{i4}, iS{i6} ];
+      T2[ iS{i4}, iS{i6} ]
+         = fabs(T1[ iS{i4}, iS{i6} ]);
+      T4[ iS{i4}, iS{i6} ]
+         = T1[ iS{i4}, iS{i6} ]
+         != T0[ iS{i4}, iS{i6} ];
+    )";
+    checkFusionPrint(fusion, str, __LINE__);
+
+    fusion.addInput(f0);
+    fusion.addInput(f1);
+    fusion.addInput(tv0);
+    fusion.addOutput(tv1);
+
+    // fusion.printMath();
+
+    str = R"(
+      f2 = f0 + f1;
+      T1[ iS{i4}, iS{i6} ]
+         = f2
+         * T0[ iS{i4}, iS{i6} ];
+    )";
+    checkFusionMath(fusion, str, __LINE__);
+
+    str = R"(
+    __global__ void CUDAGeneratedKernel(float f0, float f1, Tensor<float, 2> T0, Tensor<float, 2> T1){
+      float f2;
+      f2 = f0 + f1;
+      for(size_t i10 = 0; i10 < T1.size[0]; ++i10 ) {
+        for(size_t i11 = 0; i11 < T1.size[1]; ++i11 ) {
+          T1[ ( i10 * T1.stride[0] ) + ( i11 * T1.stride[1] ) ]
+             = f2
+             * T0[ ( i10 * T0.stride[0] ) + ( i11 * T0.stride[1] ) ];
+        }
+      }
+    })";
+    checkFusionLower(fusion, str, __LINE__);
+  }
+
+  // Arith pointwise operations
+  {
+    Fusion fusion;
+    FusionGuard fg(&fusion);
+
+    IterDomain* id2 = new IterDomain(new Int(0), new Int(2));
+    IterDomain* id3 = new IterDomain(new Int(0), new Int(3));
+    IterDomain* id4 = new IterDomain(new Int(0), new Int(4));
+
+    TensorDomain* dom0 = new TensorDomain({id2, id3, id4});
+    TensorView* tv0 = new TensorView(dom0, DataType::Float);
+    TensorView* tv1 = new TensorView(dom0, DataType::Float);
+
+    TensorView* tv2 = add(tv0, tv1);
+
+    fusion.addInput(tv0);
+    fusion.addInput(tv1);
+    fusion.addOutput(tv2);
+
+    std::string str = R"(
+    __global__ void CUDAGeneratedKernel(Tensor<float, 3> T0, Tensor<float, 3> T1, Tensor<float, 3> T2){
+      for(size_t i9 = 0; i9 < T2.size[0]; ++i9 ) {
+        for(size_t i10 = 0; i10 < T2.size[1]; ++i10 ) {
+          for(size_t i11 = 0; i11 < T2.size[2]; ++i11 ) {
+            T2[ ( i9 * T2.stride[0] ) + ( i10 * T2.stride[1] ) + ( i11 * T2.stride[2] ) ]
+               = T0[ ( i9 * T0.stride[0] ) + ( i10 * T0.stride[1] ) + ( i11 * T0.stride[2] ) ]
+               + T1[ ( i9 * T1.stride[0] ) + ( i10 * T1.stride[1] ) + ( i11 * T1.stride[2] ) ];
+          }
+        }
+      }
+    }
+    )";
+    checkFusionLower(fusion, str, __LINE__);
+  }
+
+  // Arith reduction operations
+  {
+    Fusion fusion;
+    FusionGuard fg(&fusion);
+
+    IterDomain* id2 = new IterDomain(new Int(0), new Int(2));
+    IterDomain* id3 = new IterDomain(new Int(0), new Int(3));
+    IterDomain* id4 = new IterDomain(new Int(0), new Int(4));
+
+    TensorDomain* dom0 = new TensorDomain({id2, id3, id4});
+    TensorView* tv0 = new TensorView(dom0, DataType::Float);
+
+    TensorView* tv1 = sum(tv0, {0, 2});
+
+    fusion.addInput(tv0);
+    fusion.addOutput(tv1);
+
+    std::string str = R"(
+      __device__ void reduction_add_float(float& a, const float b) {
+        a = a + b;
+      }
+      __global__ void CUDAGeneratedKernel(Tensor<float, 3> T0, Tensor<float, 1> T1){
+        for(size_t i9 = 0; i9 < T1.size[1]; ++i9 ) {
+          T1[ ( i9 * T1.stride[0] ) ]
+             = float(0);
+        }
+        for(size_t i10 = 0; i10 < T0.size[0]; ++i10 ) {
+          for(size_t i11 = 0; i11 < T1.size[1]; ++i11 ) {
+            for(size_t i12 = 0; i12 < T0.size[2]; ++i12 ) {
+              T1[ ( i11 * T1.stride[0] ) ]
+                 = T1[ ( i11 * T1.stride[0] ) ]
+                 + T0[ ( i10 * T0.stride[0] ) + ( i11 * T0.stride[1] ) + ( i12 * T0.stride[2] ) ];
+            }
+          }
+        }
+      }
+      )";
+    checkFusionLower(fusion, str, __LINE__);
+  }
+
+  {
+    Fusion fusion;
+    FusionGuard fg(&fusion);
+
+    IterDomain* id2 = new IterDomain(new Int(0), new Int(2));
+    IterDomain* id3 = new IterDomain(new Int(0), new Int(3));
+    IterDomain* id4 = new IterDomain(new Int(0), new Int(4));
+
+    TensorDomain* dom0 = new TensorDomain({id2, id3, id4});
+    TensorView* tv0 = new TensorView(dom0, DataType::Float);
+
+    TensorView* tv1 =
+        reductionOp(BinaryOpType::Mul, {0, 2}, new Float(1.0), tv0);
+
+    fusion.addInput(tv0);
+    fusion.addOutput(tv1);
+
+    std::string str = R"(
+    __device__ void reduction_mul_float(float& a, const float b) {
+      a = a * b;
+    }
+    __global__ void CUDAGeneratedKernel(Tensor<float, 3> T0, Tensor<float, 1> T1){
+      for(size_t i9 = 0; i9 < T1.size[1]; ++i9 ) {
+        T1[ ( i9 * T1.stride[0] ) ]
+           = float(1);
+      }
+      for(size_t i10 = 0; i10 < T0.size[0]; ++i10 ) {
+        for(size_t i11 = 0; i11 < T1.size[1]; ++i11 ) {
+          for(size_t i12 = 0; i12 < T0.size[2]; ++i12 ) {
+            T1[ ( i11 * T1.stride[0] ) ]
+               = T1[ ( i11 * T1.stride[0] ) ]
+               * T0[ ( i10 * T0.stride[0] ) + ( i11 * T0.stride[1] ) + ( i12 * T0.stride[2] ) ];
+          }
+        }
+      }
+    }
+    )";
+    checkFusionLower(fusion, str, __LINE__);
+  }
+
+  // Broadcast operation
+  {
+    Fusion fusion;
+    FusionGuard fg(&fusion);
+
+    IterDomain* id2 = new IterDomain(new Int(0), new Int(2));
+    IterDomain* id3 = new IterDomain(new Int(0), new Int(3));
+    IterDomain* id4 = new IterDomain(new Int(0), new Int(4));
+
+    TensorDomain* input_dom = new TensorDomain({id2, id3});
+    TensorDomain* output_dom = new TensorDomain({id2, id3, id4});
+    TensorView* tv0 = new TensorView(input_dom, DataType::Float);
+    TensorView* tv1 = new TensorView(output_dom, DataType::Float);
+    fusion.addInput(tv0);
+    fusion.addInput(tv1);
+
+    TensorView* tv2 = broadcast(tv0, {false, true, false});
+    TensorView* tv3 = add(tv2, tv1);
+    fusion.addOutput(tv3);
+
+    tv2->computeAt(tv3, -1);
+
+    std::string str = R"(
+      __global__ void CUDAGeneratedKernel(Tensor<float, 2> T0, Tensor<float, 3> T1, Tensor<float, 3> T3){
+        for(size_t i12 = 0; i12 < T3.size[0]; ++i12 ) {
+          for(size_t i13 = 0; i13 < T3.size[2]; ++i13 ) {
+            for(size_t i14 = 0; i14 < T3.size[2]; ++i14 ) {
+              float T2[1];
+              T2[ 0 ]
+                 = T0[ ( i12 * T0.stride[0] ) + ( i14 * T0.stride[1] ) ];
+              T3[ ( i12 * T3.stride[0] ) + ( i13 * T3.stride[1] ) + ( i14 * T3.stride[2] ) ]
+                 = T2[ 0 ]
+                 + T1[ ( i12 * T1.stride[0] ) + ( i13 * T1.stride[1] ) + ( i14 * T1.stride[2] ) ];
+            }
+          }
+        }
+      })";
+    checkFusionLower(fusion, str, __LINE__);
+  }
+
+  // Compiling and running a fusion
+  {
+    // First create a program, this will generate its own fusion to be used in
+    // compilation
+    torch::jit::fuser::cuda::CudaKernel prog;
+
+    // Get the programs fusion to use
+    Fusion& fusion = *prog.fusion_;
+    FusionGuard fg(&fusion);
+
+    // Helper functions to make 3D float tensors
+    TensorView* tv0 = makeTensor(3);
+    TensorView* tv1 = makeTensor(3);
+
+    // Register your inputs
+    fusion.addInput(tv0);
+    fusion.addInput(tv1);
+
+    // Do some basic math, it returns a `Val*` but can be static_casted back to
+    // TensorView
+    TensorView* tv2 = add(tv0, tv1);
+
+    // Register outputs
+    fusion.addOutput(tv2);
+
+    prog.device_ = 0;
+    prog.grid(1);
+    prog.block(1);
+
+    // Specify float tensor to be put on CUDA device 0
+    auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
+
+    // Create tensors with PyTorch's ATen
+    // tv0 -> input0
+    at::Tensor input0 = at::randn({2, 3, 4}, options);
+    // tv1 -> input1
+    at::Tensor input1 = at::rand_like(input0);
+
+    // Create a buffer for the kernels output
+    // tv2 -> output2
+    at::Tensor output2 = at::empty_like(input1);
+
+    // Compile the generated kernel
+    torch::jit::fuser::cuda::compileKernel(&prog);
+
+    // Run the program
+    torch::jit::fuser::cuda::runTestKernel(&prog, {input0, input1}, {output2});
+
+    // Validate the kernel with PyTorch eager mode
+    at::allclose(output2, input0.add(input1));
+  }
+  // Split, merge, reorder
+  {
+    Fusion fusion;
+    FusionGuard fg(&fusion);
+
+    // Helper functions to make 3D float tensors
+    TensorView* tv0 = makeTensor(1);
+
+    // Register your inputs
+    fusion.addInput(tv0);
+
+    // Do some basic math, it returns a `Val*` but can be static_casted back to
+    // TensorView
+    TensorView* tv1 = mul(tv0, new Float(2.0));
+    fusion.addOutput(tv1);
+
+    std::string str = R"(
+      __global__ void CUDAGeneratedKernel(Tensor<float, 1> T0, Tensor<float, 1> T1){
+        for(size_t i5 = 0; i5 < T1.size[0]; ++i5 ) {
+          T1[ ( i5 * T1.stride[0] ) ]
+             = T0[ ( i5 * T0.stride[0] ) ]
+             * float(2);
+        }
+      })";
+    checkFusionLower(fusion, str, __LINE__);
+
+    checkStmtPrint(tv1, "T1[ iS{T1.size[0]} ]", __LINE__);
+    tv1->split(0, 128);
+    checkStmtPrint(
+        tv1, "T1[ iS{( ceilDiv(T1.size[0], 128) )}, iS{128} ]", __LINE__);
+
+    checkStmtPrint(tv0, "T0[ iS{T1.size[0]} ]", __LINE__);
+
+    str = R"(
+      __global__ void CUDAGeneratedKernel(Tensor<float, 1> T0, Tensor<float, 1> T1){
+        for(size_t i18 = 0; i18 < ( ceilDiv(T1.size[0], 128) ); ++i18 ) {
+          for(size_t i19 = 0; i19 < 128; ++i19 ) {
+            if ( ( ( ( i18 * 128 ) + i19 ) < T1.size[0] ) ) { 
+              T1[ ( ( ( i18 * 128 ) + i19 ) * T1.stride[0] ) ]
+                 = T0[ ( ( ( i18 * 128 ) + i19 ) * T0.stride[0] ) ]
+                 * float(2);
+            }
+          }
+        }
+      })";
+
+    checkFusionLower(fusion, str, __LINE__);
+
+    tv1->reorder({{0, 1}});
+    checkStmtPrint(
+        tv1, "T1[ iS{128}, iS{( ceilDiv(T1.size[0], 128) )} ]", __LINE__);
+    str = R"(
+      __global__ void CUDAGeneratedKernel(Tensor<float, 1> T0, Tensor<float, 1> T1){
+        for(size_t i35 = 0; i35 < 128; ++i35 ) {
+          for(size_t i36 = 0; i36 < ( ceilDiv(T1.size[0], 128) ); ++i36 ) {
+            if ( ( ( ( i36 * 128 ) + i35 ) < T1.size[0] ) ) { 
+              T1[ ( ( ( i36 * 128 ) + i35 ) * T1.stride[0] ) ]
+                 = T0[ ( ( ( i36 * 128 ) + i35 ) * T0.stride[0] ) ]
+                 * float(2);
+            }
+          }
+        }
+      })";
+    checkFusionLower(fusion, str, __LINE__);
+
+    tv1->reorder({{0, 1}});
+    tv1->merge(0, 1);
+    checkStmtPrint(
+        tv1, "T1[ iS{( ( ceilDiv(T1.size[0], 128) ) * 128 )} ]", __LINE__);
+
+    str =
+        R"(__global__ void CUDAGeneratedKernel(Tensor<float, 1> T0, Tensor<float, 1> T1){
+          for(size_t i56 = 0; i56 < ( ( ceilDiv(T1.size[0], 128) ) * 128 ); ++i56 ) {
+            if ( ( ( ( ( i56 / 128 ) * 128 ) + ( i56 % 128 ) ) < T1.size[0] ) ) { 
+              T1[ ( ( ( ( i56 / 128 ) * 128 ) + ( i56 % 128 ) ) * T1.stride[0] ) ]
+                 = T0[ ( ( ( ( i56 / 128 ) * 128 ) + ( i56 % 128 ) ) * T0.stride[0] ) ]
+                 * float(2);
+            }
+          }
+        })";
+
+    checkFusionLower(fusion, str, __LINE__);
+  }
+  // Parallelize
+  {
+    Fusion fusion;
+    FusionGuard fg(&fusion);
+
+    // Helper functions to make 3D float tensors
+    TensorView* tv0 = makeTensor(1);
+
+    // Register your inputs
+    fusion.addInput(tv0);
+
+    // Do some basic math, it returns a `Val*` but can be static_casted back to
+    // TensorView
+    TensorView* tv1 = mul(tv0, new Float(2.0));
+    fusion.addOutput(tv1);
+
+    tv1->split(0, 128);
+    tv1->axis(1)->parallelize(ParallelType::TIDx);
+    checkStmtPrint(
+        tv1, "T1[ iS{( ceilDiv(i1, 128) )}, ithreadIdx.x{128} ]", __LINE__);
+    std::string str = R"(
+      __global__ void CUDAGeneratedKernel(Tensor<float, 1> T0, Tensor<float, 1> T1){
+        for(size_t i12 = 0; i12 < ( ceilDiv(T1.size[0], 128) ); ++i12 ) {
+          if ( ( ( ( i12 * 128 ) + threadIdx.x ) < T1.size[0] ) ) { 
+            T1[ ( ( ( i12 * 128 ) + threadIdx.x ) * T1.stride[0] ) ]
+               = T0[ ( ( ( i12 * 128 ) + threadIdx.x ) * T0.stride[0] ) ]
+               * float(2);
+          }
+        }
+      })";
+    checkFusionLower(fusion, str, __LINE__);
+  }
   // Unroll
   {
     Fusion fusion;
@@ -3818,25 +3814,171 @@ void testGPU_FusionManual() {
 
     tv1->split(0, 128);
     tv1->axis(1)->parallelize(ParallelType::Unroll);
-    checkStmtPrint(tv1, "T1[ iS{( ceilDiv(i1, 128) )}, iU{128} ]");
-    fusion.printKernel();
-    // std::stringstream ss;
-    // ss << "__global__ void CUDAGeneratedKernel(Tensor<float, 1> T0,
-    // Tensor<float, 1> T1){\n"
-    //    << "  for(size_t i12 = 0; i12 < ( ceilDiv(T1.size[0], 128) ); ++i12 )
-    //    {\n"
-    //    << "    if ( ( ( ( i12 * 128 ) + threadIdx.x ) < T1.size[0] ) ) { \n"
-    //    << "      T1[ ( ( ( i12 * 128 ) + threadIdx.x ) * T1.stride[0] ) ]\n"
-    //    << "         = T0[ ( ( ( i12 * 128 ) + threadIdx.x ) * T0.stride[0] )
-    //    ]\n"
-    //    << "         * float(2);\n"
-    //    << "    }\n"
-    //    << "  }\n"
-    //    << "}\n";
-    // checkFusionLower(fusion, ss);
+    checkStmtPrint(tv1, "T1[ iS{( ceilDiv(i1, 128) )}, iU{128} ]", __LINE__);
+    std::string str = R"(
+      __global__ void CUDAGeneratedKernel(Tensor<float, 1> T0, Tensor<float, 1> T1){
+        for(size_t i12 = 0; i12 < ( ceilDiv(T1.size[0], 128) ); ++i12 ) {
+          if ( ( ( ( i12 * 128 ) + ( 128 - 1 ) ) < T1.size[0] ) ) { 
+            for(size_t i13 = 0; i13 < 128; ++i13 ) {
+              T1[ ( ( ( i12 * 128 ) + i13 ) * T1.stride[0] ) ]
+                 = T0[ ( ( ( i12 * 128 ) + i13 ) * T0.stride[0] ) ]
+                 * float(2);
+            }
+          } else { 
+            for(size_t i13 = 0; i13 < 128; ++i13 ) {
+              if ( ( ( ( i12 * 128 ) + i13 ) < T1.size[0] ) ) { 
+                T1[ ( ( ( i12 * 128 ) + i13 ) * T1.stride[0] ) ]
+                   = T0[ ( ( ( i12 * 128 ) + i13 ) * T0.stride[0] ) ]
+                   * float(2);
+              }
+            }
+          }
+        }
+      })";
+    checkFusionLower(fusion, str, __LINE__);
+  }
+  // computeAt example starting simple
+  {
+    Fusion fusion;
+    FusionGuard fg(&fusion);
+
+    // Helper functions to make 3D float tensors
+    TensorView* tv0 = makeTensor(1);
+
+    // Register your inputs
+    fusion.addInput(tv0);
+
+    // Do some basic math, it returns a `Val*` but can be static_casted back to
+    // TensorView
+    TensorView* tv1 = mul(tv0, new Float(2.0));
+    TensorView* tv2 = add(tv1, new Float(1.0));
+    fusion.addOutput(tv2);
+
+    // Make sure if we try to allocate a register buffer based on symbolic sizes
+    // we can't compile.
+    ASSERT_ANY_THROW(fusion.printKernel());
+    tv1->computeAt(tv2, -1);
+    tv1->computeAt(tv2, 1);
+    std::string str = R"(
+      __global__ void CUDAGeneratedKernel(Tensor<float, 1> T0, Tensor<float, 1> T2){
+        for(size_t i10 = 0; i10 < T2.size[0]; ++i10 ) {
+          float T1[1];
+          T1[ 0 ]
+             = T0[ ( i10 * T0.stride[0] ) ]
+             * float(2);
+          T2[ ( i10 * T2.stride[0] ) ]
+             = T1[ 0 ]
+             + float(1);
+        }
+      })";
+    checkFusionLower(fusion, str, __LINE__);
+    ASSERT_ANY_THROW(tv1->split(0, 128));
+    tv2->split(0, 128);
+    tv2->axis(0)->parallelize(ParallelType::BIDx);
+    tv2->axis(1)->parallelize(ParallelType::TIDx);
+    tv1->computeAt(tv2, 1);
+    str = R"(
+      __global__ void CUDAGeneratedKernel(Tensor<float, 1> T0, Tensor<float, 1> T2){
+        float T1[128];
+        for(size_t i35 = 0; i35 < 128; ++i35 ) {
+          if ( ( ( ( blockIdx.x * 128 ) + i35 ) < T2.size[0] ) ) { 
+            T1[ i35 ]
+               = T0[ ( ( ( blockIdx.x * 128 ) + i35 ) * T0.stride[0] ) ]
+               * float(2);
+          }
+        }
+        if ( ( ( ( blockIdx.x * 128 ) + threadIdx.x ) < T2.size[0] ) ) { 
+          T2[ ( ( ( blockIdx.x * 128 ) + threadIdx.x ) * T2.stride[0] ) ]
+             = T1[ 0 ]
+             + float(1);
+        }
+      })";
+    checkFusionLower(fusion, str, __LINE__);
+    tv1->computeAt(tv2, -1);
+    str = R"(
+        __global__ void CUDAGeneratedKernel(Tensor<float, 1> T0, Tensor<float, 1> T2){
+          float T1[1];
+          if ( ( ( ( blockIdx.x * 128 ) + threadIdx.x ) < T2.size[0] ) ) { 
+            T1[ 0 ]
+               = T0[ ( ( ( blockIdx.x * 128 ) + threadIdx.x ) * T0.stride[0] ) ]
+               * float(2);
+          }
+          if ( ( ( ( blockIdx.x * 128 ) + threadIdx.x ) < T2.size[0] ) ) { 
+            T2[ ( ( ( blockIdx.x * 128 ) + threadIdx.x ) * T2.stride[0] ) ]
+               = T1[ 0 ]
+               + float(1);
+          }
+        }
+        )";
+    checkFusionLower(fusion, str, __LINE__);
+  }
+  // computeAt example fast pointwise kernels
+  {
+    Fusion fusion;
+    FusionGuard fg(&fusion);
+
+    // Helper functions to make 3D float tensors
+    TensorView* tv0 = makeTensor(1);
+
+    // Register your inputs
+    fusion.addInput(tv0);
+
+    // Do some basic math, it returns a `Val*` but can be static_casted back to
+    // TensorView
+    TensorView* tv1 = mul(tv0, new Float(2.0));
+    TensorView* tv2 = add(tv1, new Float(1.0));
+    fusion.addOutput(tv2);
+
+    tv2->split(0, 128);
+    tv2->split(0, 4);
+    tv2->axis(0)->parallelize(ParallelType::BIDx);
+    tv2->axis(1)->parallelize(ParallelType::Unroll);
+    tv2->axis(2)->parallelize(ParallelType::TIDx);
+    tv1->computeAt(tv2, 1);
+    checkStmtPrint(
+        tv1,
+        "T1[ iS{( ceilDiv(( ceilDiv(i1, 128) ), 4) )}, iS{4}, iS{128} ] compute_at( T2, 1 )",
+        __LINE__);
+    tv1->axis(1)->parallelize(ParallelType::Unroll);
+    tv1->axis(2)->parallelize(ParallelType::TIDx);
+    std::string str =
+        R"(__global__ void CUDAGeneratedKernel(Tensor<float, 1> T0, Tensor<float, 1> T2){
+        float T1[4];
+        if ( ( ( ( ( ( blockIdx.x * 4 ) + ( 4 - 1 ) ) * 128 ) + threadIdx.x ) < T2.size[0] ) ) { 
+          for(size_t i35 = 0; i35 < 4; ++i35 ) {
+            T1[ i35 ]
+               = T0[ ( ( ( ( ( blockIdx.x * 4 ) + i35 ) * 128 ) + threadIdx.x ) * T0.stride[0] ) ]
+               * float(2);
+          }
+        } else { 
+          for(size_t i35 = 0; i35 < 4; ++i35 ) {
+            if ( ( ( ( ( ( blockIdx.x * 4 ) + i35 ) * 128 ) + threadIdx.x ) < T2.size[0] ) ) { 
+              T1[ i35 ]
+                 = T0[ ( ( ( ( ( blockIdx.x * 4 ) + i35 ) * 128 ) + threadIdx.x ) * T0.stride[0] ) ]
+                 * float(2);
+            }
+          }
+        }
+        if ( ( ( ( ( ( blockIdx.x * 4 ) + ( 4 - 1 ) ) * 128 ) + threadIdx.x ) < T2.size[0] ) ) { 
+          for(size_t i36 = 0; i36 < 4; ++i36 ) {
+            T2[ ( ( ( ( ( blockIdx.x * 4 ) + i36 ) * 128 ) + threadIdx.x ) * T2.stride[0] ) ]
+               = T1[ i36 ]
+               + float(1);
+          }
+        } else { 
+          for(size_t i36 = 0; i36 < 4; ++i36 ) {
+            if ( ( ( ( ( ( blockIdx.x * 4 ) + i36 ) * 128 ) + threadIdx.x ) < T2.size[0] ) ) { 
+              T2[ ( ( ( ( ( blockIdx.x * 4 ) + i36 ) * 128 ) + threadIdx.x ) * T2.stride[0] ) ]
+                 = T1[ i36 ]
+                 + float(1);
+            }
+          }
+        }
+      })";
+    checkFusionLower(fusion, str, __LINE__);
   }
 }
 
 } // namespace jit
 } // namespace torch
-#endif // #if defined(USE_CUDA)
+// #endif // #if defined(USE_CUDA)
