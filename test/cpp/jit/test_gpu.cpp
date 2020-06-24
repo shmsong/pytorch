@@ -12,6 +12,7 @@
 #include <torch/csrc/jit/codegen/cuda/mutator.h>
 #include <torch/csrc/jit/codegen/cuda/transform_replay.h>
 #include <torch/csrc/jit/codegen/cuda/transform_rfactor.h>
+#include <torch/csrc/jit/codegen/cuda/scheduler.h>
 
 // fuser and IR parser
 #include <torch/csrc/jit/codegen/cuda/parser.h>
@@ -4746,6 +4747,49 @@ void testGPU_FusionNonRedAxisBind() {
       aten_output.allclose(cg_output),
       "Error of: ",
       aten_output.sub(cg_output).abs().max());
+}
+
+void testGPU_FusionReductionScheduler() {
+  int bid_x = 3;
+  int tid_x = 2;
+  int red_dim = 0;
+
+  torch::jit::fuser::cuda::CudaKernel prog;
+  Fusion& fusion = *prog.fusion_;
+  FusionGuard fg(&fusion);
+
+  // Set up your input tensor views
+  TensorView* tv0 = makeDummyTensor(2);
+  fusion.addInput(tv0);
+
+  TensorView* tv1 = reductionOp(BinaryOpType::Add, {red_dim}, new Float(0), tv0);
+  fusion.addOutput(tv1);
+
+  prog.device_ = 0;
+  prog.grid(1);
+  prog.block(bid_x*tid_x);
+
+  auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
+  at::Tensor input = at::rand({16, bid_x * tid_x}, options);
+  at::Tensor cg_output = at::empty({bid_x * tid_x}, options);
+
+  // Apply reduction heuristic
+  const at::ArrayRef<IValue> inputs({input});
+  TORCH_CHECK(Scheduler::reduction(prog.fusion_.get(), inputs),
+              "Reduction is not found!");
+
+  torch::jit::fuser::cuda::compileKernel(&prog);
+  torch::jit::fuser::cuda::runTestKernel(&prog, {input}, {cg_output});
+  GPULower gpulw(&fusion);
+  gpulw.printKernel(std::cout);
+
+  auto aten_output = input.sum({red_dim});
+
+  std::cout << aten_output << std::endl;
+  std::cout << cg_output << std::endl;
+  TORCH_CHECK(aten_output.allclose(cg_output),
+              "Error of: ",
+              aten_output.sub(cg_output).abs().max());
 }
 
 void testGPU_FusionSplitBCast() {
