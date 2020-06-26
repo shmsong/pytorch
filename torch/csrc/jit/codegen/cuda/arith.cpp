@@ -408,7 +408,7 @@ static TensorView* newForReduction(
 
 TensorView* reductionOp(
     BinaryOpType reduction_op_type,
-    const std::vector<int64_t>& axes,
+    const std::vector<int>& axes,
     Val* init,
     TensorView* tv) {
   TORCH_CHECK(
@@ -422,9 +422,9 @@ TensorView* reductionOp(
   TORCH_CHECK(tv->nDims() > 0, "Tried to reduce a 0-dim tensor");
 
   std::vector<unsigned int> uint_axes;
-  for (int64_t axis : axes) {
+  for (int axis : axes) {
     if (axis < 0)
-      axis += int64_t(tv->nDims());
+      axis += int(tv->nDims());
 
     TORCH_CHECK(
         axis >= 0 && (unsigned int)axis < tv->nDims(),
@@ -444,9 +444,7 @@ TensorView* reductionOp(
   return out;
 }
 
-TORCH_CUDA_API TensorView* sum(
-    TensorView* v1,
-    const std::vector<int64_t>& axes) {
+TORCH_CUDA_API TensorView* sum(TensorView* v1, const std::vector<int>& axes) {
   Val* init;
   switch (v1->getDataType().value()) {
     case (DataType::Float):
