@@ -542,27 +542,27 @@ void runKernel(
 
   // TODO: Proper API to establish reasonable launch configurations;
   // Naive launch config;
-  size_t numel = outputs[0].numel();
+  const size_t numel = outputs[0].numel();
 
-  int blocks;
-  int thread_x;
-  int thread_y;
+  int blocks = 1;
+  int thread_x = 1;
+  int thread_y = 1;
   if (!entry->reduction_axes_.empty()) {
     // TODO: MAJOR HACK! Expr evaluation makes launch configuration much easier
     blocks = numel;
     // Translated to `fcd_reduction`
     if (entry->reduction_axes_.back() ==
         outputs[0].dim() + entry->reduction_axes_.size() - 1) {
-      thread_x = FCD_REDUCTION_THREAD_X;
+      thread_x = kFcdReductionThreadX;
       thread_y = 1;
     } else {
-      thread_x = NON_FCD_REDUCTION_THREAD_X;
-      thread_y = NON_FCD_REDUCTION_THREAD_Y;
+      thread_x = kNonFcdReductionThreadX;
+      thread_y = kNonFcdReductionThreadY;
     }
   } else {
     // TODO: we can't randomly clap down this until we got striding.
-    blocks = ceilDiv(numel, PW_THREAD_X * entry->unroll_factor_);
-    thread_x = PW_THREAD_X;
+    blocks = ceilDiv(numel, kPwThreadX * entry->unroll_factor_);
+    thread_x = kPwThreadX;
     thread_y = 1;
   }
   const auto nBlocks = blocks;

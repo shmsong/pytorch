@@ -26,14 +26,14 @@ namespace jit {
 namespace fuser {
 namespace cuda {
 
-#define PW_THREAD_X 128
-#define FCD_REDUCTION_THREAD_X 128
-#define NON_FCD_REDUCTION_THREAD_X 32
-#define NON_FCD_REDUCTION_THREAD_Y 32
+constexpr int kPwThreadX = 128;
+constexpr int kFcdReductionThreadX = 128;
+constexpr int kNonFcdReductionThreadX = 32;
+constexpr int kNonFcdReductionThreadY = 32;
 
-TORCH_CUDA_API bool hasReductionNode(const Block* const block);
+TORCH_CUDA_API bool hasReductionNode(const Block* block);
 
-TORCH_CUDA_API bool isReductionNode(const Node* const node);
+TORCH_CUDA_API bool isReductionNode(const Node* node);
 
 // returns whether or not a parsing function exists for the given node type.
 TORCH_CUDA_API bool isNodeParsible(const Node* node);

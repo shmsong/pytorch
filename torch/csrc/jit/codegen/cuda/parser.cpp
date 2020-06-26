@@ -30,8 +30,8 @@ typedef Val* CgValue;
 typedef Expr* CgOp;
 
 typedef void (
-    *ParseFuncPtr)(const Node* const, std::unordered_map<size_t, CgValue>&);
-typedef bool (*MergeQueryFuncPtr)(const Node* const);
+    *ParseFuncPtr)(const Node*, std::unordered_map<size_t, CgValue>&);
+typedef bool (*MergeQueryFuncPtr)(const Node*);
 
 std::vector<int> reductionAxes(TensorView* tv) {
   size_t n_dims = tv->nDims();
@@ -58,7 +58,9 @@ size_t coalescReduction(TensorView* tv) {
       coalesc_permute[reduction_axes[i]] = new_pos;
     }
   }
-  tv->reorder(coalesc_permute);
+  if (!coalesc_permute.empty()) {
+    tv->reorder(coalesc_permute);
+  }
   return reduction_axes.size();
 }
 
@@ -70,12 +72,12 @@ class IrParser {
         : parse_f_(parse_f), merge_f_(merge_f) {}
 
     void parse(
-        const Node* const node,
+        const Node* node,
         std::unordered_map<size_t, CgValue>& values) {
       parse_f_(node, values);
     }
 
-    bool is_compatible(const Node* const node) {
+    bool is_compatible(const Node* node) {
       if (merge_f_ == nullptr) {
         return true;
       }
@@ -219,7 +221,7 @@ class IrParser {
         while (out->nDims() > 1)
           out->merge(0, 1);
         // Split into 128 which will be bockDim.x
-        out->split(0, PW_THREAD_X);
+        out->split(0, kPwThreadX);
         // Split by another 4 which will be our unroll factor
         auto ur_factor = disable_unroll ? 1 : unroll_factor;
         if (!disable_unroll) {
@@ -242,15 +244,15 @@ class IrParser {
         // launch configuratoin.
         TensorView* intermediate;
         if (fcd_reduction) {
-          out_tv->split(-1, FCD_REDUCTION_THREAD_X);
+          out_tv->split(-1, kFcdReductionThreadX);
           // necessary to avoid dynamic allocation on intermediates;
           intermediate = out_tv->rFactor({-2});
         } else {
           // TODO: we don't need a full warp here, this should be determined by
           //       element data type
-          out_tv->split(0, NON_FCD_REDUCTION_THREAD_X);
+          out_tv->split(0, kNonFcdReductionThreadX);
           out_tv->split(
-              -1, NON_FCD_REDUCTION_THREAD_Y); // necessary to avoid dynamic
+              -1, kNonFcdReductionThreadY); // necessary to avoid dynamic
                                                // allocation on intermediates;
           intermediate = out_tv->rFactor({-2});
         }
@@ -269,7 +271,7 @@ class IrParser {
           out_tv->axis(1)->parallelize(ParallelType::TIDx);
         }
       }
-      // Run through intermediates, unroll, and bind their axes
+      // Run through all values, unroll, and bind their axes
       for (auto val : cuda_kernel_->fusion_->vals()) {
         if (val->getValType().value() != ValType::TensorView)
           continue;
@@ -294,7 +296,7 @@ class IrParser {
         out_tv->axis(0)->parallelize(ParallelType::BIDx);
       }
 
-      // Run through intermediates, unroll, and bind their axes
+      // Run through all values, unroll, and bind their axes
       for (auto val : cuda_kernel_->fusion_->vals()) {
         if (val->getValType().value() != ValType::TensorView)
           continue;
@@ -333,7 +335,7 @@ class IrParser {
     return false;
   }
 
-  static bool isReductionNode(const Node* const node) {
+  static bool isReductionNode(const Node* node) {
     if (init_registry_) {
       // TODO: mutex this guy;
       registerJitOperator();
@@ -652,7 +654,7 @@ class IrParser {
           "aten::sum.dim_IntList(Tensor self, int[1] dim, bool keepdim=False, *, int? dtype=None) -> (Tensor)");
       registerParseRule(
           ptr_op,
-          [](const Node* const node,
+          [](const Node* node,
              std::unordered_map<size_t, CgValue>& value_map) -> void {
             auto self = value_map[node->input(0)->unique()];
             auto dims = constant_as<c10::List<int64_t>>(node->input(1));
@@ -665,7 +667,7 @@ class IrParser {
             auto out = sum(self->as<TensorView>(), dims->vec());
             value_map.emplace(node->output()->unique(), out);
           },
-          [](const Node* const node) -> bool {
+          [](const Node* node) -> bool {
             // we don't support cast of output types yet;
             if (!node->inputs()[3]->type()->isSubtypeOf(
                     static_cast<c10::TypePtr>(NoneType::get()))) {
@@ -691,7 +693,7 @@ class IrParser {
       // partition doesn't take constant node explicitly, but it does and copy
       // constant into subgraph. So we need to register constants in codegen IR;
       for (auto output : node->outputs()) {
-        TORCH_CHECK(
+        TORCH_INTERNAL_ASSERT(
             registerScalar(output),
             "registration of output failed at index ",
             output->offset(),
@@ -809,7 +811,7 @@ bool IrParser::init_registry_ = true;
 
 } // namespace
 
-bool hasReductionNode(const Block* const block) {
+bool hasReductionNode(const Block* block) {
   for (auto node : block->nodes()) {
     if (isReductionNode(node)) {
       return true;
@@ -823,11 +825,11 @@ bool hasReductionNode(const Block* const block) {
   return false;
 }
 
-bool isReductionNode(const Node* const node) {
+bool isReductionNode(const Node* node) {
   return IrParser::isReductionNode(node);
 }
 
-bool isNodeParsible(const Node* const node) {
+bool isNodeParsible(const Node* node) {
   return IrParser::canParseNode(node);
 }
 
