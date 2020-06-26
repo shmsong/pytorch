@@ -97,6 +97,12 @@ class TORCH_CUDA_API IterVisitor : public OptOutDispatch {
       bool traverseAllPaths = false,
       bool respectComputeAt = false);
 
+  void traverseFrom2(
+      Fusion* const fusion,
+      const std::vector<Val*>& from,
+      bool traverseAllPaths = false,
+      bool respectComputeAt = false);
+
   // from_outputs_only = true start from outputs registered with fusion,
   // from_outputs_only = false start from all leaf nodes,
   // bool breadth_first = true is not implemented yet
