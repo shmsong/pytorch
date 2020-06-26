@@ -4750,9 +4750,9 @@ void testGPU_FusionNonRedAxisBind() {
 }
 
 void testGPU_FusionReductionScheduler() {
-  int bid_x = 3;
-  int tid_x = 2;
-  int red_dim = 0;
+  int bid_x = 80;
+  int tid_x = 4096; 
+  int red_dim = 1;
 
   torch::jit::fuser::cuda::CudaKernel prog;
   Fusion& fusion = *prog.fusion_;
@@ -4765,23 +4765,27 @@ void testGPU_FusionReductionScheduler() {
   TensorView* tv1 = reductionOp(BinaryOpType::Add, {red_dim}, new Float(0), tv0);
   fusion.addOutput(tv1);
 
-  prog.device_ = 0;
-  prog.grid(1);
-  prog.block(bid_x*tid_x);
-
   auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
-  at::Tensor input = at::rand({16, bid_x * tid_x}, options);
-  at::Tensor cg_output = at::empty({bid_x * tid_x}, options);
+  at::Tensor input = at::rand({bid_x, tid_x}, options);
+  at::Tensor cg_output = at::empty({bid_x}, options);
 
   // Apply reduction heuristic
   const at::ArrayRef<IValue> inputs({input});
-  TORCH_CHECK(Scheduler::reduction(prog.fusion_.get(), inputs),
-              "Reduction is not found!");
+
+  c10::optional<std::tuple<int,int,int,int>> blocking =
+	Scheduler::reduction(prog.fusion_.get(), inputs);
+  TORCH_CHECK(blocking != c10::nullopt, "Reduction is not found!");
+
+  fusion.printMath();
+  GPULower gpulw(&fusion);
+  gpulw.printKernel(std::cout);
+
+  prog.device_ = 0;
+  prog.grid(std::get<0>(blocking.value()), std::get<1>(blocking.value()));
+  prog.block(std::get<2>(blocking.value()), std::get<3>(blocking.value()));
 
   torch::jit::fuser::cuda::compileKernel(&prog);
   torch::jit::fuser::cuda::runTestKernel(&prog, {input}, {cg_output});
-  GPULower gpulw(&fusion);
-  gpulw.printKernel(std::cout);
 
   auto aten_output = input.sum({red_dim});
 

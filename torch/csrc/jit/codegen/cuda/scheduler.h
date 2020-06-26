@@ -9,7 +9,8 @@ namespace fuser {
 
 struct TORCH_CUDA_API Scheduler {
  public:
-  static bool reduction(Fusion *fusion, const at::ArrayRef<IValue> &inputs);
+  static c10::optional<std::tuple<int,int,int,int>>
+  reduction(Fusion *fusion, const at::ArrayRef<IValue> &inputs);
 };
 
 } // namespace fuser
