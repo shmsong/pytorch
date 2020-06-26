@@ -61,35 +61,6 @@ std::unordered_set<Val*> InputsOf::output(Fusion* fusion, Val* output_) {
 }
 
 Fusion::~Fusion() {
-  for (auto ptr : val_set_) {
-    delete ptr;
-  }
-  for (auto ptr : expr_set_) {
-    delete ptr;
-  }
-
-  inputs_ = ir_cloner.clone(other.inputs_);
-  outputs_ = ir_cloner.clone(other.outputs_);
-}
-
-Fusion::Fusion(Fusion&& other) noexcept {
-  swap(*this, other);
-}
-
-Fusion& Fusion::operator=(const Fusion& other) {
-  Fusion copy(other);
-  clear();
-  swap(*this, copy);
-  return *this;
-}
-
-Fusion& Fusion::operator=(Fusion&& other) noexcept {
-  clear();
-  swap(*this, other);
-  return *this;
-}
-
-Fusion::~Fusion() {
   clear();
 }
 
@@ -119,8 +90,7 @@ void Fusion::clear() noexcept {
   uses_.clear();
   values_map_.clear();
 
-  inputs_.clear();
-  outputs_.clear();
+  IRInputOutput::clear();
 }
 
 void Fusion::removeExpr(Expr* expr) {

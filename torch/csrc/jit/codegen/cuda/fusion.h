@@ -105,19 +105,17 @@ class InputsOf : public IterVisitor {
  *
  * The Fusion owns the whole IR graph (Vals and Exprs)
  */
-class TORCH_CUDA_API Fusion final {
+class TORCH_CUDA_API Fusion : public IRInputOutput {
  public:
   Fusion() = default;
 
-  Fusion(const Fusion& other);
-  Fusion(Fusion&& other) noexcept;
+  Fusion(const Fusion& other) = delete;
+  Fusion& operator=(const Fusion& other) = delete;
 
   Fusion& operator=(const Fusion& other);
   Fusion& operator=(Fusion&& other) noexcept;
 
   ~Fusion();
-
-  friend void swap(Fusion& a, Fusion& b) noexcept;
 
   void clear() noexcept;
 
@@ -232,16 +230,6 @@ class TORCH_CUDA_API Fusion final {
     auto it = values_map_.find(const_cast<Val*>(value));
     return it != values_map_.end() ? it->second : value;
   }
-
- private:
-  // Sets of all Vals/Exprs registered with this fusion
-  // (val_deque_ is not owning the objects)
-  std::unordered_set<Val*> val_set_;
-  std::deque<Val*> val_deque_;
-  std::unordered_set<Expr*> expr_set_;
-
-  void replaceInput(Val* replace, Val* with);
-  void replaceOutput(Val* replace, Val* with);
 
  private:
   // Return an int that monotonically increases for each val/expr, some are
