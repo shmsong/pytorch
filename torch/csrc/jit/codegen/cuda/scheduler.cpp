@@ -127,19 +127,21 @@ Scheduler::reduction(Fusion *fusion, const at::ArrayRef<IValue> &inputs) {
 
   int outputs_to_consume_per_block_per_iter = 1;
 
+  // Reduction is performed across warp threads (cross-thread reduction)
   if (red_on_fastest_dim) {
-	// Reduction is performed across warp threads (cross-thread reduction)
 	inputs_to_consume_per_block_per_iter *= block_dim_x;
 	inputs_per_thread = ceil_div(red_inputs, inputs_to_consume_per_block_per_iter);
+    // Decision to do a cross-warp reduction per block
 	if ((red_elems / block_dim_x) >= (block_dim_y * 16) || (red_elems / block_dim_x) >= 256)  {
       inputs_to_consume_per_iter_by_block_dim_y = block_dim_x * block_dim_y;
       inputs_to_consume_per_block_per_iter *= block_dim_y;
       inputs_per_thread = ceil_div(red_inputs, inputs_to_consume_per_block_per_iter);
+    // Do multiple reductions per block
 	} else {
 	  outputs_to_consume_per_block_per_iter *= block_dim_y;
     }
+  // Warp threads are applied across the output
   } else {
-	// Warp threads are applied across the output
     outputs_to_consume_per_block_per_iter *= block_dim_x;
     outputs_to_consume_per_block_per_iter *= block_dim_y;
   }
@@ -160,20 +162,23 @@ Scheduler::reduction(Fusion *fusion, const at::ArrayRef<IValue> &inputs) {
   grid_dim_x = ceil_div(red_outputs, outputs_to_consume_per_block_per_iter);
 
   // Cross-block reductions (if necessary)
-  /*if (    inputs_to_consume_per_iter_by_block_dim_y != 0
+  if (    inputs_to_consume_per_iter_by_block_dim_y != 0
        && inputs_per_thread >= MAX_REDUCTIONS_PER_THREAD
        && grid_dim_x <= target_grid_size                  ) {
 
-    grid_dim_y = std::max(std::min(ceil_div(target_grid_size, grid_dim_x),
-                                   ceil_div(inputs_per_thread, MIN_REDUCTIONS_PER_THREAD)),
-                          ceil_div(inputs_per_thread, MAX_REDUCTIONS_PER_THREAD));
+    int blks_per_out_1  = ceil_div(target_grid_size, grid_dim_x);
+    int blks_per_out_2  = ceil_div(inputs_per_thread, MIN_REDUCTIONS_PER_THREAD);
+    int blks_per_out_3  = ceil_div(inputs_per_thread, MAX_REDUCTIONS_PER_THREAD);
+    int blks_per_output = std::max(std::min(blks_per_out_1, blks_per_out_2), blks_per_out_3);
+
+    std::cout << "GRIDDIM_y: " << inputs_per_thread << " " << blks_per_out_1 << " " << blks_per_out_2 << " " << blks_per_out_3 << std::endl;
 
     //If a cross-block reduction was generated
-    if (grid_dim_y > 1) {
-      inputs_to_consume_per_block_per_iter /= grid_dim_y;
+    if (blks_per_output > 1) {
+      grid_dim_y = inputs_to_consume_per_block_per_iter / blks_per_output;
       inputs_per_thread = ceil_div(inputs_per_thread, inputs_to_consume_per_block_per_iter);
     }
-  }*/
+  }
   // --------- END Heuristic ---------
 
   // Heuristic Definition
@@ -182,30 +187,65 @@ Scheduler::reduction(Fusion *fusion, const at::ArrayRef<IValue> &inputs) {
   if (red_on_fastest_dim) {
     // Initially I am not going to bother with cross-block reductions or
     // letting a block do multiple reductions to make this simple!
-    red_tv->split(-1, block_dim_x);
-    int rf_dim = 0;
-    if(red_dims[0] != grid_dim_x) {
+    bool do_mult_reds_per_block = red_dims[0] != grid_dim_x;
+    bool do_cross_block_reds    = grid_dim_y > 0;
+
+    // Do multiple reductions per block
+	if (do_mult_reds_per_block) {
+      red_tv->split(-1, block_dim_x);
+      // Split Grid dimension to get multiple reds per block
       red_tv->split(0, block_dim_y);
-      rf_dim = -2;
-    } else {
-      rf_dim = -3;
-      red_tv->split(-2, block_dim_y);
-    }
-    auto red_tv_rf = red_tv->rFactor({rf_dim});
 
-    red_tv_rf->computeAt(red_tv, 1);
+      auto red_tv_rf = red_tv->rFactor({-2});
+      red_tv_rf->computeAt(red_tv, 1);
 
-    red_tv->axis(0)->parallelize(ParallelType::BIDx);
-    if(red_dims[0] != grid_dim_x) {
+      red_tv->axis(0)->parallelize(ParallelType::BIDx);
+
+      red_tv_rf->axis(-1)->parallelize(ParallelType::TIDx);
+      red_tv->axis(-1)->parallelize(ParallelType::TIDx);
+
       red_tv_rf->axis(1)->parallelize(ParallelType::TIDy);
       red_tv->axis(1)->parallelize(ParallelType::TIDy);
+	// Do a cross-warp reduction per block
     } else {
-      red_tv_rf->axis(-2)->parallelize(ParallelType::TIDy);
-      red_tv->axis(-2)->parallelize(ParallelType::TIDy);
-    }
+      if (do_cross_block_reds) {
+      	red_tv->split(-1, block_dim_x);
+        // Split up rFactor to reduce across warps
+        red_tv->split(-2, block_dim_y);
+        red_tv->split(-3, grid_dim_y);
 
-    red_tv_rf->axis(-1)->parallelize(ParallelType::TIDx);
-    red_tv->axis(-1)->parallelize(ParallelType::TIDx);
+        auto red_tv_rf = red_tv->rFactor({-4});
+        red_tv_rf->computeAt(red_tv, 1);
+
+        red_tv->axis(0)->parallelize(ParallelType::BIDx);
+
+        // Cross-block reduction binding
+        red_tv_rf->axis(-3)->parallelize(ParallelType::BIDy);
+        red_tv->axis(-3)->parallelize(ParallelType::BIDy);
+
+        red_tv_rf->axis(-1)->parallelize(ParallelType::TIDx);
+        red_tv->axis(-1)->parallelize(ParallelType::TIDx);
+
+        red_tv_rf->axis(-2)->parallelize(ParallelType::TIDy);
+        red_tv->axis(-2)->parallelize(ParallelType::TIDy);
+
+      } else {
+      	red_tv->split(-1, block_dim_x);
+        // Split up rFactor to reduce across warps
+        red_tv->split(-2, block_dim_y);
+
+        auto red_tv_rf = red_tv->rFactor({-3});
+        red_tv_rf->computeAt(red_tv, 1);
+
+        red_tv->axis(0)->parallelize(ParallelType::BIDx);
+
+        red_tv_rf->axis(-1)->parallelize(ParallelType::TIDx);
+        red_tv->axis(-1)->parallelize(ParallelType::TIDx);
+
+        red_tv_rf->axis(-2)->parallelize(ParallelType::TIDy);
+        red_tv->axis(-2)->parallelize(ParallelType::TIDy);
+      }
+    }
   } else {
     red_tv->split(-1, block_dim_x);
     red_tv->split(-2, block_dim_y);
