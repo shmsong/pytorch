@@ -15,7 +15,7 @@ class Fusion;
 
 // Clones nodes from an exiting Fusion
 class TORCH_CUDA_API IrCloner : private OptInConstDispatch {
-  friend class Statement;
+  friend struct Statement;
 
  public:
   explicit IrCloner(Fusion* new_fusion) : fusion_(new_fusion) {}

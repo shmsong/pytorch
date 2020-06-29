@@ -191,7 +191,7 @@ void runCudaFusionGroup(const Node* fusion_node, Stack& stack) {
     // we need to construct outputs;
     std::vector<at::Tensor> outputs;
     for (const auto* output : graph->outputs()) {
-      auto type = output->type()->expect<TensorType>();
+      const auto type = output->type()->expect<TensorType>();
       // Expect output to be tensor;
       TORCH_CHECK(
           type && type->isComplete(),

@@ -169,12 +169,11 @@ class TORCH_CUDA_API Int : public Val {
   const c10::optional<ScalarType> maybe_value_;
 };
 
-class ComputeAt;
-class TransformReplay;
-class TransformIter;
-class OptOutMutator;
-class LoopNestGenerator;
-class GPULower;
+struct TransformReplay;
+struct TransformIter;
+struct OptOutMutator;
+struct LoopNestGenerator;
+struct GPULower;
 
 /*
  * TensorView is our primitive Tensor Type used in code generation. It can be
@@ -192,7 +191,7 @@ class GPULower;
  * we iterate over the 3D TensorDomain [I, J, K], where K is the fastest
  * changing dimension.
  */
-class TORCH_CUDA_API TensorView : public Val {
+struct TORCH_CUDA_API TensorView : public Val {
  public:
   ~TensorView() = default;
 
@@ -208,6 +207,8 @@ class TORCH_CUDA_API TensorView : public Val {
 
   TensorView(const std::shared_ptr<Value>& jit_value)
       : TensorView(jit_value->type()->cast<c10::TensorType>()) {}
+
+  TensorView(const TensorView* src, IrCloner* ir_cloner);
 
   TensorDomain* domain() const {
     return domain_;
@@ -347,6 +348,7 @@ class TORCH_CUDA_API TensorView : public Val {
   int getComputeAtRelPos(int pos);
   void setThisComputeAtAxis();
 
+ private:
   TensorDomain* domain_ = nullptr;
   TensorView* compute_at_view_ = nullptr;
   // compute at axis in compute at view

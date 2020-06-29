@@ -365,7 +365,7 @@ class TORCH_CUDA_API IterDomain : public Val {
  * operations that take in a TensorDomain, applies a transformation and outputs
  * a tensor domain.
  */
-class TORCH_CUDA_API TensorDomain : public Val {
+struct TORCH_CUDA_API TensorDomain : public Val {
  public:
   TensorDomain() = delete;
   ~TensorDomain() = default;
@@ -483,6 +483,8 @@ class TORCH_CUDA_API Split : public Expr {
   Split& operator=(Split&& other) = delete;
 
   Split(IterDomain* _outer, IterDomain* _inner, IterDomain* _in, Int* _factor);
+
+  Split(const Split* src, IrCloner* ir_cloner);
 
   IterDomain* outer() const {
     return outer_;

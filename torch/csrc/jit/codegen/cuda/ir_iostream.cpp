@@ -9,8 +9,8 @@ namespace jit {
 namespace fuser {
 
 // Make sure we can inline something, before we attempt to.
-void check_inlineable(const IRInputOutput* irio) {
-  for (auto inp : irio->inputs())
+static void checkInlineable(const Expr* expr) {
+  for (auto input : expr->inputs()) {
     TORCH_CHECK(
         input->isScalar(),
         "Printing inline computations involving values other than scalars is not currently supported.");
@@ -21,23 +21,6 @@ void check_inlineable(const IRInputOutput* irio) {
   TORCH_CHECK(
       expr->output(0)->isScalar(),
       "Printing inline computations involving values other than scalars is not currently supported.");
-}
-
-void IRPrinter::handle(const Statement* s) {
-  OptInConstDispatch::handle(s);
-}
-
-void IRPrinter::handle(const Val* v) {
-  if (follow_val_map) {
-    // Follow a single maping (permutation chains are not expected)
-    v = FusionGuard::getCurFusion()->loweredVal(v);
-    TORCH_INTERNAL_ASSERT(v == FusionGuard::getCurFusion()->loweredVal(v));
-  }
-  OptInConstDispatch::handle(v);
-}
-
-void IRPrinter::handle(const Expr* e) {
-  OptInConstDispatch::handle(e);
 }
 
 void IRPrinter::handle(const Statement* s) {
@@ -262,19 +245,14 @@ void IRPrinter::handle(const NamedScalar* i) {
   os << i->name();
 }
 
-namespace {
-
-bool isTV(const Val* val) {
-  return (
-      val->getValType().value() == ValType::TensorView ||
-      val->getValType().value() == ValType::TensorIndex);
+static bool isTV(const Val* val) {
+  return val->getValType().value() == ValType::TensorView ||
+      val->getValType().value() == ValType::TensorIndex;
 }
 
 // Check if we're a TensorView op that we can generate code for.
-bool isTVOp(const Expr* expr) {
-  if (expr->nOutputs() == 1 && isTV(expr->output(0)))
-    return true;
-  return false;
+static bool isTVOp(const Expr* expr) {
+  return expr->outputs().size() == 1 && isTV(expr->outputs().front());
 }
 
 void IRPrinter::handle(const UnaryOp* uop) {
