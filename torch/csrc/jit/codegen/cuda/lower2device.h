@@ -10,10 +10,7 @@ namespace torch {
 namespace jit {
 namespace fuser {
 
-struct TORCH_CUDA_API GPULower {
- private:
-  Fusion* const fusion_;
-
+class TORCH_CUDA_API GPULower {
  public:
   // Init printer on ostream
   GPULower(Fusion* _fusion) : fusion_(_fusion) {}

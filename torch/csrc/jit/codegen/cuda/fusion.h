@@ -49,7 +49,7 @@ struct TypeHash {
  */
 
 class Fusion;
-struct TensorView;
+class TensorView;
 
 namespace cuda {
 class CudaKernel;

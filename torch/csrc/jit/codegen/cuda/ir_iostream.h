@@ -31,14 +31,14 @@ class TensorView;
 class IterDomain;
 class TensorIndex;
 
-struct Split;
-struct Merge;
+class Split;
+class Merge;
 
-struct Bool;
-struct Float;
-struct Half;
-struct Int;
-struct Add;
+class Bool;
+class Float;
+class Half;
+class Int;
+class Add;
 
 /*
  * Define pretty printing functions for all nodes. handle is used so we can take

@@ -365,7 +365,7 @@ class TORCH_CUDA_API IterDomain : public Val {
  * operations that take in a TensorDomain, applies a transformation and outputs
  * a tensor domain.
  */
-struct TORCH_CUDA_API TensorDomain : public Val {
+class TORCH_CUDA_API TensorDomain : public Val {
  public:
   TensorDomain() = delete;
   ~TensorDomain() = default;

@@ -169,11 +169,11 @@ class TORCH_CUDA_API Int : public Val {
   const c10::optional<ScalarType> maybe_value_;
 };
 
-struct TransformReplay;
-struct TransformIter;
-struct OptOutMutator;
-struct LoopNestGenerator;
-struct GPULower;
+class TransformReplay;
+class TransformIter;
+class OptOutMutator;
+class LoopNestGenerator;
+class GPULower;
 
 /*
  * TensorView is our primitive Tensor Type used in code generation. It can be
@@ -191,7 +191,7 @@ struct GPULower;
  * we iterate over the 3D TensorDomain [I, J, K], where K is the fastest
  * changing dimension.
  */
-struct TORCH_CUDA_API TensorView : public Val {
+class TORCH_CUDA_API TensorView : public Val {
  public:
   ~TensorView() = default;
 
