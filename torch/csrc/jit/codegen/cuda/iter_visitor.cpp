@@ -106,7 +106,7 @@ void IterVisitor::traverseFrom(
       all_inputs_visited = true;
       continue;
     }
-    auto& stmt = current_inputs.back();
+    const auto& stmt = current_inputs.back();
     // Visit stmt when all_inputs_visited is true.
     if (all_inputs_visited) {
       // Mark visited
