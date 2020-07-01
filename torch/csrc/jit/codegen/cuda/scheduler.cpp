@@ -97,11 +97,14 @@ Scheduler::reduction(Fusion *fusion, const at::ArrayRef<IValue> &inputs) {
   } else {
     block_dim_x = red_outputs;
     block_dim_y = red_elems;
+    // TODO: Remove magic statement
+    block_dim_x /= 4;
   }
 
   // 3. Applying Power of 2 Blocking based on the Maximum Number of threads
 
-  constexpr int MAX_NUM_THREADS  = 512;
+  // TODO: Magic number of 4 for vectorizing 
+  int MAX_NUM_THREADS  = (red_on_fastest_dim ? 512 : 512 / 4);
   int DEVICE_WARP_SIZE = at::cuda::warp_size();
 
   if (block_dim_x < MAX_NUM_THREADS)
@@ -121,36 +124,46 @@ Scheduler::reduction(Fusion *fusion, const at::ArrayRef<IValue> &inputs) {
 
   // 4. Distributing work across a block
 
-  int inputs_to_consume_per_iter_by_block_dim_y = 0;
-  int inputs_to_consume_per_block_per_iter = 1;
-  int inputs_per_thread = 0;
+  //int inputs_to_consume_per_iter_by_block_dim_y = 0;
+  //int inputs_to_consume_per_block_per_iter = 1;
+  int inputs_consumed_per_block_iter = 1;
+  //int inputs_per_thread = 0;
+  int red_elems_per_thread = red_elems;
 
-  int outputs_to_consume_per_block_per_iter = 1;
+  int outputs_produced_per_block_iter = 1;
+  bool reduce_inputs_across_warps = false;
+  //int outputs_to_consume_per_block_per_iter = 1;
 
   // Reduction is performed across warp threads (cross-thread reduction)
   if (red_on_fastest_dim) {
-	inputs_to_consume_per_block_per_iter *= block_dim_x;
-	inputs_per_thread = ceil_div(red_inputs, inputs_to_consume_per_block_per_iter);
+	//inputs_to_consume_per_block_per_iter *= block_dim_x;
+    inputs_consumed_per_block_iter *= block_dim_x;
+	//inputs_per_thread = ceil_div(red_inputs, inputs_to_consume_per_block_per_iter);
+    red_elems_per_thread = ceil_div(red_elems_per_thread, inputs_consumed_per_block_iter);
     // Decision to do a cross-warp reduction per block
-	if ((red_elems / block_dim_x) >= (block_dim_y * 16) || (red_elems / block_dim_x) >= 256)  {
-      inputs_to_consume_per_iter_by_block_dim_y = block_dim_x * block_dim_y;
-      inputs_to_consume_per_block_per_iter *= block_dim_y;
-      inputs_per_thread = ceil_div(red_inputs, inputs_to_consume_per_block_per_iter);
-    // Do multiple reductions per block
-	} else {
-	  outputs_to_consume_per_block_per_iter *= block_dim_y;
-    }
+	//if ((red_elems / block_dim_x) >= (block_dim_y * 16) || (red_elems / block_dim_x) >= 256)  {
   // Warp threads are applied across the output
   } else {
-    outputs_to_consume_per_block_per_iter *= block_dim_x;
-    outputs_to_consume_per_block_per_iter *= block_dim_y;
+    outputs_produced_per_block_iter *= block_dim_x;
+  }
+
+  // Decision to do a cross-warp reduction per block
+  if (red_elems_per_thread >= (block_dim_y * 16) || red_elems_per_thread >= 256)  {
+    //inputs_to_consume_per_iter_by_block_dim_y = block_dim_x * block_dim_y;
+    inputs_consumed_per_block_iter *= block_dim_y;
+    red_elems_per_thread = ceil_div(red_elems_per_thread, block_dim_y);
+    reduce_inputs_across_warps = true;
+    //inputs_per_thread = ceil_div(red_inputs, inputs_to_consume_per_block_per_iter);
+  // Do multiple reductions per block
+  } else {
+    outputs_produced_per_block_iter *= block_dim_y;
   }
 
   // 5. Distributing work across blocks
 
   // Magic numbers of calculations allowed per thread.
-  constexpr int MIN_REDUCTIONS_PER_THREAD = 16;
-  constexpr int MAX_REDUCTIONS_PER_THREAD = 256;
+  constexpr int MIN_VALUES_PER_THREAD = 16;
+  constexpr int MAX_VALUES_PER_THREAD = 256;
 
   int DEVICE_MAX_THREADS_PER_MULTIPROCESSOR = at::cuda::getCurrentDeviceProperties()->maxThreadsPerMultiProcessor;
   int DEVICE_MULTIPROCESSOR_COUNT = at::cuda::getCurrentDeviceProperties()->multiProcessorCount;
@@ -159,27 +172,32 @@ Scheduler::reduction(Fusion *fusion, const at::ArrayRef<IValue> &inputs) {
   int target_grid_size = DEVICE_MULTIPROCESSOR_COUNT * blocks_per_sm;
 
   //Setting the number of blocks based on the number of outputs
-  grid_dim_x = ceil_div(red_outputs, outputs_to_consume_per_block_per_iter);
+  grid_dim_x = ceil_div(red_outputs / (red_on_fastest_dim ? 1 : 4), outputs_produced_per_block_iter);
+  //grid_dim_x = ceil_div(red_outputs , outputs_produced_per_block_iter);
 
   // Cross-block reductions (if necessary)
-  if (    inputs_to_consume_per_iter_by_block_dim_y != 0
-       && inputs_per_thread >= MAX_REDUCTIONS_PER_THREAD
+  if (    reduce_inputs_across_warps
+       && red_elems_per_thread >= MAX_VALUES_PER_THREAD
        && grid_dim_x <= target_grid_size                  ) {
 
     int blks_per_out_1  = ceil_div(target_grid_size, grid_dim_x);
-    int blks_per_out_2  = ceil_div(inputs_per_thread, MIN_REDUCTIONS_PER_THREAD);
-    int blks_per_out_3  = ceil_div(inputs_per_thread, MAX_REDUCTIONS_PER_THREAD);
+    int blks_per_out_2  = ceil_div(red_elems_per_thread, MIN_VALUES_PER_THREAD);
+    int blks_per_out_3  = ceil_div(red_elems_per_thread, MAX_VALUES_PER_THREAD);
     int blks_per_output = std::max(std::min(blks_per_out_1, blks_per_out_2), blks_per_out_3);
 
-    std::cout << "GRIDDIM_y: " << inputs_per_thread << " " << blks_per_out_1 << " " << blks_per_out_2 << " " << blks_per_out_3 << std::endl;
+    std::cout << "GRIDDIM_y: " << target_grid_size << " " <<red_elems_per_thread << " " << blks_per_out_1 << " " << blks_per_out_2 << " " << blks_per_out_3 << std::endl;
 
+    grid_dim_y = std::max(1, blks_per_output);
     //If a cross-block reduction was generated
     if (blks_per_output > 1) {
-      grid_dim_y = inputs_to_consume_per_block_per_iter / blks_per_output;
-      inputs_per_thread = ceil_div(inputs_per_thread, inputs_to_consume_per_block_per_iter);
+      //grid_dim_y = ceil_div(inputs_consumed_per_block_iter, blks_per_output);
+      inputs_consumed_per_block_iter *= blks_per_output;
+      red_elems_per_thread = ceil_div(red_elems_per_thread, inputs_consumed_per_block_iter);
     }
   }
   // --------- END Heuristic ---------
+
+  std::cout << "GRIDS/BLOCKS: " << grid_dim_x << " " << grid_dim_y << " " << block_dim_x << " " << block_dim_y << std::endl;
 
   // Heuristic Definition
   // TODO: Need to factor in unrolling
@@ -188,7 +206,7 @@ Scheduler::reduction(Fusion *fusion, const at::ArrayRef<IValue> &inputs) {
     // Initially I am not going to bother with cross-block reductions or
     // letting a block do multiple reductions to make this simple!
     bool do_mult_reds_per_block = red_dims[0] != grid_dim_x;
-    bool do_cross_block_reds    = grid_dim_y > 0;
+    bool do_cross_block_reds    = grid_dim_y > 1;
 
     // Do multiple reductions per block
 	if (do_mult_reds_per_block) {
@@ -247,11 +265,34 @@ Scheduler::reduction(Fusion *fusion, const at::ArrayRef<IValue> &inputs) {
       }
     }
   } else {
-    red_tv->split(-1, block_dim_x);
-    red_tv->split(-2, block_dim_y);
-    red_tv->axis(-1)->parallelize(ParallelType::TIDx);
-    red_tv->axis(-2)->parallelize(ParallelType::TIDy);
-    red_tv->axis(-3)->parallelize(ParallelType::BIDx);
+    if (block_dim_y > 1) {
+      red_tv->split(-1, block_dim_x);
+	  if(grid_dim_y > 1)
+		red_tv->split(0,grid_dim_y);
+      red_tv->split(0, block_dim_y);
+      auto red_tv_rf = red_tv->rFactor({0});
+      red_tv_rf->axis(-1)->parallelize(ParallelType::TIDx);
+      red_tv_rf->axis(-2)->parallelize(ParallelType::BIDx);
+	  if(grid_dim_y > 1) {
+      	red_tv_rf->axis(-3)->parallelize(ParallelType::BIDy);
+      	red_tv_rf->axis(-4)->parallelize(ParallelType::TIDy);
+      } else {
+      	red_tv_rf->axis(-3)->parallelize(ParallelType::TIDy);
+      }
+      red_tv->axis(-1)->parallelize(ParallelType::TIDx);
+      red_tv->axis(-2)->parallelize(ParallelType::BIDx);
+      red_tv->axis(-3)->parallelize(ParallelType::TIDy);
+	  if(grid_dim_y > 1) {
+        red_tv->axis(-3)->parallelize(ParallelType::BIDy);
+        red_tv->axis(-4)->parallelize(ParallelType::TIDy);
+      } else {
+        red_tv->axis(-3)->parallelize(ParallelType::TIDy);
+      }
+	} else {
+      red_tv->split(-1, block_dim_x);
+      red_tv->axis(-1)->parallelize(ParallelType::TIDx);
+      red_tv->axis(-2)->parallelize(ParallelType::BIDx);
+    }
   }
   std::cout << grid_dim_x << " " << grid_dim_y << " " << block_dim_x << " " << block_dim_y << std::endl;
   return std::tuple<int,int,int,int>({grid_dim_x, grid_dim_y, block_dim_x, block_dim_y});
