@@ -172,8 +172,8 @@ Scheduler::reduction(Fusion *fusion, const at::ArrayRef<IValue> &inputs) {
   int target_grid_size = DEVICE_MULTIPROCESSOR_COUNT * blocks_per_sm;
 
   //Setting the number of blocks based on the number of outputs
-  grid_dim_x = ceil_div(red_outputs / (red_on_fastest_dim ? 1 : 4), outputs_produced_per_block_iter);
-  //grid_dim_x = ceil_div(red_outputs , outputs_produced_per_block_iter);
+  //grid_dim_x = ceil_div(red_outputs / (red_on_fastest_dim ? 1 : 4), outputs_produced_per_block_iter);
+  grid_dim_x = ceil_div(red_outputs , outputs_produced_per_block_iter);
 
   // Cross-block reductions (if necessary)
   if (    reduce_inputs_across_warps
@@ -267,13 +267,13 @@ Scheduler::reduction(Fusion *fusion, const at::ArrayRef<IValue> &inputs) {
   } else {
     if (block_dim_y > 1) {
       red_tv->split(-1, block_dim_x);
-	  if(grid_dim_y > 1)
-		red_tv->split(0,grid_dim_y);
+      if(grid_dim_y > 1)
+        red_tv->split(0,grid_dim_y);
       red_tv->split(0, block_dim_y);
       auto red_tv_rf = red_tv->rFactor({0});
       red_tv_rf->axis(-1)->parallelize(ParallelType::TIDx);
       red_tv_rf->axis(-2)->parallelize(ParallelType::BIDx);
-	  if(grid_dim_y > 1) {
+      if(grid_dim_y > 1) {
       	red_tv_rf->axis(-3)->parallelize(ParallelType::BIDy);
       	red_tv_rf->axis(-4)->parallelize(ParallelType::TIDy);
       } else {
@@ -282,13 +282,13 @@ Scheduler::reduction(Fusion *fusion, const at::ArrayRef<IValue> &inputs) {
       red_tv->axis(-1)->parallelize(ParallelType::TIDx);
       red_tv->axis(-2)->parallelize(ParallelType::BIDx);
       red_tv->axis(-3)->parallelize(ParallelType::TIDy);
-	  if(grid_dim_y > 1) {
+      if(grid_dim_y > 1) {
         red_tv->axis(-3)->parallelize(ParallelType::BIDy);
         red_tv->axis(-4)->parallelize(ParallelType::TIDy);
       } else {
         red_tv->axis(-3)->parallelize(ParallelType::TIDy);
       }
-	} else {
+    } else {
       red_tv->split(-1, block_dim_x);
       red_tv->axis(-1)->parallelize(ParallelType::TIDx);
       red_tv->axis(-2)->parallelize(ParallelType::BIDx);
