@@ -75,17 +75,14 @@ class ComputeAt {
   // Producer use chains set in, used in a few spots.
   std::deque<std::deque<TensorView*>> producer_use_chains_;
 
-  // Order for forward computeAt pass
-  std::vector<std::pair<TensorView*, TensorView*>> forward_compute_at_order;
-
-  // Order for backward computeAt pass
-  std::vector<std::pair<TensorView*, TensorView*>> backward_compute_at_order;
-
   // TensorViews we've set computeAt of, in this computeAt pass
   std::unordered_set<TensorView*> compute_at_ed;
 
   // TensorViews of which we know their correct computeAt position
   std::unordered_map<TensorView*, unsigned int> known_positions;
+
+  // Outputs if we touched them, and their position.
+  std::unordered_map<TensorView*, unsigned int> touched_outputs;
 
   ComputeAt(
       TensorView* _producer,

@@ -1,4 +1,5 @@
 #include <torch/csrc/jit/codegen/cuda/ir_all_nodes.h>
+#include <torch/csrc/jit/codegen/cuda/ir_iostream.h>
 #include <torch/csrc/jit/codegen/cuda/transform_replay.h>
 
 #include <torch/csrc/jit/codegen/cuda/compute_at.h>
@@ -6,6 +7,112 @@
 namespace torch {
 namespace jit {
 namespace fuser {
+
+
+namespace {
+// Wrapper around set_intersection
+template <typename T>
+std::set<T> set_intersection(const std::set<T>& set1, const std::set<T>& set2) {
+  std::set<T> intersection;
+  std::set_intersection(
+      set1.begin(),
+      set1.end(),
+      set2.begin(),
+      set2.end(),
+      std::inserter(intersection, intersection.begin()));
+  return intersection;
+}
+
+// convert an iterable of Val* to be an iterable of TensorView*
+template <typename T1, typename T2>
+T1 tv_iterable(const T2& val_iterable) {
+  T1 tv_iterable = T1();
+  std::transform(
+      val_iterable.begin(),
+      val_iterable.end(),
+      std::back_inserter(tv_iterable),
+      [](Val* v) {
+        TORCH_INTERNAL_ASSERT(
+            v->getValType().value() == ValType::TensorView,
+            "When following the computeAt dependency chain, a non TensorView value was found.");
+        return static_cast<TensorView*>(v);
+      });
+  return tv_iterable;
+}
+
+std::deque<std::deque<TensorView*>> getAllTVUseChains(TensorView* tv) {
+  // Grab all paths from producer to  of producer in fusion.
+  auto val_all_use_chains = DependencyCheck::getAllUseChains(tv);
+
+  // Convert dep chains to tensor view chains.
+  std::deque<std::deque<TensorView*>> producer_use_chains_;
+  for (const auto& val_dep_chain : val_all_use_chains)
+    producer_use_chains_.push_back(
+        tv_iterable<std::deque<TensorView*>>(val_dep_chain));
+  return producer_use_chains_;
+}
+} // namespace
+
+void ComputeAt::run(
+    TensorView* producer,
+    TensorView* consumer,
+    unsigned int consumer_position) {
+
+  // Make sure the correct fusion is setup between this and consumer.
+  TORCH_CHECK(
+      producer->fusion() == consumer->fusion(),
+      producer,
+      " and ",
+      consumer,
+      " are not in the same fusion.");
+
+  // Make sure Fusion Guard is set appropriately
+  FusionGuard fg(producer->fusion());
+
+  std::vector<TensorView*> producers;
+
+  // It doesn't make sense to set computeAt on an input as it's not generated,
+  // it's provided. If this was called, move the computeAt to users of the
+  // producer that are in a dependency between prodcer and consumer.
+  if (producer->fusion()->hasInput(producer)) {
+    auto all_chains =
+        DependencyCheck::getAllDependencyChains(producer, consumer);
+
+    TORCH_CHECK(
+        !all_chains.empty(),
+        "Compute At expects ",
+        producer,
+        " is a dependency of ",
+        consumer,
+        ", however it is not.");
+
+    std::unordered_set<TensorView*> added_producers;
+
+    // Remove all TVs from producer to consumer as common consumer must be at or
+    // after consumer
+    for (const auto& dep_chain : all_chains) {
+      auto tv_chain = tv_iterable<std::deque<TensorView*>>(dep_chain);
+      // If not just a direct dependency
+      if(tv_chain.size()>2){
+        if(added_producers.find(tv_chain[1]) == added_producers.end()){
+          producers.push_back(tv_chain[1]);
+          added_producers.emplace(tv_chain[1]);
+        }
+      }
+    }
+  } else {
+    // If producer is not an input, it's the only one.
+    producers.push_back(producer);
+  }
+
+  // Run computeAt on our potentially modified producer(s)
+  if(!producers.empty()){
+    for(auto producer_to_run : producers){
+      ComputeAt ca(producer_to_run, consumer, consumer_position);
+      ca.runPass();
+    }
+  }
+}
 
 // Actually applies transformation
 void ComputeAt::computeAt_impl(
@@ -51,50 +158,6 @@ void ComputeAt::forwardComputeAt_impl(
       consumer, producer, (int)producer_compute_at_axis);
   producer->setComputeAt(consumer, replay.second);
 }
-
-namespace {
-// Wrapper around set_intersection
-template <typename T>
-std::set<T> set_intersection(const std::set<T>& set1, const std::set<T>& set2) {
-  std::set<T> intersection;
-  std::set_intersection(
-      set1.begin(),
-      set1.end(),
-      set2.begin(),
-      set2.end(),
-      std::inserter(intersection, intersection.begin()));
-  return intersection;
-}
-
-// convert an iterable of Val* to be an iterable of TensorView*
-template <typename T1, typename T2>
-T1 tv_iterable(const T2& val_iterable) {
-  T1 tv_iterable = T1();
-  std::transform(
-      val_iterable.begin(),
-      val_iterable.end(),
-      std::back_inserter(tv_iterable),
-      [](Val* v) {
-        TORCH_INTERNAL_ASSERT(
-            v->getValType().value() == ValType::TensorView,
-            "When following the computeAt dependency chain, a non TensorView value was found.");
-        return static_cast<TensorView*>(v);
-      });
-  return tv_iterable;
-}
-
-std::deque<std::deque<TensorView*>> getAllTVUseChains(TensorView* tv) {
-  // Grab all paths from producer to  of producer in fusion.
-  auto val_all_use_chains = DependencyCheck::getAllUseChains(tv);
-
-  // Convert dep chains to tensor view chains.
-  std::deque<std::deque<TensorView*>> producer_use_chains_;
-  for (const auto& val_dep_chain : val_all_use_chains)
-    producer_use_chains_.push_back(
-        tv_iterable<std::deque<TensorView*>>(val_dep_chain));
-  return producer_use_chains_;
-}
-} // namespace
 
 void ComputeAt::setCommonConsumer() {
   // Convert the first chain to a set.
@@ -150,7 +213,7 @@ void ComputeAt::traverseAllKnown() {
 
   // propagate backwards through all dep chains from producer to consumer
 
-  // Grab all chains from common_consumer to producer
+  // Grab all chains from consumer to producer
   chains = DependencyCheck::getAllDependencyChains(producer_, consumer_);
 
   TORCH_CHECK(
@@ -204,12 +267,13 @@ void ComputeAt::traverseAllKnown() {
         DependencyCheck::getAllDependencyChains(consumer_, common_consumer_);
   }
 
-  // propagate forward through all chains
-  unsigned int running_producer_compute_at = consumer_position_;
-
   for (const auto& dep_chain : chains) {
     TORCH_INTERNAL_ASSERT(
         !dep_chain.empty(), "Computed an invalid common_consumer.");
+
+
+    // propagate forward through all chains
+    unsigned int running_producer_pos = consumer_position_;
 
     std::deque<TensorView*> tv_dep_chain =
         tv_iterable<std::deque<TensorView*>>(dep_chain);
@@ -226,12 +290,14 @@ void ComputeAt::traverseAllKnown() {
 
       if (compute_at_ed.find(running_producer) != compute_at_ed.end() &&
           known_positions.find(running_consumer) != known_positions.end()) {
-        running_producer_compute_at = known_positions.at(running_consumer);
+        running_producer_pos = known_positions.at(running_consumer);
         continue;
       }
 
       forwardComputeAt_impl(
-          running_producer, running_consumer, running_producer_compute_at);
+          running_producer, running_consumer, running_producer_pos);
+
+      running_producer_pos = running_producer->getRelativeComputeAtAxis();
 
       compute_at_ed.emplace(running_producer);
 
@@ -263,7 +329,7 @@ void ComputeAt::traverseForward() {
 
   // propagate forward through all chains
   for (const auto& dep_chain : chains) {
-    int running_producer_compute_at = known_positions.at(producer_);
+    int running_producer_pos = known_positions.at(producer_);
     TORCH_INTERNAL_ASSERT(
         !dep_chain.empty(), "Computed an invalid common_consumer.");
 
@@ -282,19 +348,33 @@ void ComputeAt::traverseForward() {
 
       if (compute_at_ed.find(running_producer) != compute_at_ed.end() &&
           known_positions.find(running_consumer) != known_positions.end()) {
-        running_producer_compute_at = known_positions.at(running_consumer);
+        running_producer_pos = known_positions.at(running_consumer);
         continue;
       }
 
       forwardComputeAt_impl(
-          running_producer, running_consumer, running_producer_compute_at);
+          running_producer, running_consumer, running_producer_pos);
+
+
+
+      running_producer_pos = running_producer->getRelativeComputeAtAxis();
 
       compute_at_ed.emplace(running_producer);
 
       if (known_positions.find(running_consumer) != known_positions.end()) {
         TORCH_INTERNAL_ASSERT(
             known_positions.at(running_consumer) ==
-                running_producer->getRelativeComputeAtAxis(),
+                running_producer_pos,
+            "Hit a logical inconsistency in computeAt pass.");
+      }
+    }
+    if(common_consumer_==nullptr){
+      if(touched_outputs.find(running_consumer) == touched_outputs.end()){
+        touched_outputs[running_consumer] = running_producer_pos;
+      }else{
+        TORCH_INTERNAL_ASSERT(
+            touched_outputs.at(running_consumer) ==
+                running_producer_pos,
             "Hit a logical inconsistency in computeAt pass.");
       }
     }
@@ -376,23 +456,13 @@ void ComputeAt::runPass() {
   // Propagate backward from consumer or common consumer, check if it increase
   // computeAt position on tensors, if so take it!
   traverseBackward();
+
+  setupOutputs();
 }
 
 void ComputeAt::setupOutputs() {
   if (common_consumer_ != nullptr)
     return;
-
-  // output and its compute at position
-  std::unordered_map<TensorView*, int> touched_outputs;
-  for (auto tv : compute_at_ed) {
-    TORCH_INTERNAL_ASSERT(
-        tv->hasComputeAt(),
-        "Hit a logical inconsistency in the computeAt pass.");
-    auto ca_view = tv->getComputeAtView();
-    if (FusionGuard::getCurFusion()->hasOutput(ca_view)) {
-      touched_outputs[ca_view] = tv->getRelativeComputeAtAxis();
-    }
-  }
 
   std::vector<TensorView*> touched_output_order(touched_outputs.size());
 
@@ -417,8 +487,6 @@ void ComputeAt::setupOutputs() {
         touched_outputs.at(touched_output_order[i]),
         touched_outputs.at(touched_output_order[i + 1]));
   }
-  
-  setupOutputs();
 }
 
 ComputeAt::ComputeAt(
@@ -429,17 +497,6 @@ ComputeAt::ComputeAt(
       consumer_(_consumer),
       consumer_position_(_consumer_position) {
 
-  // Make sure the correct fusion is setup between this and consumer.
-  TORCH_CHECK(
-      producer_->fusion() == consumer_->fusion(),
-      producer_,
-      " and ",
-      consumer_,
-      " are not in the same fusion.");
-
-  // Make sure Fusion Guard is set appropriately
-  FusionGuard fg(producer_->fusion());
-
   producer_use_chains_ = getAllTVUseChains(producer_);
 
   // Look through all the use chains of producer. Check if there's a single
@@ -447,14 +504,6 @@ ComputeAt::ComputeAt(
   // call.
   setCommonConsumer();
 
-}
-
-void ComputeAt::run(
-    TensorView* producer,
-    TensorView* consumer,
-    unsigned int consumer_position) {
-  ComputeAt ca(producer, consumer, consumer_position);
-  ca.runPass();
 }
 
 } // namespace fuser
