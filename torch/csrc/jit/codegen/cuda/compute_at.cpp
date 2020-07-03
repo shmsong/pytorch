@@ -362,22 +362,6 @@ void ComputeAt::traverseBackward() {
 }
 
 void ComputeAt::runPass() {
-  // Make sure the correct fusion is setup between this and consumer.
-  TORCH_CHECK(
-      producer_->fusion() == consumer_->fusion(),
-      producer_,
-      " and ",
-      consumer_,
-      " are not in the same fusion.");
-
-  // Make sure Fusion Guard is set appropriately
-  FusionGuard fg(producer_->fusion());
-
-  // Look through all the use chains of producer. Check if there's a single
-  // consumer for all chains at or after the consumer specified in the computeAt
-  // call.
-  setCommonConsumer();
-
   // Propagate in a way we know result will be correct, which is forward from
   // consumer and backward from consumer to producer
   traverseAllKnown();
@@ -433,6 +417,8 @@ void ComputeAt::setupOutputs() {
         touched_outputs.at(touched_output_order[i]),
         touched_outputs.at(touched_output_order[i + 1]));
   }
+  
+  setupOutputs();
 }
 
 ComputeAt::ComputeAt(
@@ -441,17 +427,34 @@ ComputeAt::ComputeAt(
     unsigned int _consumer_position)
     : producer_(_producer),
       consumer_(_consumer),
-      consumer_position_(_consumer_position) {}
+      consumer_position_(_consumer_position) {
+
+  // Make sure the correct fusion is setup between this and consumer.
+  TORCH_CHECK(
+      producer_->fusion() == consumer_->fusion(),
+      producer_,
+      " and ",
+      consumer_,
+      " are not in the same fusion.");
+
+  // Make sure Fusion Guard is set appropriately
+  FusionGuard fg(producer_->fusion());
+
+  producer_use_chains_ = getAllTVUseChains(producer_);
+
+  // Look through all the use chains of producer. Check if there's a single
+  // consumer for all chains at or after the consumer specified in the computeAt
+  // call.
+  setCommonConsumer();
+
+}
 
 void ComputeAt::run(
     TensorView* producer,
     TensorView* consumer,
     unsigned int consumer_position) {
   ComputeAt ca(producer, consumer, consumer_position);
-  ca.producer_use_chains_ = getAllTVUseChains(ca.producer_);
-  ca.setCommonConsumer();
   ca.runPass();
-  ca.setupOutputs();
 }
 
 } // namespace fuser
