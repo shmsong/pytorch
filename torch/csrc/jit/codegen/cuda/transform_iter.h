@@ -208,7 +208,9 @@ class TORCH_CUDA_API BestEffortReplay {
 
   // Find the first position i where td1[i] is not the same as td2[i]. "Same"
   // means the DAG and input IDs to generate td1[i] and td2[i] are the same.
-  static int findFirstMismatchedID(TensorDomain* td1, TensorDomain* td2);
+  static int findFirstMismatchedID(
+      const TensorDomain* td1,
+      const TensorDomain* td2);
 };
 
 } // namespace fuser

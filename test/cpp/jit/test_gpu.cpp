@@ -1,4 +1,4 @@
-// #if defined(USE_CUDA)
+#if defined(USE_CUDA)
 #include <test/cpp/jit/test_base.h>
 
 #include <torch/csrc/jit/codegen/cuda/arith.h>
@@ -1425,15 +1425,6 @@ void testGPU_FusionAdvancedComputeAt() {
 
     fusion.addOutput(tv5);
     fusion.addOutput(tv6);
-
-    tv2->computeAt(tv4, 1);
-
-    TORCH_CHECK(!tv1->hasComputeAt());
-    TORCH_CHECK(tv2->getComputeAtView() == tv4);
-    TORCH_CHECK(!tv3->hasComputeAt());
-    TORCH_CHECK(!tv4->hasComputeAt());
-    TORCH_CHECK(!tv5->hasComputeAt());
-    TORCH_CHECK(!tv6->hasComputeAt());
 
     // Lets setup to actually run
     tv6->merge(0);
@@ -3137,7 +3128,6 @@ void testGPU_FusionSoftmaxComputeAt() {
   fusion.addOutput(tv7);
 
   // ASSERT_ANY_THROW(tv1->computeAt(tv7, -1));
-
 }
 
 // Similar to FusionReduction but uses grid reduction
@@ -3901,4 +3891,4 @@ void testGPU_FusionZeroDimReduction() {
 
 } // namespace jit
 } // namespace torch
-// #endif // #if defined(USE_CUDA)
+#endif // #if defined(USE_CUDA)

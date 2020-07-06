@@ -250,7 +250,8 @@ BestEffortReplay::BestEffortReplay(
   std::string err_str(
       "Error during replay, a computeAt was called that conflicts with an rfactor call.");
 
-  // Iterate through target IterDomains' history and compare with what we recorded from replay_domain
+  // Iterate through target IterDomains' history and compare with what we
+  // recorded from replay_domain
   for (auto t_expr : t_exprs) {
     // Going to map the target_domain inputs/outputs to replay_domain
     // inputs/outputs
@@ -364,8 +365,8 @@ BestEffortReplay::BestEffortReplay(
 // "Same" means the DAG to generate td1[i] and td2[i] are the
 // equivelent.
 int BestEffortReplay::findFirstMismatchedID(
-    TensorDomain* td1,
-    TensorDomain* td2) {
+    const TensorDomain* td1,
+    const TensorDomain* td2) {
   std::unordered_map<IterDomain*, IterDomain*> id_map;
   auto rd1 = td1->rootDomain();
   std::unordered_set<IterDomain*> rd2_set(
@@ -374,7 +375,7 @@ int BestEffortReplay::findFirstMismatchedID(
   // Find matching root IterDomains, we could make this O(nlog(n)) if we could
   // sort IterDomains.
   for (size_t i = 0; i < rd1.size(); i++) {
-    for(IterDomain* rd2_id : rd2_set){
+    for (IterDomain* rd2_id : rd2_set) {
       if (rd1[i]->sameAs(rd2_id)) {
         id_map[rd1[i]] = rd2_id;
         rd2_set.erase(rd2_id);
@@ -385,8 +386,8 @@ int BestEffortReplay::findFirstMismatchedID(
 
   BestEffortReplay ber(td2->domain(), td1->domain(), id_map);
 
-  for(size_t i=0; i<td1->domain().size(); i++){
-    if(ber.getReplay().find(td1->axis(i)) == ber.getReplay().end())
+  for (size_t i = 0; i < td1->domain().size(); i++) {
+    if (ber.getReplay().find(td1->axis(i)) == ber.getReplay().end())
       return i;
   }
   return td1->nDims();
