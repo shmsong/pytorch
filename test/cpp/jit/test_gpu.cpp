@@ -3104,7 +3104,6 @@ void testGPU_FusionSoftmax() {
   //     t2.sub(cg_output).abs().max());
 }
 
-// TODO: Fix the assert any throw below!
 void testGPU_FusionSoftmaxComputeAt() {
   torch::jit::fuser::cuda::CudaKernel prog;
   Fusion& fusion = *prog.fusion_;
@@ -3127,7 +3126,8 @@ void testGPU_FusionSoftmaxComputeAt() {
   auto tv7 = sub(tv6, tv4);
   fusion.addOutput(tv7);
 
-  // ASSERT_ANY_THROW(tv1->computeAt(tv7, -1));
+  tv1->computeAt(tv7, 1);
+  ASSERT_ANY_THROW(tv1->computeAt(tv7, -1));
 }
 
 // Similar to FusionReduction but uses grid reduction
