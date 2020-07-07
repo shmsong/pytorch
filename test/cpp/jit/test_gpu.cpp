@@ -3103,6 +3103,33 @@ void testGPU_FusionSoftmax() {
   //     "Error of: ",
   //     t2.sub(cg_output).abs().max());
 }
+
+void testGPU_FusionSoftmaxComputeAt() {
+  torch::jit::fuser::cuda::CudaKernel prog;
+  Fusion& fusion = *prog.fusion_;
+  FusionGuard fg(&fusion);
+
+  // Set up your input tensor views
+  TensorView* tv0 = makeDummyTensor(2);
+  fusion.addInput(tv0);
+
+  auto tv1 = sum(tv0, {1});
+  auto tv2 = broadcast(tv1, {false, true});
+
+  auto tv3 = add(tv0, new Float(1.0));
+
+  auto tv4 = mul(tv2, tv3);
+
+  auto tv5 = sum(tv4, {1});
+  auto tv6 = broadcast(tv5, {false, true});
+
+  auto tv7 = sub(tv6, tv4);
+  fusion.addOutput(tv7);
+
+  tv1->computeAt(tv7, 1);
+  ASSERT_ANY_THROW(tv1->computeAt(tv7, -1));
+}
+
 // Similar to FusionReduction but uses grid reduction
 void testGPU_FusionGridReduction1() {
   const int gdimx = 32;
