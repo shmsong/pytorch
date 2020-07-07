@@ -10,6 +10,7 @@
 #include <torch/csrc/jit/codegen/cuda/kernel.h>
 #include <torch/csrc/jit/codegen/cuda/lower2device.h>
 #include <torch/csrc/jit/codegen/cuda/mutator.h>
+#include <torch/csrc/jit/codegen/cuda/scheduler.h>
 #include <torch/csrc/jit/codegen/cuda/transform_replay.h>
 #include <torch/csrc/jit/codegen/cuda/transform_rfactor.h>
 
@@ -370,6 +371,8 @@ void testGPU_FusionClear() {
     tv3->axis(0)->parallelize(ParallelType::BIDx);
     tv2->axis(1)->parallelize(ParallelType::Unroll);
     tv3->axis(-1)->parallelize(ParallelType::TIDx);
+
+    fusion.setLaunchConfig(LaunchConfigType::Compatible, new Int(1));
   }
 
   // 2. Clear the IR
@@ -381,6 +384,8 @@ void testGPU_FusionClear() {
 
   TORCH_CHECK(fusion.inputs().empty());
   TORCH_CHECK(fusion.outputs().empty());
+
+  TORCH_CHECK(fusion.launch_configs().empty());
 
   TORCH_CHECK(!fusion.hasReduction());
   TORCH_CHECK(!fusion.hasBlockReduction());
@@ -415,8 +420,11 @@ void testGPU_FusionClear() {
   at::Tensor input2 = at::randn_like(input1);
   at::Tensor output = at::empty_like(input1);
 
+  fuser::cuda::scheduleFusion(&fusion, {input1, input2});
   torch::jit::fuser::cuda::compileKernel(&prog);
-  torch::jit::fuser::cuda::runTestKernel(&prog, {input1, input2}, {output});
+  prog.device_ = 0;
+  torch::jit::fuser::cuda::runKernel(
+      &prog, {input1, input2}, {output}, output.sizes().vec());
 
   at::Tensor tv2_ref = input2 + 2.0;
   at::Tensor output_ref = input1 + tv2_ref;
@@ -449,6 +457,10 @@ void testGPU_FusionCopy() {
 
     tv3->axis(0)->parallelize(ParallelType::BIDx);
     tv3->axis(-1)->parallelize(ParallelType::TIDx);
+
+    original_fusion.setLaunchConfig(LaunchConfigType::Compatible, new Int(1));
+    original_fusion.setLaunchConfig(
+        LaunchConfigType::BIDx, tv3->axis(0)->rawExtent());
   }
 
   // Test copy before lowering
@@ -519,6 +531,9 @@ void testGPU_FusionMove() {
 
     tv3->axis(0)->parallelize(ParallelType::BIDx);
     tv3->axis(-1)->parallelize(ParallelType::TIDx);
+
+    fusion.setLaunchConfig(LaunchConfigType::Compatible, new Int(1));
+    fusion.setLaunchConfig(LaunchConfigType::BIDx, tv3->axis(0)->rawExtent());
   }
 
   std::stringstream original_ir;
@@ -1010,6 +1025,10 @@ void testGPU_FusionParser() {
   prog.block(32);
   prog.device_ = 0;
   fuser::cuda::parseJitIR(g, &prog);
+  auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
+  at::Tensor input1 = at::randn({16}, options);
+  at::Tensor input2 = at::randn({16}, options);
+  fuser::cuda::scheduleFusion(prog.fusion_.get(), {input1, input2});
 
   // CONSIDER:
   // 1. this can be moved to a dedicated "golden" file
