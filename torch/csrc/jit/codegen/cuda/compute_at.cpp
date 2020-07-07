@@ -156,10 +156,12 @@ void ComputeAt::run(
 
     std::unordered_set<TensorView*> added_producers;
 
-    // Remove all TVs from producer to consumer as common consumer must be at or
-    // after consumer
+    // Check all dependency chains, select the next TV after producer towards
+    // consumer. These are the TVs we're going to actually call computeAt on.
     for (const auto& tv_chain : all_chains) {
       if (tv_chain.size() > 2) {
+        // Make sure we only add once, but we want to add in a determinsitic
+        // order
         if (added_producers.find(tv_chain[1]) == added_producers.end()) {
           producers.push_back(tv_chain[1]);
           added_producers.emplace(tv_chain[1]);
@@ -357,7 +359,7 @@ void ComputeAt::runPass() {
 
   setupOutputs();
 
-  for (auto entry : tv_data) {
+  for (const auto entry : tv_data) {
     entry.second.validateNewComputeAt();
   }
 }
