@@ -16,7 +16,7 @@ class TensorView;
 // We're going to keep data related to the computeAt pass for each TensorView in
 // this structure, this will allow us to keep a single entry in a map from a
 // TensorView to this one.
-struct ComputeAtData {
+class ComputeAtData {
  public:
   ComputeAtData() = default;
   ComputeAtData(TensorView* tv);
