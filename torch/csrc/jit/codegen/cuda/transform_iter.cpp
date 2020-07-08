@@ -374,10 +374,10 @@ int BestEffortReplay::findFirstMismatchedID(
 
   // Find matching root IterDomains, we could make this O(nlog(n)) if we could
   // sort IterDomains.
-  for (size_t i = 0; i < rd1.size(); i++) {
+  for (auto rd1i : rd1) {
     for (IterDomain* rd2_id : rd2_set) {
-      if (rd1[i]->sameAs(rd2_id)) {
-        id_map[rd1[i]] = rd2_id;
+      if (rd1i->sameAs(rd2_id)) {
+        id_map[rd1i] = rd2_id;
         rd2_set.erase(rd2_id);
         break;
       }

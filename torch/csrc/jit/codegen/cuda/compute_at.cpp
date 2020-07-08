@@ -196,7 +196,7 @@ unsigned int ComputeAt::backwardComputeAt_impl(
   entry.setPassPosition(replay.second);
 
   if (entry.shouldSetComputeAt(replay.second)) {
-    producer->setComputeAt(consumer, consumer_compute_at_axis);
+    producer->setComputeAt(consumer, (int)consumer_compute_at_axis);
   }
 
   return replay.second;
@@ -338,7 +338,7 @@ void ComputeAt::runPass() {
         DependencyCheck::getAllDependencyChains(producer_, common_consumer_));
   }
 
-  for (auto tv_chain : chains) {
+  for (const auto& tv_chain : chains) {
     for (auto tv : tv_chain) {
       if (tv_data.find(tv) == tv_data.end()) {
         tv_data[tv] = ComputeAtData(tv);
@@ -384,8 +384,8 @@ void ComputeAt::setupOutputs() {
     for (size_t i = 0; i < touched_output_order.size() - 1; i++) {
       touched_output_order[i]->setComputeAt(
           touched_output_order[i + 1],
-          tv_data.at(touched_output_order[i]).getNewPosition(),
-          tv_data.at(touched_output_order[i + 1]).getNewPosition());
+          (int)tv_data.at(touched_output_order[i]).getNewPosition(),
+          (int)tv_data.at(touched_output_order[i + 1]).getNewPosition());
     }
   }
 }
