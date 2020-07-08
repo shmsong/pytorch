@@ -3985,8 +3985,6 @@ void testGPU_FusionReductionScheduler() {
   auto outputs = fe.runFusion({input});
   auto aten_output = input.sum({red_dim});
 
-  std::cout << aten_output << std::endl;
-  std::cout << cg_output << std::endl;
   TORCH_CHECK(aten_output.allclose(cg_output),
               "Error of: ",
               aten_output.sub(cg_output).abs().max());
