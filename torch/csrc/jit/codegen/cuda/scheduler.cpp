@@ -313,14 +313,17 @@ ReductionParams reductionHeuristic(
     inputs_consumed_per_block_iter *= rparams.block_dim_y_;
     red_elems_per_thread = ceilDiv(red_elems_per_thread, rparams.block_dim_y_);
     rparams.cross_warp_ = true;
+    rparams.mul_reds_per_blk_ = false;
     // Do multiple reductions per block
   } else {
+    rparams.cross_warp_ = false;
     rparams.mul_reds_per_blk_ = true;
     outputs_produced_per_block_iter *= rparams.block_dim_y_;
   }
 
   // 5. Distributing work across blocks
 
+  // WARNING: Current device for codegen may not be the target device
   int device_max_threads_per_multiprocessor =
       at::cuda::getCurrentDeviceProperties()->maxThreadsPerMultiProcessor;
   int device_multiprocessor_count =
@@ -385,10 +388,13 @@ bool scheduleReduction(Fusion* fusion, const at::ArrayRef<c10::IValue> inputs) {
   }
 
   // Find Reduction TensorView
+  // TODO: This is making an assumption there is only one reduction
+  // in a kernel.  This will not be true in the long run.
   TensorView* red_tv = nullptr;
   for (auto& expr : fusion->exprs(/*from_outputs_only*/ true)) {
     if (expr->type() == ExprType::ReductionOp) {
       red_tv = static_cast<TensorView*>(expr->output(0));
+      break;
     }
   }
   if (red_tv == nullptr) { // No reduction found
