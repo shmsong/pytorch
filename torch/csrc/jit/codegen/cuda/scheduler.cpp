@@ -337,8 +337,10 @@ ReductionParams reductionHeuristic(int outer_dim, int inner_dim, bool red_on_fas
     inputs_consumed_per_block_iter *= rparams.block_dim_y_;
     red_elems_per_thread = ceil_div(red_elems_per_thread, rparams.block_dim_y_);
     reduce_inputs_across_warps = true;
+    rparams.cross_warp_ = true;
   // Do multiple reductions per block
   } else {
+    rparams.mul_reds_per_blk_ = true;
     outputs_produced_per_block_iter *= rparams.block_dim_y_;
   }
 
@@ -370,10 +372,11 @@ ReductionParams reductionHeuristic(int outer_dim, int inner_dim, bool red_on_fas
 
     rparams.grid_dim_y_ = std::max(1, blks_per_output);
     //If a cross-block reduction was generated
-    //if (blks_per_output > 1) {
+    if (blks_per_output > 1) {
+      rparams.cross_block_ = true;
     //  inputs_consumed_per_block_iter *= blks_per_output;
     //  red_elems_per_thread = ceil_div(red_elems_per_thread, inputs_consumed_per_block_iter);
-    //}
+    }
   }
 
   return rparams;
@@ -429,12 +432,6 @@ bool scheduleReduction(Fusion* fusion, const at::ArrayRef<c10::IValue> inputs) {
     }
   }
   bool red_on_fastest_dim = red_idx == (red_dims.size()-1);
-
-  std::cout << "Reduction Dims: [";
-  for(auto &dim : red_dims) {
-    std::cout << dim << ",";
-  }
-  std::cout << "]" << std::endl;
 
   ReductionParams rparams = reductionHeuristic(
                               (red_on_fastest_dim ? red_outputs : red_elems),
@@ -535,7 +532,6 @@ bool scheduleReduction(Fusion* fusion, const at::ArrayRef<c10::IValue> inputs) {
       red_tv->axis(-2)->parallelize(ParallelType::BIDx);
     }
   }
-  std::cout << rparams.grid_dim_x_ << " " << rparams.grid_dim_y_ << " " << rparams.block_dim_x_ << " " << rparams.block_dim_y_ << std::endl;
 
   // Communicate Blocking for Kernel Launch
   fusion->setLaunchConfig(LaunchConfigType::TIDx, new Int(rparams.block_dim_x_));
@@ -544,6 +540,7 @@ bool scheduleReduction(Fusion* fusion, const at::ArrayRef<c10::IValue> inputs) {
   fusion->setLaunchConfig(LaunchConfigType::BIDx, new Int(rparams.grid_dim_x_));
   fusion->setLaunchConfig(LaunchConfigType::BIDy, new Int(rparams.grid_dim_y_));
   fusion->setLaunchConfig(LaunchConfigType::BIDz, new Int(1));
+  fusion->setLaunchConfig(LaunchConfigType::SharedMemory, new Int(0));
 
   return true;
 }

@@ -3941,21 +3941,17 @@ void testGPU_FusionReductionScheduler() {
   TORCH_CHECK(cuda::scheduleReduction(prog.fusion_.get(), inputs),
               "Reduction is not found!");
 
-  fusion.printMath();
-  GPULower gpulw(&fusion);
-  gpulw.printKernel(std::cout);
+  //fusion.printMath();
+  //GPULower gpulw(&fusion);
+  //gpulw.printKernel(std::cout);
 
   prog.device_ = 0;
 
   torch::jit::fuser::cuda::compileKernel(&prog);
-  //torch::jit::fuser::cuda::runTestKernel(&prog, {input}, {cg_output});
-  torch::jit::fuser::cuda::runKernel(
-      &prog, {input}, {cg_output}, {});
+  torch::jit::fuser::cuda::runKernel( &prog, {input}, {cg_output}, {});
 
   auto aten_output = input.sum({red_dim});
 
-  std::cout << aten_output << std::endl;
-  std::cout << cg_output << std::endl;
   TORCH_CHECK(aten_output.allclose(cg_output),
               "Error of: ",
               aten_output.sub(cg_output).abs().max());
