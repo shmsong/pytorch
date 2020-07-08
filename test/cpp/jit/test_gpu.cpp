@@ -3953,9 +3953,9 @@ void testGPU_FusionBCastAfterReduce() {
 }
 
 void testGPU_FusionReductionScheduler() {
-  constexpr int bid_x = 80;
-  constexpr int tid_x = 4096;
-  constexpr int red_dim = 1;
+  int bid_x = 80;
+  int tid_x = 4096;
+  int red_dim = 1;
 
   Fusion fusion;
   FusionGuard fg(&fusion);
@@ -3985,61 +3985,11 @@ void testGPU_FusionReductionScheduler() {
   auto outputs = fe.runFusion({input});
   auto aten_output = input.sum({red_dim});
 
-  TORCH_CHECK(
-      aten_output.allclose(outputs[0]),
-      "Error of: ",
-      aten_output.sub(outputs[0]).abs().max());
-}
-
-// Simple reduction parallelized on a symbolic size.
-void testGPU_FusionSymbolicReduction() {
-  Fusion fusion;
-  FusionGuard fg(&fusion);
-
-  // Set up your input tensor views
-  TensorView* tv0 = makeDummyTensor(2);
-  fusion.addInput(tv0);
-
-  // tv1[I0, R1] = tv0[I0, I1]
-  TensorView* tv1 = reductionOp(BinaryOpType::Add, {1}, new Float(0), tv0);
-  fusion.addOutput(tv1);
-
-  // Interface should just be a direct split with a Parallel type. We can
-  // include the parallelize call if we do this.
-  tv1->split(1, NamedScalar::getParallelDim(ParallelType::TIDx));
-  // tv1[I0, R1o, R1i{BIDx}] = tv0[I0, I1]
-
-  TensorView* tv2 = tv1->rFactor({1});
-  // tv2[I0, R1oo, Ir1oi{4}, Ir1i{BIDx}] = tv0[I0, I1]
-  // tv1[I0,        R1oi{4},  R1i{BIDx}] = tv2[I0, R1oo, Ir1oi{4}, Ir1i{BIDx}]
-
-  // Incrementally, can print in between for debugging
-  tv0->computeAt(tv2, 1);
-  tv2->computeAt(tv1, 1);
-
-  tv2->axis(-1)->parallelize(ParallelType::TIDx);
-
-  tv1->axis(0)->parallelize(ParallelType::BIDx);
-  tv1->axis(-1)->parallelize(ParallelType::TIDx);
-
-  int numel_x = 65000;
-  int numel_y = 1025;
-
-  auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
-  at::Tensor input = at::rand({numel_x, numel_y}, options);
-
-  // How many threads to use for the block reduction
-  int runtime_threadIdx_dim = 128;
-
-  torch::jit::fuser::cuda::FusionExecutor executor;
-  executor.compileFusion(&fusion);
-  auto outputs = executor.runFusion(
-      {input},
-      torch::jit::fuser::cuda::LaunchParams(
-          -1, -1, -1, runtime_threadIdx_dim, -1, -1));
-
-  auto aten_output = input.sum({1});
-  TORCH_CHECK(aten_output.allclose(outputs[0]));
+  std::cout << aten_output << std::endl;
+  std::cout << cg_output << std::endl;
+  TORCH_CHECK(aten_output.allclose(cg_output),
+              "Error of: ",
+              aten_output.sub(cg_output).abs().max());
 }
 
 void testGPU_FusionReductionSchedulerMultiDimNonFastest() {
