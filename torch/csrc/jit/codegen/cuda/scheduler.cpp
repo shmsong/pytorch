@@ -555,6 +555,7 @@ bool scheduleReduction(Fusion* fusion, const at::ArrayRef<c10::IValue> inputs) {
   fusion->setLaunchConfig(LaunchConfigType::BIDy, new Int(rparams.grid_dim_y_));
   fusion->setLaunchConfig(LaunchConfigType::BIDz, new Int(1));
   fusion->setLaunchConfig(LaunchConfigType::SharedMemory, new Int(0));
+  fusion->setLaunchConfig(LaunchConfigType::Compatible, new Int(1));
 
   return rparams;
 }
