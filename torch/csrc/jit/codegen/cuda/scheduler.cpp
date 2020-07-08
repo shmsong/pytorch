@@ -313,7 +313,7 @@ ReductionParams reductionHeuristic(
     inputs_consumed_per_block_iter *= rparams.block_dim_y_;
     red_elems_per_thread = ceilDiv(red_elems_per_thread, rparams.block_dim_y_);
     rparams.cross_warp_ = true;
-  // Do multiple reductions per block
+    // Do multiple reductions per block
   } else {
     rparams.mul_reds_per_blk_ = true;
     outputs_produced_per_block_iter *= rparams.block_dim_y_;
@@ -336,8 +336,7 @@ ReductionParams reductionHeuristic(
   rparams.grid_dim_x_ = ceilDiv(red_outputs, outputs_produced_per_block_iter);
 
   // Cross-block reductions (if necessary)
-  if (rparams.cross_warp_ &&
-      red_elems_per_thread >= kMaxValuesPerThread &&
+  if (rparams.cross_warp_ && red_elems_per_thread >= kMaxValuesPerThread &&
       rparams.grid_dim_x_ <= target_grid_size) {
     int blks_per_out_1 = ceilDiv(target_grid_size, rparams.grid_dim_x_);
     int blks_per_out_2 = ceilDiv(red_elems_per_thread, kMinValuesPerThread);
@@ -392,7 +391,7 @@ bool scheduleReduction(Fusion* fusion, const at::ArrayRef<c10::IValue> inputs) {
       red_tv = static_cast<TensorView*>(expr->output(0));
     }
   }
-  if (red_tv == nullptr) {// No reduction found
+  if (red_tv == nullptr) { // No reduction found
     return false;
   }
 
