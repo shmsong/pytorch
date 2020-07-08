@@ -3985,9 +3985,10 @@ void testGPU_FusionReductionScheduler() {
   auto outputs = fe.runFusion({input});
   auto aten_output = input.sum({red_dim});
 
-  TORCH_CHECK(aten_output.allclose(cg_output),
-              "Error of: ",
-              aten_output.sub(cg_output).abs().max());
+  TORCH_CHECK(
+      aten_output.allclose(cg_output),
+      "Error of: ",
+      aten_output.sub(cg_output).abs().max());
 }
 
 void testGPU_FusionReductionSchedulerMultiDimNonFastest() {
