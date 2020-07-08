@@ -302,14 +302,14 @@ ReductionParams reductionHeuristic(int outer_dim, int inner_dim, bool red_on_fas
   int DEVICE_WARP_SIZE = at::cuda::warp_size();
 
   if (rparams.block_dim_x_ < num_threads)
-	rparams.block_dim_x_ = last_pow2(rparams.block_dim_x_);
+  rparams.block_dim_x_ = last_pow2(rparams.block_dim_x_);
   else
-	rparams.block_dim_x_ = num_threads;
+  rparams.block_dim_x_ = num_threads;
 
   if (rparams.block_dim_y_ < num_threads)
-	rparams.block_dim_y_ = last_pow2(rparams.block_dim_y_);
+  rparams.block_dim_y_ = last_pow2(rparams.block_dim_y_);
   else
-	rparams.block_dim_y_ = num_threads;
+  rparams.block_dim_y_ = num_threads;
 
   int block_dim_x_prev = rparams.block_dim_x_;
   rparams.block_dim_x_ = std::min(rparams.block_dim_x_, DEVICE_WARP_SIZE);
@@ -452,7 +452,7 @@ bool scheduleReduction(Fusion* fusion, const at::ArrayRef<c10::IValue> inputs) {
     // letting a block do multiple reductions to make this simple!
 
     // Do multiple reductions per block
-	if (rparams.mul_reds_per_blk_) {
+  if (rparams.mul_reds_per_blk_) {
       red_tv->split(-1, rparams.block_dim_x_);
       // Split Grid dimension to get multiple reds per block
       red_tv->split(0, rparams.block_dim_y_);
@@ -467,10 +467,10 @@ bool scheduleReduction(Fusion* fusion, const at::ArrayRef<c10::IValue> inputs) {
 
       red_tv_rf->axis(1)->parallelize(ParallelType::TIDy);
       red_tv->axis(1)->parallelize(ParallelType::TIDy);
-	// Do a cross-warp reduction per block
+  // Do a cross-warp reduction per block
     } else {
       if (rparams.cross_block_) {
-      	red_tv->split(-1, rparams.block_dim_x_);
+        red_tv->split(-1, rparams.block_dim_x_);
         // Split up rFactor to reduce across warps
         red_tv->split(-2, rparams.block_dim_y_);
         red_tv->split(-3, rparams.grid_dim_y_);
@@ -517,10 +517,10 @@ bool scheduleReduction(Fusion* fusion, const at::ArrayRef<c10::IValue> inputs) {
       red_tv_rf->axis(-1)->parallelize(ParallelType::TIDx);
       red_tv_rf->axis(-2)->parallelize(ParallelType::BIDx);
       if(rparams.grid_dim_y_ > 1) {
-      	red_tv_rf->axis(-3)->parallelize(ParallelType::BIDy);
-      	red_tv_rf->axis(-4)->parallelize(ParallelType::TIDy);
+        red_tv_rf->axis(-3)->parallelize(ParallelType::BIDy);
+        red_tv_rf->axis(-4)->parallelize(ParallelType::TIDy);
       } else {
-      	red_tv_rf->axis(-3)->parallelize(ParallelType::TIDy);
+        red_tv_rf->axis(-3)->parallelize(ParallelType::TIDy);
       }
       red_tv->axis(-1)->parallelize(ParallelType::TIDx);
       red_tv->axis(-2)->parallelize(ParallelType::BIDx);
