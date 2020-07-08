@@ -209,6 +209,8 @@ inline int ceil_div(int a, int b) {
   return (a + b - 1) / b;
 }
 
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "cppcoreguidelines-avoid-magic-numbers"
 // Largest Power of 2 less-than n
 inline int last_pow2(int n) {
   n |= (n >> 1);
@@ -218,6 +220,7 @@ inline int last_pow2(int n) {
   n |= (n >> 16);
   return std::max(1, n - (n >> 1));
 }
+#pragma clang diagnostic pop
 
 // Parameters the Reduction Heuristic Generates to describe
 // the optimial schedule
