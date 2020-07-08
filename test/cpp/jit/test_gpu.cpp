@@ -3953,9 +3953,9 @@ void testGPU_FusionBCastAfterReduce() {
 }
 
 void testGPU_FusionReductionScheduler() {
-  int bid_x = 80;
-  int tid_x = 4096;
-  int red_dim = 1;
+  constexpr int bid_x = 80;
+  constexpr int tid_x = 4096;
+  constexpr int red_dim = 1;
 
   Fusion fusion;
   FusionGuard fg(&fusion);

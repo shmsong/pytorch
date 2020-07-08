@@ -205,22 +205,19 @@ bool scheduleFusion(Fusion* fusion, const at::ArrayRef<c10::IValue> inputs) {
 }
 
 namespace {
-inline int ceil_div(int a, int b) {
+constexpr int ceilDiv(int a, int b) {
   return (a + b - 1) / b;
 }
 
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "cppcoreguidelines-avoid-magic-numbers"
 // Largest Power of 2 less-than n
-inline int last_pow2(int n) {
+constexpr int lastPow2(int n) {
   n |= (n >> 1);
   n |= (n >> 2);
   n |= (n >> 4);
-  n |= (n >> 8);
-  n |= (n >> 16);
+  n |= (n >> 8); // NOLINT(cppcoreguidelines-avoid-magic-numbers)
+  n |= (n >> 16); // NOLINT(cppcoreguidelines-avoid-magic-numbers)
   return std::max(1, n - (n >> 1));
 }
-#pragma clang diagnostic pop
 
 // Parameters the Reduction Heuristic Generates to describe
 // the optimial schedule
@@ -266,24 +263,24 @@ ReductionParams reductionHeuristic(
 
   // 3. Applying Power of 2 Blocking based on the Maximum Number of threads
 
-  constexpr int MAX_NUM_THREADS = 512;
-  constexpr int VECTOR_SIZE = 4;
+  constexpr int kMaxNumThreads = 512;
+  constexpr int kVectorSize = 4;
   int num_threads =
-      (rparams.fastest_dim_ ? MAX_NUM_THREADS : MAX_NUM_THREADS / VECTOR_SIZE);
-  int DEVICE_WARP_SIZE = at::cuda::warp_size();
+      (rparams.fastest_dim_ ? kMaxNumThreads : kMaxNumThreads / kVectorSize);
+  int device_warp_size = at::cuda::warp_size();
 
   if (rparams.block_dim_x_ < num_threads)
-    rparams.block_dim_x_ = last_pow2(rparams.block_dim_x_);
+    rparams.block_dim_x_ = lastPow2(rparams.block_dim_x_);
   else
     rparams.block_dim_x_ = num_threads;
 
   if (rparams.block_dim_y_ < num_threads)
-    rparams.block_dim_y_ = last_pow2(rparams.block_dim_y_);
+    rparams.block_dim_y_ = lastPow2(rparams.block_dim_y_);
   else
     rparams.block_dim_y_ = num_threads;
 
   int block_dim_x_prev = rparams.block_dim_x_;
-  rparams.block_dim_x_ = std::min(rparams.block_dim_x_, DEVICE_WARP_SIZE);
+  rparams.block_dim_x_ = std::min(rparams.block_dim_x_, device_warp_size);
   rparams.block_dim_y_ =
       std::min(rparams.block_dim_y_, num_threads / rparams.block_dim_x_);
   rparams.block_dim_x_ =
@@ -292,33 +289,31 @@ ReductionParams reductionHeuristic(
   // 4. Distributing work across a block
 
   // Magic numbers of calculations allowed per thread.
-  constexpr int MIN_VALUES_PER_THREAD = 16;
-  constexpr int MAX_VALUES_PER_THREAD = 256;
+  constexpr int kMinValuesPerThread = 16;
+  constexpr int kMaxValuesPerThread = 256;
 
   int inputs_consumed_per_block_iter = 1;
   int red_elems_per_thread = red_elems;
 
   int outputs_produced_per_block_iter = 1;
-  bool reduce_inputs_across_warps = false;
 
   // Reduction is performed across warp threads (cross-thread reduction)
   if (rparams.fastest_dim_) {
     inputs_consumed_per_block_iter *= rparams.block_dim_x_;
     red_elems_per_thread =
-        ceil_div(red_elems_per_thread, inputs_consumed_per_block_iter);
+        ceilDiv(red_elems_per_thread, inputs_consumed_per_block_iter);
     // Warp threads are applied across the output
   } else {
     outputs_produced_per_block_iter *= rparams.block_dim_x_;
   }
 
   // Decision to do a cross-warp reduction per block
-  if (red_elems_per_thread >= (rparams.block_dim_y_ * MIN_VALUES_PER_THREAD) ||
-      red_elems_per_thread >= MAX_VALUES_PER_THREAD) {
+  if (red_elems_per_thread >= (rparams.block_dim_y_ * kMinValuesPerThread) ||
+      red_elems_per_thread >= kMaxValuesPerThread) {
     inputs_consumed_per_block_iter *= rparams.block_dim_y_;
-    red_elems_per_thread = ceil_div(red_elems_per_thread, rparams.block_dim_y_);
-    reduce_inputs_across_warps = true;
+    red_elems_per_thread = ceilDiv(red_elems_per_thread, rparams.block_dim_y_);
     rparams.cross_warp_ = true;
-    // Do multiple reductions per block
+  // Do multiple reductions per block
   } else {
     rparams.mul_reds_per_blk_ = true;
     outputs_produced_per_block_iter *= rparams.block_dim_y_;
@@ -326,27 +321,27 @@ ReductionParams reductionHeuristic(
 
   // 5. Distributing work across blocks
 
-  int DEVICE_MAX_THREADS_PER_MULTIPROCESSOR =
+  int device_max_threads_per_multiprocessor =
       at::cuda::getCurrentDeviceProperties()->maxThreadsPerMultiProcessor;
-  int DEVICE_MULTIPROCESSOR_COUNT =
+  int device_multiprocessor_count =
       at::cuda::getCurrentDeviceProperties()->multiProcessorCount;
 
-  int blocks_per_sm = DEVICE_MAX_THREADS_PER_MULTIPROCESSOR /
+  int blocks_per_sm = device_max_threads_per_multiprocessor /
       (rparams.block_dim_x_ * rparams.block_dim_y_);
-  int target_grid_size = DEVICE_MULTIPROCESSOR_COUNT * blocks_per_sm;
+  int target_grid_size = device_multiprocessor_count * blocks_per_sm;
 
   // Setting the number of blocks based on the number of outputs
-  // grid_dim_x = ceil_div(red_outputs / (red_on_fastest_dim ? 1 : 4),
+  // grid_dim_x = ceilDiv(red_outputs / (red_on_fastest_dim ? 1 : 4),
   // outputs_produced_per_block_iter);
-  rparams.grid_dim_x_ = ceil_div(red_outputs, outputs_produced_per_block_iter);
+  rparams.grid_dim_x_ = ceilDiv(red_outputs, outputs_produced_per_block_iter);
 
   // Cross-block reductions (if necessary)
-  if (reduce_inputs_across_warps &&
-      red_elems_per_thread >= MAX_VALUES_PER_THREAD &&
+  if (rparams.cross_warp_ &&
+      red_elems_per_thread >= kMaxValuesPerThread &&
       rparams.grid_dim_x_ <= target_grid_size) {
-    int blks_per_out_1 = ceil_div(target_grid_size, rparams.grid_dim_x_);
-    int blks_per_out_2 = ceil_div(red_elems_per_thread, MIN_VALUES_PER_THREAD);
-    int blks_per_out_3 = ceil_div(red_elems_per_thread, MAX_VALUES_PER_THREAD);
+    int blks_per_out_1 = ceilDiv(target_grid_size, rparams.grid_dim_x_);
+    int blks_per_out_2 = ceilDiv(red_elems_per_thread, kMinValuesPerThread);
+    int blks_per_out_3 = ceilDiv(red_elems_per_thread, kMaxValuesPerThread);
     int blks_per_output =
         std::max(std::min(blks_per_out_1, blks_per_out_2), blks_per_out_3);
 
@@ -355,7 +350,7 @@ ReductionParams reductionHeuristic(
     if (blks_per_output > 1) {
       rparams.cross_block_ = true;
       //  inputs_consumed_per_block_iter *= blks_per_output;
-      //  red_elems_per_thread = ceil_div(red_elems_per_thread,
+      //  red_elems_per_thread = ceilDiv(red_elems_per_thread,
       //  inputs_consumed_per_block_iter);
     }
   }
@@ -382,6 +377,7 @@ ReductionParams reductionHeuristic(
 }
 } // anonymous namespace
 
+// fusion is the input IR that will be modified by this function
 bool scheduleReduction(Fusion* fusion, const at::ArrayRef<c10::IValue> inputs) {
   FusionGuard fg(fusion);
 
@@ -396,8 +392,9 @@ bool scheduleReduction(Fusion* fusion, const at::ArrayRef<c10::IValue> inputs) {
       red_tv = static_cast<TensorView*>(expr->output(0));
     }
   }
-  if (red_tv == nullptr) // No reduction found
+  if (red_tv == nullptr) {// No reduction found
     return false;
+  }
 
   EvaluationContext eval_context(fusion);
 
@@ -407,10 +404,10 @@ bool scheduleReduction(Fusion* fusion, const at::ArrayRef<c10::IValue> inputs) {
   // about the start?
   for (size_t i = 0; i < inputs.size(); ++i) {
     if (inputs[i].type()->kind() == c10::TypeKind::TensorType) {
-      TensorView* tv = static_cast<TensorView*>(fusion->inputs()[i]);
+      const TensorView* tv = static_cast<TensorView*>(fusion->inputs()[i]);
       size_t dims = tv->getRootDomain().size();
       for (size_t j = 0; j < dims; ++j) {
-        IterDomain* id = tv->getRootDomain()[j];
+        const IterDomain* id = tv->getRootDomain()[j];
         eval_context.bind(id->extent(), inputs[i].toTensor().size(j));
       }
     }
@@ -503,15 +500,18 @@ bool scheduleReduction(Fusion* fusion, const at::ArrayRef<c10::IValue> inputs) {
       }
     }
   } else {
+    // TODO: This block param needs to be replaced by a
+    // a proper attribute when I determine the proper one
     if (rparams.block_dim_y_ > 1) {
       red_tv->split(-1, rparams.block_dim_x_);
-      if (rparams.grid_dim_y_ > 1)
+      if (rparams.cross_block_) {
         red_tv->split(0, rparams.grid_dim_y_);
+      }
       red_tv->split(0, rparams.block_dim_y_);
       auto red_tv_rf = red_tv->rFactor({0});
       red_tv_rf->axis(-1)->parallelize(ParallelType::TIDx);
       red_tv_rf->axis(-2)->parallelize(ParallelType::BIDx);
-      if (rparams.grid_dim_y_ > 1) {
+      if (rparams.cross_block_) {
         red_tv_rf->axis(-3)->parallelize(ParallelType::BIDy);
         red_tv_rf->axis(-4)->parallelize(ParallelType::TIDy);
       } else {
@@ -520,7 +520,7 @@ bool scheduleReduction(Fusion* fusion, const at::ArrayRef<c10::IValue> inputs) {
       red_tv->axis(-1)->parallelize(ParallelType::TIDx);
       red_tv->axis(-2)->parallelize(ParallelType::BIDx);
       red_tv->axis(-3)->parallelize(ParallelType::TIDy);
-      if (rparams.grid_dim_y_ > 1) {
+      if (rparams.cross_block_) {
         red_tv->axis(-3)->parallelize(ParallelType::BIDy);
         red_tv->axis(-4)->parallelize(ParallelType::TIDy);
       } else {
@@ -545,6 +545,8 @@ bool scheduleReduction(Fusion* fusion, const at::ArrayRef<c10::IValue> inputs) {
   }
 
   // Communicate Blocking for Kernel Launch
+  // TODO: This will be replaced in favor of passing blocking
+  // args in the future
   fusion->setLaunchConfig(
       LaunchConfigType::TIDx, new Int(rparams.block_dim_x_));
   fusion->setLaunchConfig(
