@@ -3928,7 +3928,8 @@ void testGPU_FusionReductionScheduler() {
   TensorView* tv0 = makeDummyTensor(2);
   fusion.addInput(tv0);
 
-  TensorView* tv1 = reductionOp(BinaryOpType::Add, {red_dim}, new Float(0), tv0);
+  TensorView* tv1 =
+      reductionOp(BinaryOpType::Add, {red_dim}, new Float(0), tv0);
   fusion.addOutput(tv1);
 
   auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
@@ -3938,19 +3939,21 @@ void testGPU_FusionReductionScheduler() {
   // Apply reduction heuristic
   const at::ArrayRef<c10::IValue> inputs({input});
 
-  TORCH_CHECK(cuda::scheduleReduction(prog.fusion_.get(), inputs),
-              "Reduction schedule was not generated!");
+  TORCH_CHECK(
+      cuda::scheduleReduction(prog.fusion_.get(), inputs),
+      "Reduction schedule was not generated!");
 
   prog.device_ = 0;
 
   torch::jit::fuser::cuda::compileKernel(&prog);
-  torch::jit::fuser::cuda::runKernel( &prog, {input}, {cg_output}, c10::nullopt);
+  torch::jit::fuser::cuda::runKernel(&prog, {input}, {cg_output}, c10::nullopt);
 
   auto aten_output = input.sum({red_dim});
 
-  TORCH_CHECK(aten_output.allclose(cg_output),
-              "Error of: ",
-              aten_output.sub(cg_output).abs().max());
+  TORCH_CHECK(
+      aten_output.allclose(cg_output),
+      "Error of: ",
+      aten_output.sub(cg_output).abs().max());
 }
 
 } // namespace jit
