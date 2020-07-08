@@ -473,7 +473,7 @@ bool scheduleReduction(Fusion* fusion, const at::ArrayRef<c10::IValue> inputs) {
         red_tv->axis(-1)->parallelize(ParallelType::TIDx);
 
       } else {
-      	red_tv->split(-1, rparams.block_dim_x_);
+        red_tv->split(-1, rparams.block_dim_x_);
         // Split up rFactor to reduce across warps
         red_tv->split(-2, rparams.block_dim_y_);
 
