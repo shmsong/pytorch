@@ -253,6 +253,8 @@ inline int last_pow2(int n) {
   return std::max(1, n - (n >> 1));
 }
 
+// Parameters the Reduction Heuristic Generates to describe
+// the optimial schedule
 struct ReductionParams {
   // Reduction Blocking
   int grid_dim_x_        = 1;
@@ -294,28 +296,33 @@ ReductionParams reductionHeuristic(int outer_dim, int inner_dim, bool red_on_fas
 
   // 3. Applying Power of 2 Blocking based on the Maximum Number of threads
 
-  // TODO: Magic number of 4 for vectorizing
-  int MAX_NUM_THREADS  = (rparams.fastest_dim_ ? 512 : 512 / 4);
+  constexpr int MAX_NUM_THREADS = 512;
+  constexpr int VECTOR_SIZE     = 4;
+  int num_threads = (rparams.fastest_dim_ ? MAX_NUM_THREADS : MAX_NUM_THREADS / VECTOR_SIZE);
   int DEVICE_WARP_SIZE = at::cuda::warp_size();
 
-  if (rparams.block_dim_x_ < MAX_NUM_THREADS)
+  if (rparams.block_dim_x_ < num_threads)
 	rparams.block_dim_x_ = last_pow2(rparams.block_dim_x_);
   else
-	rparams.block_dim_x_ = MAX_NUM_THREADS;
+	rparams.block_dim_x_ = num_threads;
 
-  if (rparams.block_dim_y_ < MAX_NUM_THREADS)
+  if (rparams.block_dim_y_ < num_threads)
 	rparams.block_dim_y_ = last_pow2(rparams.block_dim_y_);
   else
-	rparams.block_dim_y_ = MAX_NUM_THREADS;
+	rparams.block_dim_y_ = num_threads;
 
   int block_dim_x_prev = rparams.block_dim_x_;
   rparams.block_dim_x_ = std::min(rparams.block_dim_x_, DEVICE_WARP_SIZE);
   rparams.block_dim_y_ = std::min(rparams.block_dim_y_,
-                                  MAX_NUM_THREADS / rparams.block_dim_x_);
+                                  num_threads / rparams.block_dim_x_);
   rparams.block_dim_x_ = std::min(block_dim_x_prev,
-                                  MAX_NUM_THREADS / rparams.block_dim_y_);
+                                  num_threads / rparams.block_dim_y_);
 
   // 4. Distributing work across a block
+
+  // Magic numbers of calculations allowed per thread.
+  constexpr int MIN_VALUES_PER_THREAD = 16;
+  constexpr int MAX_VALUES_PER_THREAD = 256;
 
   int inputs_consumed_per_block_iter = 1;
   int red_elems_per_thread = red_elems;
@@ -333,7 +340,9 @@ ReductionParams reductionHeuristic(int outer_dim, int inner_dim, bool red_on_fas
   }
 
   // Decision to do a cross-warp reduction per block
-  if (red_elems_per_thread >= (rparams.block_dim_y_ * 16) || red_elems_per_thread >= 256) {
+  if (    red_elems_per_thread >= (rparams.block_dim_y_ * MIN_VALUES_PER_THREAD)
+       || red_elems_per_thread >= MAX_VALUES_PER_THREAD                          )
+  {
     inputs_consumed_per_block_iter *= rparams.block_dim_y_;
     red_elems_per_thread = ceil_div(red_elems_per_thread, rparams.block_dim_y_);
     reduce_inputs_across_warps = true;
@@ -345,10 +354,6 @@ ReductionParams reductionHeuristic(int outer_dim, int inner_dim, bool red_on_fas
   }
 
   // 5. Distributing work across blocks
-
-  // Magic numbers of calculations allowed per thread.
-  constexpr int MIN_VALUES_PER_THREAD = 16;
-  constexpr int MAX_VALUES_PER_THREAD = 256;
 
   int DEVICE_MAX_THREADS_PER_MULTIPROCESSOR = at::cuda::getCurrentDeviceProperties()->maxThreadsPerMultiProcessor;
   int DEVICE_MULTIPROCESSOR_COUNT = at::cuda::getCurrentDeviceProperties()->multiProcessorCount;
@@ -363,8 +368,8 @@ ReductionParams reductionHeuristic(int outer_dim, int inner_dim, bool red_on_fas
   // Cross-block reductions (if necessary)
   if (    reduce_inputs_across_warps
        && red_elems_per_thread >= MAX_VALUES_PER_THREAD
-       && rparams.grid_dim_x_ <= target_grid_size       ) {
-
+       && rparams.grid_dim_x_ <= target_grid_size       )
+  {
     int blks_per_out_1  = ceil_div(target_grid_size, rparams.grid_dim_x_);
     int blks_per_out_2  = ceil_div(red_elems_per_thread, MIN_VALUES_PER_THREAD);
     int blks_per_out_3  = ceil_div(red_elems_per_thread, MAX_VALUES_PER_THREAD);
