@@ -5,6 +5,7 @@
 #include <torch/csrc/jit/codegen/cuda/arith.h>
 #include <torch/csrc/jit/codegen/cuda/expr_evaluator.h>
 #include <torch/csrc/jit/codegen/cuda/fusion.h>
+#include <torch/csrc/jit/codegen/cuda/fusion_executor.h>
 #include <torch/csrc/jit/codegen/cuda/ir_all_nodes.h>
 #include <torch/csrc/jit/codegen/cuda/ir_graphviz.h>
 #include <torch/csrc/jit/codegen/cuda/ir_iostream.h>
@@ -2973,8 +2974,7 @@ void testGPU_FusionSimpleBCast() {
 }
 
 void testGPU_FusionSimpleGemm() {
-  torch::jit::fuser::cuda::CudaKernel prog;
-  Fusion& fusion = *prog.fusion_;
+  Fusion fusion;
   FusionGuard fg(&fusion);
 
   // Set up your input tensor views
@@ -3041,12 +3041,14 @@ void testGPU_FusionSimpleGemm() {
 
   at::Tensor cg_output = at::empty({M, N}, options);
 
-  prog.device_ = 0;
-  prog.grid(1, ceilDiv_(N, 4), ceilDiv_(M, 4));
-
-  prog.block(32, 4, 4);
-  torch::jit::fuser::cuda::compileKernel(&prog);
-  torch::jit::fuser::cuda::runTestKernel(&prog, {t0, t1}, {cg_output});
+  // prog.device_ = 0;
+  // prog.grid(1, ceilDiv_(N, 4), ceilDiv_(M, 4));
+  // prog.block(32, 4, 4);
+  // torch::jit::fuser::cuda::compileKernel(&prog);
+  // torch::jit::fuser::cuda::runTestKernel(&prog, {t0, t1}, {cg_output});
+  torch::jit::fuser::cuda::FusionExecutor fe;
+  fe.compileFusion(&fusion);
+  fe.runFusion({t0, t1}, {cg_output});
 
   auto t2 = t0.matmul(t1);
   TORCH_CHECK(

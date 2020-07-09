@@ -44,6 +44,16 @@ std::ostream& GPULower::printKernel(
   return os;
 }
 
+std::string GPULower::getKernel(const std::string& kernel_name) {
+  FusionGuard fg(fusion_);
+  auto exprs = getLoweredExprs();
+
+  std::stringstream ss;
+  IRPrinter irp(ss);
+  irp.printKernel(exprs, kernel_name);
+  return ss.str();
+}
+
 } // namespace fuser
 } // namespace jit
 } // namespace torch

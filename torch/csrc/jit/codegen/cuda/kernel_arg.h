@@ -132,22 +132,7 @@ TensorArgAbstract* getTensorArg(int nDims) {
   }
 }
 
-TensorArgAbstract* getTensorArg(c10::ScalarType dtype, int nDims) {
-  switch (dtype) {
-    case (at::kFloat):
-      return getTensorArg<float>(nDims);
-    case (at::kHalf):
-      return getTensorArg<at::Half>(nDims);
-    case (at::kBool):
-      return getTensorArg<bool>(nDims);
-    default:
-      TORCH_CHECK(
-          false,
-          "Dtype: ",
-          dtype,
-          " not currently supported in code generated kernels.");
-  }
-}
+TensorArgAbstract* getTensorArg(c10::ScalarType dtype, int nDims);
 
 } // namespace cuda
 } // namespace fuser

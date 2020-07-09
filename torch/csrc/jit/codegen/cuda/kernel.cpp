@@ -398,6 +398,10 @@ void compileKernel(CudaKernel* entry) {
   std::string func_name;
   std::tie(func_name, code) = codeGeneration(entry->fusion_.get());
 
+  std::ofstream out("output_ke.cu");
+  out << code;
+  out.close();
+
   static int32_t compiled_kernel_id = 0;
   // We increment the id here instead of at the end of the function to avoid
   // error during jit-compilation that would make debug message confusing.
@@ -636,6 +640,10 @@ void runTestKernel(
     const std::vector<at::Tensor>& outputs) {
   validateKernelArgs(*entry, inputs, outputs);
 
+  TORCH_INTERNAL_ASSERT(
+      !entry->fusion_->outputs().empty(),
+      "No output found for this kernel, aborting.");
+
   const auto prior_device = at::cuda::current_device();
   at::cuda::set_device(entry->device_);
   auto stream = at::cuda::getCurrentCUDAStream();
@@ -657,12 +665,6 @@ void runTestKernel(
   // from I/O expected by the generated CUDA kernel.
   for (auto& input : inputs) {
     if (input.isTensor()) {
-      TORCH_INTERNAL_ASSERT(
-          input.toTensor().device().index() == entry->device_,
-          "input to kernel on device that is not compiled for");
-      TORCH_INTERNAL_ASSERT(
-          !entry->fusion_->outputs().empty(),
-          "No output found for this kernel, aborting.");
       kernel_args.push(input.toTensor());
     } else {
       kernel_args.push(input);

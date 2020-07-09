@@ -452,6 +452,7 @@ if(NOT INTERN_BUILD_MOBILE OR NOT BUILD_CAFFE2_MOBILE)
       ${TORCH_SRC_DIR}/csrc/jit/codegen/cuda/dispatch.cpp
       ${TORCH_SRC_DIR}/csrc/jit/codegen/cuda/expr_evaluator.cpp
       ${TORCH_SRC_DIR}/csrc/jit/codegen/cuda/fusion.cpp
+      ${TORCH_SRC_DIR}/csrc/jit/codegen/cuda/fusion_executor.cpp
       ${TORCH_SRC_DIR}/csrc/jit/codegen/cuda/scheduler.cpp
       ${TORCH_SRC_DIR}/csrc/jit/codegen/cuda/graph_fuser.cpp
       ${TORCH_SRC_DIR}/csrc/jit/codegen/cuda/index_compute.cpp
@@ -462,6 +463,7 @@ if(NOT INTERN_BUILD_MOBILE OR NOT BUILD_CAFFE2_MOBILE)
       ${TORCH_SRC_DIR}/csrc/jit/codegen/cuda/ir_iostream.cpp
       ${TORCH_SRC_DIR}/csrc/jit/codegen/cuda/iter_visitor.cpp
       ${TORCH_SRC_DIR}/csrc/jit/codegen/cuda/kernel.cpp
+      ${TORCH_SRC_DIR}/csrc/jit/codegen/cuda/kernel_arg.cpp
       ${TORCH_SRC_DIR}/csrc/jit/codegen/cuda/kernel_cache.cpp
       ${TORCH_SRC_DIR}/csrc/jit/codegen/cuda/manager.cpp
       ${TORCH_SRC_DIR}/csrc/jit/codegen/cuda/shape_inference.cpp
