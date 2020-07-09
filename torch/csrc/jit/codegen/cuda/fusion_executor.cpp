@@ -448,7 +448,7 @@ void FusionExecutor::nvrtcCompile(std::string code) {
   out << code;
   out.close();
 
-  auto func_name = (Namespace() + "::" + KernelName()).c_str();
+  std::string func_name = (Namespace() + "::" + KernelName()).c_str();
 
   CUcontext pctx = nullptr;
   AT_CUDA_DRIVER_CHECK(at::globalContext().getNVRTC().cuCtxGetCurrent(&pctx));
@@ -484,7 +484,7 @@ void FusionExecutor::nvrtcCompile(std::string code) {
   const std::vector<const char*> args = {
       "--std=c++14", compute.c_str(), "-default-device"};
 
-  at::globalContext().getNVRTC().nvrtcAddNameExpression(program, func_name);
+  at::globalContext().getNVRTC().nvrtcAddNameExpression(program, func_name.c_str());
   const auto result = at::globalContext().getNVRTC().nvrtcCompileProgram(
       program, args.size(), args.data());
 
@@ -499,7 +499,7 @@ void FusionExecutor::nvrtcCompile(std::string code) {
   }
   const char* lowered_kernel_name;
   at::globalContext().getNVRTC().nvrtcGetLoweredName(
-      program, func_name, &lowered_kernel_name);
+      program, func_name.c_str(), &lowered_kernel_name);
 
   AT_CUDA_NVRTC_CHECK(result);
   size_t ptx_size;
