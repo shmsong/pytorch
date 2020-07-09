@@ -27,6 +27,7 @@ class TORCH_CUDA_API GPULower {
   std::ostream& printKernel(
       std::ostream& _os,
       const std::string& kernel_name = "CUDAGeneratedKernel");
+  std::string getKernel(const std::string& kernel_name = "CUDAGeneratedKernel");
 
   std::string getKernel(const std::string& kernel_name = "CUDAGeneratedKernel");
 

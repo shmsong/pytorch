@@ -269,6 +269,10 @@ void compileKernel(CudaKernel* entry) {
   std::string func_name;
   std::tie(func_name, code) = codeGeneration(entry->fusion());
 
+  std::ofstream out("output_ke.cu");
+  out << code;
+  out.close();
+
   static int32_t compiled_kernel_id = 0;
   // We increment the id here instead of at the end of the function to avoid
   // error during jit-compilation that would make debug message confusing.
@@ -467,8 +471,83 @@ void runKernel(
     kernel_args.push(philox_engine_inputs.second);
   }
 
-  dim3 grid_dim(nBlocks_x, nBlocks_y, nBlocks_z);
-  dim3 block_dim(nThreadx, nThready, nThreadz);
+  // launch kernel;
+  AT_CUDA_DRIVER_CHECK(nvrtc().cuLaunchKernel(
+      entry->function_,
+      nBlocks_x,
+      nBlocks_y,
+      nBlocks_z,
+      nThreadx,
+      nThready,
+      nThreadz,
+      shared_memory,
+      stream,
+      kernel_args.getBuffer(),
+      nullptr));
+
+  // Resets device (see at::DeviceGuard notes above)
+  at::cuda::set_device(prior_device);
+}
+
+// WARNING:
+// This function is here for testing purposes only
+void runTestKernel(
+    CudaKernel* entry,
+    const at::ArrayRef<IValue> inputs,
+    const std::vector<at::Tensor>& outputs) {
+  validateKernelArgs(*entry, inputs, outputs);
+
+  TORCH_INTERNAL_ASSERT(
+      !entry->fusion_->outputs().empty(),
+      "No output found for this kernel, aborting.");
+
+  const auto prior_device = at::cuda::current_device();
+  at::cuda::set_device(entry->device_);
+  auto stream = at::cuda::getCurrentCUDAStream();
+
+  // TODO: Proper API to establish reasonable launch configurations;
+  // Naive launch config;
+  TORCH_INTERNAL_ASSERT(!outputs.empty(), "No outputs set for test kernel.");
+  size_t numel = outputs[0].numel();
+
+  // TODO: we can't randomly clap down this until we got striding.
+  const auto nBlocks = ceilDiv(numel, 128 * entry->unroll_factor_);
+
+  KernelArgumentHolder kernel_args;
+
+  auto exprs = entry->fusion_->exprs(true);
+
+  // Naive I/O setup, I'm ignoring all the potential transformation (i.e. I/O
+  // allocated here from the subgraph could be, and very likely are, different
+  // from I/O expected by the generated CUDA kernel.
+  for (auto& input : inputs) {
+    if (input.isTensor()) {
+      kernel_args.push(input.toTensor());
+    } else {
+      kernel_args.push(input);
+    }
+  }
+
+  for (auto& output : outputs) {
+    kernel_args.push(output);
+  }
+
+  // TODO: this probably won't work for us.
+  if (entry->has_random_) {
+    std::pair<uint64_t, uint64_t> philox_engine_inputs;
+    const auto rand_offset = 4 * (std::ceil(numel / (4.0 * 128 * nBlocks)) + 1);
+    auto gen = at::cuda::detail::getDefaultCUDAGenerator();
+    {
+      // See Note [Acquire lock when using random generators]
+      std::lock_guard<std::mutex> lock(gen.mutex());
+      philox_engine_inputs =
+          at::check_generator<at::CUDAGeneratorImpl>(gen)->philox_engine_inputs(
+              rand_offset);
+    }
+    kernel_args.push(philox_engine_inputs.first);
+    kernel_args.push(philox_engine_inputs.second);
+  }
+
   // When the kernel has global reductions, the kernel needs two
   // additional temporary buffers, one for intermediate results and
   // another for synchronization among thread blocks.
