@@ -2279,6 +2279,8 @@ void testGPU_FusionCastOps() {
   TensorView* intrm1 = castOp(DataType::Float, tv0);
   TensorView* out = castOp(DataType::Half, intrm1);
 
+  std::cout << fusion << std::endl;
+
   fusion.addInput(tv0);
   fusion.addOutput(out);
   tv0->computeAt(out, -1);
