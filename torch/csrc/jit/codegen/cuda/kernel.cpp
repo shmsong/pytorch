@@ -5,9 +5,9 @@
 #include <c10/cuda/CUDACachingAllocator.h>
 #include <c10/util/ArrayRef.h>
 
+#include <torch/csrc/jit/codegen/cuda/executor_kernel_arg.h>
 #include <torch/csrc/jit/codegen/cuda/expr_evaluator.h>
 #include <torch/csrc/jit/codegen/cuda/kernel.h>
-#include <torch/csrc/jit/codegen/cuda/kernel_arg.h>
 #include <torch/csrc/jit/codegen/cuda/kernel_resource_strings.h>
 #include <torch/csrc/jit/codegen/cuda/lower2device.h>
 #include <torch/csrc/jit/codegen/cuda/parser.h>

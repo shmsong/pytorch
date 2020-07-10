@@ -1,4 +1,4 @@
-#include <torch/csrc/jit/codegen/cuda/kernel_arg.h>
+#include <torch/csrc/jit/codegen/cuda/executor_kernel_arg.h>
 
 namespace torch {
 namespace jit {

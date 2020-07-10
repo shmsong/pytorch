@@ -1,8 +1,8 @@
+#include <torch/csrc/jit/codegen/cuda/executor_kernel_arg.h>
 #include <torch/csrc/jit/codegen/cuda/expr_evaluator.h>
 #include <torch/csrc/jit/codegen/cuda/ir_all_nodes.h>
 #include <torch/csrc/jit/codegen/cuda/iter_visitor.h>
 #include <torch/csrc/jit/codegen/cuda/kernel.h>
-#include <torch/csrc/jit/codegen/cuda/kernel_arg.h>
 #include <torch/csrc/jit/codegen/cuda/kernel_resource_strings.h>
 
 #include <ATen/CUDAGeneratorImpl.h>
@@ -11,12 +11,7 @@
 #include <c10/cuda/CUDACachingAllocator.h>
 #include <torch/csrc/jit/resource_guard.h>
 
-// #include <ATen/CUDAGeneratorImpl.h>
-// #include <ATen/cuda/CUDAContext.h>
-// #include <c10/core/ScalarType.h>
-// #include <c10/util/ArrayRef.h>
-
-#include <torch/csrc/jit/codegen/cuda/fusion_executor.h>
+#include <torch/csrc/jit/codegen/cuda/executor.h>
 
 namespace torch {
 namespace jit {
