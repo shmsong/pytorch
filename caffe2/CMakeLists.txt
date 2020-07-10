@@ -454,6 +454,7 @@ if(NOT INTERN_BUILD_MOBILE OR NOT BUILD_CAFFE2_MOBILE)
       ${TORCH_SRC_DIR}/csrc/jit/codegen/cuda/executor.cpp
       ${TORCH_SRC_DIR}/csrc/jit/codegen/cuda/executor_kernel_arg.cpp
       ${TORCH_SRC_DIR}/csrc/jit/codegen/cuda/executor_launch_params.cpp
+      ${TORCH_SRC_DIR}/csrc/jit/codegen/cuda/executor_utils.cpp
       ${TORCH_SRC_DIR}/csrc/jit/codegen/cuda/fusion.cpp
       ${TORCH_SRC_DIR}/csrc/jit/codegen/cuda/graph_fuser.cpp
       ${TORCH_SRC_DIR}/csrc/jit/codegen/cuda/index_compute.cpp

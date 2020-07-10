@@ -337,6 +337,7 @@ libtorch_cuda_sources = [
     "torch/csrc/jit/codegen/cuda/executor.cpp",
     "torch/csrc/jit/codegen/cuda/executor_kernel_arg.cpp",
     "torch/csrc/jit/codegen/cuda/executor_launch_params.cpp",
+    "torch/csrc/jit/codegen/cuda/executor_utils.cpp",
     "torch/csrc/jit/codegen/cuda/fusion.cpp",
     "torch/csrc/jit/codegen/cuda/graph_fuser.cpp",
     "torch/csrc/jit/codegen/cuda/index_compute.cpp",

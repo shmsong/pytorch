@@ -1,5 +1,6 @@
 #pragma once
 #include <torch/csrc/jit/codegen/cuda/executor_launch_params.h>
+#include <torch/csrc/jit/codegen/cuda/executor_utils.h>
 #include <torch/csrc/jit/codegen/cuda/fusion.h>
 #include <torch/csrc/jit/codegen/cuda/ir_all_nodes.h>
 #include <torch/csrc/jit/codegen/cuda/ir_cloner.h>
@@ -33,21 +34,7 @@ class TORCH_CUDA_API FusionExecutor {
 
   std::string getKernel();
 
-  void compileFusion(Fusion* fusion) {
-    TORCH_INTERNAL_ASSERT(
-        !fusion->outputs().empty(),
-        "No output found for this kernel, aborting.");
-
-    fusion_ = *fusion;
-    FusionGuard fg(&fusion_);
-
-    fusion_id = ++fusion_id_counter;
-    has_random = fusion->hasRNG();
-
-    // Copy constructor to make a full copy of the fusion.
-    auto code = getKernel();
-    nvrtcCompile(code);
-  }
+  void compileFusion(Fusion* fusion);
 
   LaunchParams computeLaunchParams(const at::ArrayRef<IValue>& aten_inputs);
 
@@ -60,17 +47,13 @@ class TORCH_CUDA_API FusionExecutor {
   }
 
  private:
-  void nvrtcCompile(const std::string& code);
-
   // TODO: Make pointer to const, will take some const fixing in codegenerator
   // to work.
   Fusion fusion_;
 
   CompileOptions options_;
 
-  // nvrtc state
-  CUmodule module_;
-  CUfunction function_;
+  executor_utils::NvrtcFunction compiled_kernel;
 
   // State of the fusion that's important
   bool has_random;
