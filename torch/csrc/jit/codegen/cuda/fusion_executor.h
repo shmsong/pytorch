@@ -128,11 +128,6 @@ class TORCH_CUDA_API FusionExecutor {
     return "CudaCodeGen";
   }
 
-  void run() {
-    TORCH_INTERNAL_ASSERT(
-        fusion_id > 0, "Cannot run fusion, it was not compiled.");
-  }
-
   std::string getKernel();
 
   void compileFusion(Fusion* fusion) {
@@ -141,6 +136,7 @@ class TORCH_CUDA_API FusionExecutor {
         "No output found for this kernel, aborting.");
 
     fusion_ = *fusion;
+    FusionGuard fg(&fusion_);
 
     fusion_id = ++fusion_id_counter;
     has_random = fusion->hasRNG();
