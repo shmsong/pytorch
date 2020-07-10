@@ -456,8 +456,6 @@ if(NOT INTERN_BUILD_MOBILE OR NOT BUILD_CAFFE2_MOBILE)
       ${TORCH_SRC_DIR}/csrc/jit/codegen/cuda/executor_launch_params.cpp
       ${TORCH_SRC_DIR}/csrc/jit/codegen/cuda/executor_utils.cpp
       ${TORCH_SRC_DIR}/csrc/jit/codegen/cuda/fusion.cpp
-      ${TORCH_SRC_DIR}/csrc/jit/codegen/cuda/fusion_executor.cpp
-      ${TORCH_SRC_DIR}/csrc/jit/codegen/cuda/scheduler.cpp
       ${TORCH_SRC_DIR}/csrc/jit/codegen/cuda/graph_fuser.cpp
       ${TORCH_SRC_DIR}/csrc/jit/codegen/cuda/index_compute.cpp
       ${TORCH_SRC_DIR}/csrc/jit/codegen/cuda/ir_base_nodes.cpp
@@ -467,7 +465,6 @@ if(NOT INTERN_BUILD_MOBILE OR NOT BUILD_CAFFE2_MOBILE)
       ${TORCH_SRC_DIR}/csrc/jit/codegen/cuda/ir_iostream.cpp
       ${TORCH_SRC_DIR}/csrc/jit/codegen/cuda/iter_visitor.cpp
       ${TORCH_SRC_DIR}/csrc/jit/codegen/cuda/kernel.cpp
-      ${TORCH_SRC_DIR}/csrc/jit/codegen/cuda/kernel_arg.cpp
       ${TORCH_SRC_DIR}/csrc/jit/codegen/cuda/kernel_cache.cpp
       ${TORCH_SRC_DIR}/csrc/jit/codegen/cuda/lower_index.cpp
       ${TORCH_SRC_DIR}/csrc/jit/codegen/cuda/lower_loops.cpp
