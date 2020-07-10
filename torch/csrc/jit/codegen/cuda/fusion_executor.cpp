@@ -451,7 +451,7 @@ std::vector<at::Tensor> FusionExecutor::runFusion(
   return std::vector<at::Tensor>(outputs);
 }
 
-void FusionExecutor::nvrtcCompile(std::string code) {
+void FusionExecutor::nvrtcCompile(const std::string& code) {
   std::string func_name = (Namespace() + "::" + KernelName()).c_str();
 
   // lazily construct context if non-existing yet;

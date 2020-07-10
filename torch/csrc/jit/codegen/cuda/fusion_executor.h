@@ -55,6 +55,8 @@ class TORCH_CUDA_API LaunchParams {
     TORCH_INTERNAL_ASSERT(
         class_val == -1 || incoming_val == class_val,
         "Tried to set ",
+        val,
+        " to ",
         incoming_val,
         ", but it was already set and new value does not match.",
         " Thread dims all have to be bound to the same value.");
@@ -157,7 +159,7 @@ class TORCH_CUDA_API FusionExecutor {
   }
 
  private:
-  void nvrtcCompile(std::string code);
+  void nvrtcCompile(const std::string& code);
 
   // TODO: Make pointer to const, will take some const fixing in codegenerator
   // to work.
