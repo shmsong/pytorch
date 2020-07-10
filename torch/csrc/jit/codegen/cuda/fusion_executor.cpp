@@ -334,9 +334,21 @@ LaunchParams FusionExecutor::computeLaunchParams(
   for (size_t i = 0; i < fusion_.inputs().size(); i++) {
     if (fusion_.inputs()[i]->getValType() == ValType::TensorView) {
       TensorView* cg_tensor = fusion_.inputs()[i]->as<TensorView>();
+
+      TORCH_INTERNAL_ASSERT(
+          aten_inputs[i].isTensor(),
+          "Something went wrong configuring launch. Inputs no longer match.");
+
       auto aten_tensor = aten_inputs[i].toTensor();
-      for (size_t dim = 0; dim < cg_tensor->nDims(); i++) {
-        ec.bind(cg_tensor->axis(i)->extent(), aten_tensor.sizes()[i]);
+
+      TORCH_INTERNAL_ASSERT(
+          aten_tensor.ndimension() == cg_tensor->getRootDomain().size(),
+          "Something went wrong configuring launch. Inputs no longer match.");
+
+      for (size_t dim = 0; dim < cg_tensor->getRootDomain().size(); dim++) {
+        ec.bind(
+            cg_tensor->getRootDomain()[dim]->extent(),
+            aten_tensor.sizes()[dim]);
       }
     }
   }
@@ -360,12 +372,14 @@ LaunchParams FusionExecutor::computeLaunchParams(
   for (auto tv : unordered_tvs) {
     for (auto id : tv->domain()->domain()) {
       if (id->isThread()) {
-        auto val = ExpressionEvaluator::evaluate(id->extent(), &ec);
+        auto val = ExpressionEvaluator::evaluate(id->rawExtent(), &ec);
         TORCH_INTERNAL_ASSERT(
             val,
             "Tried to evaluate, ",
-            id->extent(),
-            ", to set launch bounds but could not.");
+            id,
+            ", within the tensor ",
+            tv,
+            " to set launch bounds but could not.");
         lp.bind(val.value(), id->parallel_method());
       }
     }
@@ -378,6 +392,11 @@ LaunchParams FusionExecutor::computeLaunchParams(
 std::vector<at::Tensor> FusionExecutor::runFusion(
     const at::ArrayRef<IValue> inputs,
     const std::vector<at::Tensor>& outputs) {
+  TORCH_INTERNAL_ASSERT(
+      fusion_id > 0, "Cannot run fusion, it was not compiled.");
+
+  FusionGuard fg(&fusion_);
+
   validateKernelArgs(&fusion_, inputs, outputs, options_.device);
 
   const auto prior_device = at::cuda::current_device();
@@ -391,10 +410,6 @@ std::vector<at::Tensor> FusionExecutor::runFusion(
   kah.appendArgs(outputs);
 
   LaunchParams lp = computeLaunchParams(inputs);
-
-  std::cout << "Launch params: grid(" << lp.gdimx() << ", " << lp.gdimy()
-            << ", " << lp.gdimz() << ") block(" << lp.bdimx() << ", "
-            << lp.bdimy() << ", " << lp.bdimz() << ")" << std::endl;
 
   if (has_random) {
     const auto rand_offset =
@@ -484,7 +499,8 @@ void FusionExecutor::nvrtcCompile(std::string code) {
   const std::vector<const char*> args = {
       "--std=c++14", compute.c_str(), "-default-device"};
 
-  at::globalContext().getNVRTC().nvrtcAddNameExpression(program, func_name.c_str());
+  at::globalContext().getNVRTC().nvrtcAddNameExpression(
+      program, func_name.c_str());
   const auto result = at::globalContext().getNVRTC().nvrtcCompileProgram(
       program, args.size(), args.data());
 
@@ -516,7 +532,6 @@ void FusionExecutor::nvrtcCompile(std::string code) {
   if (prefix_env) {
     // Output ptx file
     std::stringstream ptx_file_name;
-    std::cout << fusion_id << std::endl;
     ptx_file_name << prefix_env << "_" << fusion_id << ".ptx";
     std::ofstream myPtxFile(ptx_file_name.str().c_str(), std::ios::out);
     if (myPtxFile.is_open()) {
