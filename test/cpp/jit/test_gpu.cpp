@@ -47,6 +47,26 @@ void checkIntValue(
   TORCH_CHECK(actual_value.value() == expected_value);
 }
 
+void setupLaunchConfig(
+    Fusion* fusion,
+    int tid_x = 1,
+    int tid_y = 1,
+    int tid_z = 1,
+    int gid_x = 1,
+    int gid_y = 1,
+    int gid_z = 1,
+    int sm_size = 0) {
+  fusion->setLaunchConfig(LaunchConfigType::TIDx, new Int(tid_x));
+  fusion->setLaunchConfig(LaunchConfigType::TIDy, new Int(tid_y));
+  fusion->setLaunchConfig(LaunchConfigType::TIDz, new Int(tid_z));
+  fusion->setLaunchConfig(LaunchConfigType::BIDx, new Int(gid_x));
+  fusion->setLaunchConfig(LaunchConfigType::BIDy, new Int(gid_y));
+  fusion->setLaunchConfig(LaunchConfigType::BIDz, new Int(gid_z));
+  fusion->setLaunchConfig(LaunchConfigType::SharedMemory, new Int(sm_size));
+  // no need to set LaunchConfigType::Compatible, as we are not trigger via
+  // kernel selection in cache
+}
+
 } // namespace
 
 // 1. Test cases are void() functions.
@@ -420,7 +440,16 @@ void testGPU_FusionClear() {
   }
 
   prog.setDevice(0);
-  prog.grid(4);
+  setupLaunchConfig(
+      prog.fusion(),
+      1, // tid_x
+      1, // tid_y
+      1, // tid_z
+      4, // gid_x
+      1, // gid_y
+      1, // gid_z
+      0 // shared_memory size
+  );
 
   auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
 
@@ -429,8 +458,7 @@ void testGPU_FusionClear() {
   at::Tensor output = at::empty_like(input1);
 
   torch::jit::fuser::cuda::compileKernel(&prog);
-  prog.setDevice(0);
-  torch::jit::fuser::cuda::runTestKernel(&prog, {input1, input2}, {output});
+  torch::jit::fuser::cuda::runKernel(&prog, {input1, input2}, {output});
 
   at::Tensor tv2_ref = input2 + 2.0;
   at::Tensor output_ref = input1 + tv2_ref;
@@ -1026,10 +1054,6 @@ void testGPU_FusionParser() {
   prog.setFusionPtr(fuser::cuda::parseJitIR(g));
   Fusion* fusion = prog.fusion();
   FusionGuard fg(fusion);
-  // These can be set to anything as there are no bindings!
-  // All CTAS and threads execute the same thing.
-  prog.grid(4);
-  prog.block(32);
   prog.setDevice(0);
   auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
   at::Tensor input1 = at::randn({16}, options);
@@ -1159,15 +1183,23 @@ void testGPU_FusionCodeGen() {
   prog.setDevice(0);
   // These can be set to anything as there are no bindings!
   // All CTAS and threads execute the same thing.
-  prog.grid(4);
-  prog.block(32);
+  setupLaunchConfig(
+      prog.fusion(),
+      32, // tid_x
+      1, // tid_y
+      1, // tid_z
+      4, // gid_x
+      1, // gid_y
+      1, // gid_z
+      0 // shared_memory size
+  );
 
   auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
 
   at::Tensor output = at::empty({16, 8, 8}, options);
 
   torch::jit::fuser::cuda::compileKernel(&prog);
-  torch::jit::fuser::cuda::runTestKernel(&prog, {}, {output});
+  torch::jit::fuser::cuda::runKernel(&prog, {}, {output});
 
   at::Tensor output_ref = at::zeros_like(output, options);
   output_ref = output_ref + 0.0 + 1.0 + 2.0 + 3.0;
@@ -1205,8 +1237,16 @@ void testGPU_FusionCodeGen2() {
   tv3->axis(-1)->parallelize(ParallelType::TIDx);
 
   prog.setDevice(0);
-  prog.grid(4);
-  prog.block(8);
+  setupLaunchConfig(
+      prog.fusion(),
+      8, // tid_x
+      1, // tid_y
+      1, // tid_z
+      4, // gid_x
+      1, // gid_y
+      1, // gid_z
+      0 // shared_memory size
+  );
 
   auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
 
@@ -1216,7 +1256,7 @@ void testGPU_FusionCodeGen2() {
   at::Tensor output = at::empty_like(input1);
 
   torch::jit::fuser::cuda::compileKernel(&prog);
-  torch::jit::fuser::cuda::runTestKernel(&prog, {input1, input2}, {output});
+  torch::jit::fuser::cuda::runKernel(&prog, {input1, input2}, {output});
 
   at::Tensor tv2_ref = input2 + 2.0;
   at::Tensor output_ref = input1 + tv2_ref;
@@ -1268,8 +1308,16 @@ void testGPU_FusionSimplePWise() {
   tv3->axis(-1)->parallelize(ParallelType::TIDx);
 
   prog.setDevice(0);
-  prog.grid(64); //   1 CTA
-  prog.block(128, 2); // 256 Threads
+  setupLaunchConfig(
+      prog.fusion(),
+      128, // tid_x
+      2, // tid_y
+      1, // tid_z
+      64, // gid_x
+      1, // gid_y
+      1, // gid_z
+      0 // shared_memory size
+  );
 
   auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
 
@@ -1278,7 +1326,7 @@ void testGPU_FusionSimplePWise() {
   at::Tensor output = at::empty_like(input1);
 
   torch::jit::fuser::cuda::compileKernel(&prog);
-  torch::jit::fuser::cuda::runTestKernel(&prog, {input1, input2}, {output});
+  torch::jit::fuser::cuda::runKernel(&prog, {input1, input2}, {output});
 
   at::Tensor tv2_ref = input2 + 2.0;
   at::Tensor output_ref = input1 + tv2_ref;
@@ -1325,8 +1373,16 @@ void testGPU_FusionExecKernel() {
   tv3->axis(-1)->parallelize(ParallelType::TIDx);
 
   prog.setDevice(0);
-  prog.grid(1); // 1 CTA
-  prog.block(128); // 128 Threads
+  setupLaunchConfig(
+      prog.fusion(),
+      128, // tid_x
+      1, // tid_y
+      1, // tid_z
+      1, // gid_x
+      1, // gid_y
+      1, // gid_z
+      0 // shared_memory size
+  );
 
   auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
 
@@ -1336,7 +1392,7 @@ void testGPU_FusionExecKernel() {
   at::Tensor output = at::empty_like(input1);
 
   torch::jit::fuser::cuda::compileKernel(&prog);
-  torch::jit::fuser::cuda::runTestKernel(&prog, {input1, input2}, {output});
+  torch::jit::fuser::cuda::runKernel(&prog, {input1, input2}, {output});
 
   at::Tensor check = at::full({1, 128}, 4, options);
   ;
@@ -1424,11 +1480,18 @@ void testGPU_FusionAdvancedComputeAt() {
 
     int blocks = ceilDiv_(
         ceilDiv_(t0.numel(), 128), 4); // numel / unroll factor / threads
-    prog.grid(blocks);
-    prog.block(128);
+    setupLaunchConfig(
+        prog.fusion(),
+        128, // tid_x
+        1, // tid_y
+        1, // tid_z
+        blocks, // gid_x
+        1, // gid_y
+        1, // gid_z
+        0 // shared_memory size
+    );
     torch::jit::fuser::cuda::compileKernel(&prog);
-    torch::jit::fuser::cuda::runTestKernel(
-        &prog, {t0}, {kernel_tv6, kernel_tv7});
+    torch::jit::fuser::cuda::runKernel(&prog, {t0}, {kernel_tv6, kernel_tv7});
 
     TORCH_CHECK(at::allclose(kernel_tv6, t6));
     TORCH_CHECK(at::allclose(kernel_tv7, t7));
@@ -1499,11 +1562,18 @@ void testGPU_FusionAdvancedComputeAt() {
 
     int blocks = ceilDiv_(
         ceilDiv_(t0.numel(), 128), 4); // numel / unroll factor / threads
-    prog.grid(blocks);
-    prog.block(128);
+    setupLaunchConfig(
+        prog.fusion(),
+        128, // tid_x
+        1, // tid_y
+        1, // tid_z
+        blocks, // gid_x
+        1, // gid_y
+        1, // gid_z
+        0 // shared_memory size
+    );
     torch::jit::fuser::cuda::compileKernel(&prog);
-    torch::jit::fuser::cuda::runTestKernel(
-        &prog, {t0}, {kernel_tv5, kernel_tv6});
+    torch::jit::fuser::cuda::runKernel(&prog, {t0}, {kernel_tv5, kernel_tv6});
 
     GPULower gpulw(fusion);
     std::stringstream actual_kernel;
@@ -1568,10 +1638,18 @@ void testGPU_FusionAdvancedComputeAt() {
     int blocks = ceilDiv_(
         ceilDiv_(t0.numel(), 128), 4); // numel / unroll factor / threads
 
-    prog.grid(blocks);
-    prog.block(128);
+    setupLaunchConfig(
+        prog.fusion(),
+        128, // tid_x
+        1, // tid_y
+        1, // tid_z
+        blocks, // gid_x
+        1, // gid_y
+        1, // gid_z
+        0 // shared_memory size
+    );
     torch::jit::fuser::cuda::compileKernel(&prog);
-    torch::jit::fuser::cuda::runTestKernel(&prog, {t0, t1}, {kernel_tv3});
+    torch::jit::fuser::cuda::runKernel(&prog, {t0, t1}, {kernel_tv3});
 
     GPULower gpulw(fusion);
     std::stringstream actual_kernel;
@@ -1648,11 +1726,18 @@ void testGPU_FusionAdvancedComputeAt() {
     int blocks = ceilDiv_(
         ceilDiv_(t0.numel(), 128), 4); // numel / unroll factor / threads
 
-    prog.grid(blocks);
-    prog.block(128);
+    setupLaunchConfig(
+        prog.fusion(),
+        128, // tid_x
+        1, // tid_y
+        1, // tid_z
+        blocks, // gid_x
+        1, // gid_y
+        1, // gid_z
+        0 // shared_memory size
+    );
     torch::jit::fuser::cuda::compileKernel(&prog);
-    torch::jit::fuser::cuda::runTestKernel(
-        &prog, {t0, t1, t2, t3}, {kernel_tv6});
+    torch::jit::fuser::cuda::runKernel(&prog, {t0, t1, t2, t3}, {kernel_tv6});
 
     GPULower gpulw(fusion);
     std::stringstream actual_kernel;
@@ -1740,12 +1825,20 @@ void testGPU_FusionScalarInputs() {
   int blocks =
       ceilDiv_(ceilDiv_(t0.numel(), 128), 4); // numel / unroll factor / threads
 
-  prog.grid(blocks);
-  prog.block(128);
+  setupLaunchConfig(
+      prog.fusion(),
+      128, // tid_x
+      1, // tid_y
+      1, // tid_z
+      blocks, // gid_x
+      1, // gid_y
+      1, // gid_z
+      0 // shared_memory size
+  );
   torch::jit::fuser::cuda::compileKernel(&prog);
   at::Scalar test(fl0);
 
-  torch::jit::fuser::cuda::runTestKernel(
+  torch::jit::fuser::cuda::runKernel(
       &prog,
       {t0,
        t1,
@@ -1807,8 +1900,16 @@ void testGPU_FusionLoopUnroll() {
   int inp_size = 129 * 13 * 3;
 
   prog.setDevice(0);
-  prog.grid((inp_size + 63) / 64);
-  prog.block(block_size);
+  setupLaunchConfig(
+      prog.fusion(),
+      block_size, // tid_x
+      1, // tid_y
+      1, // tid_z
+      (inp_size + 63) / 64, // gid_x
+      1, // gid_y
+      1, // gid_z
+      0 // shared_memory size
+  );
 
   auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
 
@@ -1818,7 +1919,7 @@ void testGPU_FusionLoopUnroll() {
   at::Tensor output = at::empty_like(input1);
 
   torch::jit::fuser::cuda::compileKernel(&prog);
-  torch::jit::fuser::cuda::runTestKernel(&prog, {input0, input1}, {output});
+  torch::jit::fuser::cuda::runKernel(&prog, {input0, input1}, {output});
 
   TORCH_CHECK(output.equal(input0.add(input1.add(2.0))));
 }
@@ -1935,8 +2036,16 @@ void test_op(
   out->axis(-1)->parallelize(ParallelType::TIDx);
 
   prog.setDevice(0);
-  prog.grid(blocks);
-  prog.block(threads);
+  setupLaunchConfig(
+      prog.fusion(),
+      threads, // tid_x
+      1, // tid_y
+      1, // tid_z
+      blocks, // gid_x
+      1, // gid_y
+      1, // gid_z
+      0 // shared_memory size
+  );
   torch::jit::fuser::cuda::compileKernel(&prog);
 
   std::array<IValue, sizeof...(NumInputs)> aten_inputs = {gen_aten_operand(
@@ -1949,8 +2058,7 @@ void test_op(
   cudaDeviceSynchronize();
   if (fusion->hasRNG())
     at::manual_seed(0);
-  torch::jit::fuser::cuda::runTestKernel(
-      &prog, aten_inputs_ivalues, output_vect);
+  torch::jit::fuser::cuda::runKernel(&prog, aten_inputs_ivalues, output_vect);
   cudaDeviceSynchronize();
 
   if (fusion->hasRNG())
@@ -2302,8 +2410,16 @@ void testGPU_FusionCastOps() {
   out->axis(-1)->parallelize(ParallelType::TIDx);
 
   prog.setDevice(0);
-  prog.grid(1);
-  prog.block(4);
+  setupLaunchConfig(
+      prog.fusion(),
+      4, // tid_x
+      1, // tid_y
+      1, // tid_z
+      1, // gid_x
+      1, // gid_y
+      1, // gid_z
+      0 // shared_memory size
+  );
 
   auto options = at::TensorOptions().dtype(at::kHalf).device(at::kCUDA, 0);
 
@@ -2316,7 +2432,7 @@ void testGPU_FusionCastOps() {
   std::vector<at::Tensor> outputs{{output}};
 
   torch::jit::fuser::cuda::compileKernel(&prog);
-  torch::jit::fuser::cuda::runTestKernel(&prog, input_ivalues, outputs);
+  torch::jit::fuser::cuda::runKernel(&prog, input_ivalues, outputs);
 
   ref_output = at::_cast_Half(at::_cast_Float(input1));
 
@@ -2480,15 +2596,23 @@ void testGPU_FusionReduction() {
   int numel_y = 1025;
 
   prog.setDevice(0);
-  prog.grid(numel_x);
-  prog.block(128);
+  setupLaunchConfig(
+      prog.fusion(),
+      128, // tid_x
+      1, // tid_y
+      1, // tid_z
+      numel_x, // gid_x
+      1, // gid_y
+      1, // gid_z
+      0 // shared_memory size
+  );
 
   auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
   at::Tensor input = at::rand({numel_x, numel_y}, options);
   at::Tensor cg_output = at::empty({numel_x}, options);
 
   torch::jit::fuser::cuda::compileKernel(&prog);
-  torch::jit::fuser::cuda::runTestKernel(&prog, {input}, {cg_output});
+  torch::jit::fuser::cuda::runKernel(&prog, {input}, {cg_output});
 
   auto aten_output = input.sum({1});
   TORCH_CHECK(aten_output.allclose(cg_output));
@@ -2558,15 +2682,23 @@ void testGPU_FusionReduction2() {
     }
 
     prog.setDevice(0);
-    prog.grid(bind_bidx ? bidx : 1);
-    prog.block(bind_tidx ? tidx : 1, bind_tidy ? tidy : 1);
+    setupLaunchConfig(
+        prog.fusion(),
+        bind_tidx ? tidx : 1, // tid_x
+        bind_tidy ? tidy : 1, // tid_y
+        1, // tid_z
+        bind_bidx ? bidx : 1, // gid_x
+        1, // gid_y
+        1, // gid_z
+        0 // shared_memory size
+    );
 
     auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
     at::Tensor input = at::rand({numel_x, numel_y}, options);
     at::Tensor cg_output = at::empty({numel_x}, options);
 
     torch::jit::fuser::cuda::compileKernel(&prog);
-    torch::jit::fuser::cuda::runTestKernel(&prog, {input}, {cg_output});
+    torch::jit::fuser::cuda::runKernel(&prog, {input}, {cg_output});
 
     c10::cuda::CUDAStream stream = c10::cuda::getCurrentCUDAStream();
     AT_CUDA_CHECK(cudaStreamSynchronize(stream));
@@ -2616,15 +2748,23 @@ void testGPU_FusionReduction2() {
     tv2->axis(-1)->parallelize(ParallelType::TIDz);
 
     prog.setDevice(0);
-    prog.grid(numel_x);
-    prog.block(tidx, 1, tidz);
+    setupLaunchConfig(
+        prog.fusion(),
+        tidx, // tid_x
+        1, // tid_y
+        tidz, // tid_z
+        numel_x, // gid_x
+        1, // gid_y
+        1, // gid_z
+        0 // shared_memory size
+    );
 
     auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
     at::Tensor input = at::rand({numel_x, numel_y}, options);
     at::Tensor cg_output = at::empty({numel_x}, options);
 
     torch::jit::fuser::cuda::compileKernel(&prog);
-    torch::jit::fuser::cuda::runTestKernel(&prog, {input}, {cg_output});
+    torch::jit::fuser::cuda::runKernel(&prog, {input}, {cg_output});
 
     c10::cuda::CUDAStream stream = c10::cuda::getCurrentCUDAStream();
     AT_CUDA_CHECK(cudaStreamSynchronize(stream));
@@ -2690,8 +2830,16 @@ void testGPU_FusionReduction3() {
     int bidx = numel_x;
 
     prog.setDevice(0);
-    prog.grid(bidx);
-    prog.block(tidx);
+    setupLaunchConfig(
+        prog.fusion(),
+        tidx, // tid_x
+        1, // tid_y
+        1, // tid_z
+        bidx, // gid_x
+        1, // gid_y
+        1, // gid_z
+        0 // shared_memory size
+    );
 
     auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
     at::Tensor t0 = at::rand({numel_x, numel_y}, options);
@@ -2704,7 +2852,7 @@ void testGPU_FusionReduction3() {
     at::Tensor cg_output = at::empty({numel_x}, options);
 
     torch::jit::fuser::cuda::compileKernel(&prog);
-    torch::jit::fuser::cuda::runTestKernel(&prog, {t0, t1, t4}, {cg_output});
+    torch::jit::fuser::cuda::runKernel(&prog, {t0, t1, t4}, {cg_output});
 
     c10::cuda::CUDAStream stream = c10::cuda::getCurrentCUDAStream();
     AT_CUDA_CHECK(cudaStreamSynchronize(stream));
@@ -2744,24 +2892,34 @@ void testGPU_FusionReduction4() {
   tv1->axis(0)->parallelize(ParallelType::BIDy);
 
   for (auto* val : fusion->vals()) {
-    if (val->getValType().value() == ValType::TensorView)
+    if (!fusion->hasInput(val) &&
+        val->getValType().value() == ValType::TensorView) {
       val->as<TensorView>()->axis(-1)->parallelize(ParallelType::TIDx);
+    }
   }
 
   tv2->axis(-2)->parallelize(ParallelType::TIDy);
   tv1->axis(-2)->parallelize(ParallelType::TIDy);
 
   prog.setDevice(0);
-  prog.grid(1, bidy);
-  prog.block(tidx, tidy);
   torch::jit::fuser::cuda::compileKernel(&prog);
+  setupLaunchConfig(
+      prog.fusion(),
+      tidx, // tid_x
+      tidy, // tid_y
+      1, // tid_z
+      1, // gid_x
+      bidy, // gid_y
+      1, // gid_z
+      0 // shared_memory size
+  );
 
   auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
   at::Tensor input = at::randn({bidy, dim1, tidx}, options);
 
   at::Tensor cg_output = at::empty({bidy, tidx}, options);
 
-  torch::jit::fuser::cuda::runTestKernel(&prog, {input}, {cg_output});
+  torch::jit::fuser::cuda::runKernel(&prog, {input}, {cg_output});
 
   auto aten_output = input.sum({1});
   TORCH_CHECK(aten_output.allclose(cg_output));
@@ -2820,15 +2978,23 @@ void testGPU_FusionReduction5() {
   int numel_z = 1000;
 
   prog.setDevice(0);
-  prog.grid(numel_x);
-  prog.block(bdimx, bdimy);
+  setupLaunchConfig(
+      prog.fusion(),
+      bdimx, // tid_x
+      bdimy, // tid_y
+      1, // tid_z
+      numel_x, // gid_x
+      1, // gid_y
+      1, // gid_z
+      0 // shared_memory size
+  );
 
   auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
   at::Tensor input = at::rand({numel_x, numel_y, numel_z}, options);
   at::Tensor cg_output = at::empty({numel_x}, options);
 
   torch::jit::fuser::cuda::compileKernel(&prog);
-  torch::jit::fuser::cuda::runTestKernel(&prog, {input}, {cg_output});
+  torch::jit::fuser::cuda::runKernel(&prog, {input}, {cg_output});
 
   auto aten_output = input.sum({1, 2});
   TORCH_CHECK(aten_output.allclose(cg_output));
@@ -2879,15 +3045,23 @@ void testGPU_FusionReductionTFT() {
   tv2->axis(-2)->parallelize(ParallelType::TIDz);
 
   prog.setDevice(0);
-  prog.grid(1);
-  prog.block(tidx, tidy, tidz);
+  setupLaunchConfig(
+      prog.fusion(),
+      tidx, // tid_x
+      tidy, // tid_y
+      tidz, // tid_z
+      1, // gid_x
+      1, // gid_y
+      1, // gid_z
+      0 // shared_memory size
+  );
 
   auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
   at::Tensor input = at::rand({numel_x, numel_y}, options);
   at::Tensor cg_output = at::empty({numel_x}, options);
 
   torch::jit::fuser::cuda::compileKernel(&prog);
-  torch::jit::fuser::cuda::runTestKernel(&prog, {input}, {cg_output});
+  torch::jit::fuser::cuda::runKernel(&prog, {input}, {cg_output});
 
   c10::cuda::CUDAStream stream = c10::cuda::getCurrentCUDAStream();
   AT_CUDA_CHECK(cudaStreamSynchronize(stream));
@@ -2933,10 +3107,18 @@ void testGPU_FusionSimpleBCast() {
     at::Tensor cg_output = at::empty({x, y, z}, options);
 
     prog.setDevice(0);
-    prog.grid(ceilDiv_(x, 8));
-    prog.block(4);
+    setupLaunchConfig(
+        prog.fusion(),
+        4, // tid_x
+        1, // tid_y
+        1, // tid_z
+        ceilDiv_(x, 8), // gid_x
+        1, // gid_y
+        1, // gid_z
+        0 // shared_memory size
+    );
     torch::jit::fuser::cuda::compileKernel(&prog);
-    torch::jit::fuser::cuda::runTestKernel(&prog, {t0, t1}, {cg_output});
+    torch::jit::fuser::cuda::runKernel(&prog, {t0, t1}, {cg_output});
 
     auto t2 = t0.unsqueeze(-1).expand({x, y, z});
     auto t3 = t1.expand({x, y, z});
@@ -2983,10 +3165,18 @@ void testGPU_FusionSimpleBCast() {
     at::Tensor cg_output = at::empty({x, y, z}, options);
 
     prog.setDevice(0);
-    prog.grid(x * y);
-    prog.block(1);
+    setupLaunchConfig(
+        prog.fusion(),
+        1, // tid_x
+        1, // tid_y
+        1, // tid_z
+        x * y, // gid_x
+        1, // gid_y
+        1, // gid_z
+        0 // shared_memory size
+    );
     torch::jit::fuser::cuda::compileKernel(&prog);
-    torch::jit::fuser::cuda::runTestKernel(&prog, {t0, t1}, {cg_output});
+    torch::jit::fuser::cuda::runKernel(&prog, {t0, t1}, {cg_output});
 
     auto t2 = t0.unsqueeze(-1).expand({x, y, z});
     auto t3 = t1.expand({x, y, z});
@@ -3122,8 +3312,16 @@ void testGPU_FusionSoftmax1D() {
   }
 
   prog.setDevice(0);
-  prog.grid(1, 1);
-  prog.block(tidx);
+  setupLaunchConfig(
+      prog.fusion(),
+      tidx, // tid_x
+      1, // tid_y
+      1, // tid_z
+      1, // gid_x
+      1, // gid_y
+      1, // gid_z
+      0 // shared_memory size
+  );
 
   auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
   at::Tensor t0 = at::randn({dimx}, options);
@@ -3131,7 +3329,7 @@ void testGPU_FusionSoftmax1D() {
   at::Tensor t3_output = at::empty_like(cg_output, options);
   torch::jit::fuser::cuda::compileKernel(&prog);
 
-  torch::jit::fuser::cuda::runTestKernel(&prog, {t0}, {cg_output});
+  torch::jit::fuser::cuda::runKernel(&prog, {t0}, {cg_output});
 
   auto t2 = at::_softmax(t0, -1, false);
   TORCH_CHECK(
@@ -3196,8 +3394,16 @@ void testGPU_FusionSoftmax1DNormalized() {
   }
 
   prog.setDevice(0);
-  prog.grid(1, 1);
-  prog.block(tidx);
+  setupLaunchConfig(
+      prog.fusion(),
+      tidx, // tid_x
+      1, // tid_y
+      1, // tid_z
+      1, // gid_x
+      1, // gid_y
+      1, // gid_z
+      0 // shared_memory size
+  );
 
   auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
   at::Tensor t0 = at::randn({dimx}, options);
@@ -3205,7 +3411,7 @@ void testGPU_FusionSoftmax1DNormalized() {
   at::Tensor t3_output = at::empty_like(cg_output, options);
   torch::jit::fuser::cuda::compileKernel(&prog);
 
-  torch::jit::fuser::cuda::runTestKernel(&prog, {t0}, {cg_output});
+  torch::jit::fuser::cuda::runKernel(&prog, {t0}, {cg_output});
 
   auto t2 = at::_softmax(t0, -1, false);
   TORCH_CHECK(
@@ -3261,8 +3467,16 @@ void testGPU_FusionSoftmax3D() {
   }
 
   prog.setDevice(0);
-  prog.grid(dimx, dimy);
-  prog.block(tidx);
+  setupLaunchConfig(
+      prog.fusion(),
+      tidx, // tid_x
+      1, // tid_y
+      1, // tid_z
+      dimx, // gid_x
+      dimy, // gid_y
+      1, // gid_z
+      0 // shared_memory size
+  );
 
   auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
   at::Tensor t0 = at::randn({dimx, dimy, dimz}, options);
@@ -3270,7 +3484,7 @@ void testGPU_FusionSoftmax3D() {
   at::Tensor t3_output = at::empty_like(cg_output, options);
   torch::jit::fuser::cuda::compileKernel(&prog);
 
-  torch::jit::fuser::cuda::runTestKernel(&prog, {t0}, {cg_output});
+  torch::jit::fuser::cuda::runKernel(&prog, {t0}, {cg_output});
 
   auto t2 = at::_softmax(t0, -1, false);
   TORCH_CHECK(
@@ -3339,8 +3553,16 @@ void testGPU_FusionSoftmax3DNormalized() {
   }
 
   prog.setDevice(0);
-  prog.grid(dimx, dimy);
-  prog.block(tidx);
+  setupLaunchConfig(
+      prog.fusion(),
+      tidx, // tid_x
+      1, // tid_y
+      1, // tid_z
+      dimx, // gid_x
+      dimy, // gid_y
+      1, // gid_z
+      0 // shared_memory size
+  );
 
   auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
   at::Tensor t0 = at::randn({dimx, dimy, dimz}, options);
@@ -3348,7 +3570,7 @@ void testGPU_FusionSoftmax3DNormalized() {
   at::Tensor t3_output = at::empty_like(cg_output, options);
   torch::jit::fuser::cuda::compileKernel(&prog);
 
-  torch::jit::fuser::cuda::runTestKernel(&prog, {t0}, {cg_output});
+  torch::jit::fuser::cuda::runKernel(&prog, {t0}, {cg_output});
 
   auto t2 = at::_softmax(t0, -1, false);
   TORCH_CHECK(
@@ -3430,15 +3652,23 @@ void testGPU_FusionGridReduction1() {
   int numel_y = 65000;
 
   prog.setDevice(0);
-  prog.grid(gdimx, numel_x);
-  prog.block(bdimx);
+  setupLaunchConfig(
+      prog.fusion(),
+      bdimx, // tid_x
+      1, // tid_y
+      1, // tid_z
+      gdimx, // gid_x
+      numel_x, // gid_y
+      1, // gid_z
+      0 // shared_memory size
+  );
 
   auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
   at::Tensor input = at::rand({numel_x, numel_y}, options);
   at::Tensor cg_output = at::empty({numel_x}, options);
 
   torch::jit::fuser::cuda::compileKernel(&prog);
-  torch::jit::fuser::cuda::runTestKernel(&prog, {input}, {cg_output});
+  torch::jit::fuser::cuda::runKernel(&prog, {input}, {cg_output});
 
   auto aten_output = input.sum({1});
   TORCH_CHECK(aten_output.allclose(cg_output));
@@ -3490,15 +3720,23 @@ void testGPU_FusionGridReduction2() {
   int numel_y = 65000;
 
   prog.setDevice(0);
-  prog.grid(numel_x, gdimy);
-  prog.block(bdimx);
+  setupLaunchConfig(
+      prog.fusion(),
+      bdimx, // tid_x
+      1, // tid_y
+      1, // tid_z
+      numel_x, // gid_x
+      gdimy, // gid_y
+      1, // gid_z
+      0 // shared_memory size
+  );
 
   auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
   at::Tensor input = at::rand({numel_x, numel_y}, options);
   at::Tensor cg_output = at::empty({numel_x}, options);
 
   torch::jit::fuser::cuda::compileKernel(&prog);
-  torch::jit::fuser::cuda::runTestKernel(&prog, {input}, {cg_output});
+  torch::jit::fuser::cuda::runKernel(&prog, {input}, {cg_output});
 
   auto aten_output = input.sum({1});
   TORCH_CHECK(aten_output.allclose(cg_output));
@@ -3550,18 +3788,26 @@ void testGPU_FusionGridReduction3dim1() {
   int numel_y = 6500;
 
   prog.setDevice(0);
-  prog.grid(numel_x, gdimy, gdimz);
   // This number should not affect the output as TIDx is not
   // used. All threads in a thread block redundantly computes the
   // same value.
-  prog.block(128);
+  setupLaunchConfig(
+      prog.fusion(),
+      128, // tid_x
+      1, // tid_y
+      1, // tid_z
+      numel_x, // gid_x
+      gdimy, // gid_y
+      gdimz, // gid_z
+      0 // shared_memory size
+  );
 
   auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
   at::Tensor input = at::rand({numel_x, numel_y}, options);
   at::Tensor cg_output = at::empty({numel_x}, options);
 
   torch::jit::fuser::cuda::compileKernel(&prog);
-  torch::jit::fuser::cuda::runTestKernel(&prog, {input}, {cg_output});
+  torch::jit::fuser::cuda::runKernel(&prog, {input}, {cg_output});
 
   auto aten_output = input.sum({1});
   TORCH_CHECK(aten_output.allclose(cg_output));
@@ -3611,18 +3857,26 @@ void testGPU_FusionGridReduction3dim0() {
   int numel_y = 100;
 
   prog.setDevice(0);
-  prog.grid(numel_y, gdimy, gdimz);
   // This number should not affect the output as TIDx is not
   // used. All threads in a thread block redundantly computes the
   // same value.
-  prog.block(1);
+  setupLaunchConfig(
+      prog.fusion(),
+      1, // tid_x
+      1, // tid_y
+      1, // tid_z
+      numel_y, // gid_x
+      gdimy, // gid_y
+      gdimz, // gid_z
+      0 // shared_memory size
+  );
 
   auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
   at::Tensor input = at::rand({numel_x, numel_y}, options);
   at::Tensor cg_output = at::empty({numel_y}, options);
 
   torch::jit::fuser::cuda::compileKernel(&prog);
-  torch::jit::fuser::cuda::runTestKernel(&prog, {input}, {cg_output});
+  torch::jit::fuser::cuda::runKernel(&prog, {input}, {cg_output});
 
   auto aten_output = input.sum({0});
   TORCH_CHECK(aten_output.allclose(cg_output));
@@ -3681,15 +3935,23 @@ void testGPU_FusionGridReduction4() {
   int numel_y = 65000;
 
   prog.setDevice(0);
-  prog.grid(gdimx);
-  prog.block(bdimx);
+  setupLaunchConfig(
+      prog.fusion(),
+      bdimx, // tid_x
+      1, // tid_y
+      1, // tid_z
+      gdimx, // gid_x
+      1, // gid_y
+      1, // gid_z
+      0 // shared_memory size
+  );
 
   auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
   at::Tensor input = at::rand({numel_x, numel_y}, options);
   at::Tensor cg_output = at::empty({numel_x}, options);
 
   torch::jit::fuser::cuda::compileKernel(&prog);
-  torch::jit::fuser::cuda::runTestKernel(&prog, {input}, {cg_output});
+  torch::jit::fuser::cuda::runKernel(&prog, {input}, {cg_output});
 
   auto aten_output = input.sum({1});
   TORCH_CHECK(aten_output.allclose(cg_output));
@@ -3740,15 +4002,23 @@ void testGPU_FusionGridReduction5() {
   int numel_y = 6500;
 
   prog.setDevice(0);
-  prog.grid(gdimx);
-  prog.block(bdimx, bdimy);
+  setupLaunchConfig(
+      prog.fusion(),
+      bdimx, // tid_x
+      bdimy, // tid_y
+      1, // tid_z
+      gdimx, // gid_x
+      1, // gid_y
+      1, // gid_z
+      0 // shared_memory size
+  );
 
   auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
   at::Tensor input = at::rand({numel_x, numel_y}, options);
   at::Tensor cg_output = at::empty({numel_x}, options);
 
   torch::jit::fuser::cuda::compileKernel(&prog);
-  torch::jit::fuser::cuda::runTestKernel(&prog, {input}, {cg_output});
+  torch::jit::fuser::cuda::runKernel(&prog, {input}, {cg_output});
 
   auto aten_output = input.sum({1});
   TORCH_CHECK(aten_output.allclose(cg_output));
@@ -3807,15 +4077,23 @@ void testGPU_FusionGridReduction6() {
   int numel_z = numel_y;
 
   prog.setDevice(0);
-  prog.grid(128, numel_x);
-  prog.block(128);
+  setupLaunchConfig(
+      prog.fusion(),
+      128, // tid_x
+      1, // tid_y
+      1, // tid_z
+      128, // gid_x
+      numel_x, // gid_y
+      1, // gid_z
+      0 // shared_memory size
+  );
 
   auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
   at::Tensor input = at::rand({numel_x, numel_y, numel_z}, options);
   at::Tensor cg_output = at::empty({numel_x}, options);
 
   torch::jit::fuser::cuda::compileKernel(&prog);
-  torch::jit::fuser::cuda::runTestKernel(&prog, {input}, {cg_output});
+  torch::jit::fuser::cuda::runKernel(&prog, {input}, {cg_output});
 
   auto aten_output = input.sum({1, 2});
   TORCH_CHECK(aten_output.allclose(cg_output));
@@ -3844,15 +4122,23 @@ void testGPU_FusionNonRedAxisBind() {
   tv1->axis(-1)->parallelize(ParallelType::TIDx);
 
   prog.setDevice(0);
-  prog.grid(bid_x);
-  prog.block(tid_x);
+  setupLaunchConfig(
+      prog.fusion(),
+      tid_x, // tid_x
+      1, // tid_y
+      1, // tid_z
+      bid_x, // gid_x
+      1, // gid_y
+      1, // gid_z
+      0 // shared_memory size
+  );
 
   auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
   at::Tensor input = at::rand({16, bid_x * tid_x}, options);
   at::Tensor cg_output = at::empty({bid_x * tid_x}, options);
 
   torch::jit::fuser::cuda::compileKernel(&prog);
-  torch::jit::fuser::cuda::runTestKernel(&prog, {input}, {cg_output});
+  torch::jit::fuser::cuda::runKernel(&prog, {input}, {cg_output});
 
   auto aten_output = input.sum({red_dim});
 
@@ -3903,14 +4189,22 @@ void testGPU_FusionSplitBCast() {
   fusion->addOutput(output_tv4);
 
   prog.setDevice(0);
-  prog.grid(32, 32);
-  prog.block(32);
+  setupLaunchConfig(
+      prog.fusion(),
+      32, // tid_x
+      1, // tid_y
+      1, // tid_z
+      32, // gid_x
+      32, // gid_y
+      1, // gid_z
+      0 // shared_memory size
+  );
   auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
   at::Tensor t0 = at::randn({32, 32, 128}, options);
   at::Tensor t1 = at::randn({32, 32, 128}, options);
   at::Tensor cg_output = at::empty({32, 32, 128}, options);
   torch::jit::fuser::cuda::compileKernel(&prog);
-  torch::jit::fuser::cuda::runTestKernel(&prog, {t0, t1}, {cg_output});
+  torch::jit::fuser::cuda::runKernel(&prog, {t0, t1}, {cg_output});
 }
 
 void testGPU_FusionBCastInnerDim() {
@@ -3991,8 +4285,16 @@ void testGPU_FusionComputeAtExprOrder() {
       fusion->addOutput(tv3);
 
       prog.setDevice(0);
-      prog.grid(1);
-      prog.block(1);
+      setupLaunchConfig(
+          prog.fusion(),
+          1, // tid_x
+          1, // tid_y
+          1, // tid_z
+          1, // gid_x
+          1, // gid_y
+          1, // gid_z
+          0 // shared_memory size
+      );
 
       torch::jit::fuser::cuda::compileKernel(&prog);
 
@@ -4000,8 +4302,7 @@ void testGPU_FusionComputeAtExprOrder() {
       at::Tensor input = at::rand({100}, options);
       at::Tensor output2 = at::empty_like(input, options);
       at::Tensor output3 = at::empty_like(input, options);
-      torch::jit::fuser::cuda::runTestKernel(
-          &prog, {input}, {output2, output3});
+      torch::jit::fuser::cuda::runKernel(&prog, {input}, {output2, output3});
       auto aten_output = (input + 1) * 2;
       TORCH_CHECK(
           aten_output.allclose(output3),
@@ -4030,15 +4331,23 @@ void testGPU_FusionComputeAtExprOrder() {
     tv2->computeAt(tv3, -2);
 
     prog.setDevice(0);
-    prog.grid(1);
-    prog.block(1);
+    setupLaunchConfig(
+        prog.fusion(),
+        1, // tid_x
+        1, // tid_y
+        1, // tid_z
+        1, // gid_x
+        1, // gid_y
+        1, // gid_z
+        0 // shared_memory size
+    );
 
     torch::jit::fuser::cuda::compileKernel(&prog);
 
     auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
     at::Tensor input = at::rand({100, 100}, options);
     at::Tensor output = at::empty_like(input, options);
-    torch::jit::fuser::cuda::runTestKernel(&prog, {input}, {output});
+    torch::jit::fuser::cuda::runKernel(&prog, {input}, {output});
     auto aten_output = (input + 1) * 2;
     TORCH_CHECK(
         aten_output.allclose(output),
@@ -4063,15 +4372,23 @@ void testGPU_FusionZeroDimComputeAt() {
   tv1->computeAt(tv2, 0);
 
   prog.setDevice(0);
-  prog.grid(1);
-  prog.block(1);
+  setupLaunchConfig(
+      prog.fusion(),
+      1, // tid_x
+      1, // tid_y
+      1, // tid_z
+      1, // gid_x
+      1, // gid_y
+      1, // gid_z
+      0 // shared_memory size
+  );
 
   torch::jit::fuser::cuda::compileKernel(&prog);
 
   auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
   at::Tensor input = at::rand({100}, options);
   at::Tensor output = at::empty({}, options);
-  torch::jit::fuser::cuda::runTestKernel(&prog, {input}, {output});
+  torch::jit::fuser::cuda::runKernel(&prog, {input}, {output});
   auto aten_output = input.sum() + 1;
   TORCH_CHECK(
       aten_output.allclose(output),
@@ -4101,8 +4418,16 @@ void testGPU_FusionZeroDimBroadcast() {
   tv3->computeAt(tv4, -1);
 
   prog.setDevice(0);
-  prog.grid(1);
-  prog.block(1);
+  setupLaunchConfig(
+      prog.fusion(),
+      1, // tid_x
+      1, // tid_y
+      1, // tid_z
+      1, // gid_x
+      1, // gid_y
+      1, // gid_z
+      0 // shared_memory size
+  );
 
   torch::jit::fuser::cuda::compileKernel(&prog);
 
@@ -4110,7 +4435,7 @@ void testGPU_FusionZeroDimBroadcast() {
   at::Tensor input1 = at::rand({}, options);
   at::Tensor input2 = at::rand({10, 10}, options);
   at::Tensor output = at::empty({}, options);
-  torch::jit::fuser::cuda::runTestKernel(&prog, {input1, input2}, {output});
+  torch::jit::fuser::cuda::runKernel(&prog, {input1, input2}, {output});
   auto aten_output =
       (input1.unsqueeze(-1).unsqueeze(-1).expand({10, 10}) + input2).sum();
   TORCH_CHECK(
@@ -4144,15 +4469,23 @@ void testGPU_FusionZeroDimReduction() {
   tv2->axis(-2)->parallelize(ParallelType::BIDx);
 
   prog.setDevice(0);
-  prog.grid(gdimx);
-  prog.block(bdimx);
+  setupLaunchConfig(
+      prog.fusion(),
+      bdimx, // tid_x
+      1, // tid_y
+      1, // tid_z
+      gdimx, // gid_x
+      1, // gid_y
+      1, // gid_z
+      0 // shared_memory size
+  );
 
   torch::jit::fuser::cuda::compileKernel(&prog);
 
   auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
   at::Tensor input = at::rand({1000}, options);
   at::Tensor output = at::empty({}, options);
-  torch::jit::fuser::cuda::runTestKernel(&prog, {input}, {output});
+  torch::jit::fuser::cuda::runKernel(&prog, {input}, {output});
   auto aten_output = input.sum();
   TORCH_CHECK(
       aten_output.allclose(output),
@@ -4204,10 +4537,18 @@ void testGPU_FusionBCastAfterReduce() {
   at::Tensor cg_output = at::empty({x, y}, options);
 
   prog.setDevice(0);
-  prog.grid(x);
-  prog.block(tidx);
+  setupLaunchConfig(
+      prog.fusion(),
+      tidx, // tid_x
+      1, // tid_y
+      1, // tid_z
+      x, // gid_x
+      1, // gid_y
+      1, // gid_z
+      0 // shared_memory size
+  );
   torch::jit::fuser::cuda::compileKernel(&prog);
-  torch::jit::fuser::cuda::runTestKernel(&prog, {t0, t4}, {cg_output});
+  torch::jit::fuser::cuda::runKernel(&prog, {t0, t4}, {cg_output});
 
   auto t3 = t0.sum({1}).unsqueeze(-1).expand({x, y});
   auto t5 = t3.add(t4);
