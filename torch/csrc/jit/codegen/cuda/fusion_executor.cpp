@@ -51,24 +51,19 @@ void LaunchParams::bind(int64_t val, ParallelType p_dim) {
   }
 }
 
-KernelArgumentHolder::~KernelArgumentHolder() {
-  for (auto arg : arguments)
-    delete arg;
-}
-
 // Push a tensor to the arguments
 void KernelArgumentHolder::push(const at::Tensor& tensor) {
   changed = true;
   int nDims = tensor.ndimension();
 
   c10::ScalarType dtype = tensor.scalar_type();
-  TensorArgAbstract* tensor_arg = getTensorArg(dtype, nDims);
+  std::unique_ptr<TensorArgAbstract> tensor_arg = getTensorArg(dtype, nDims);
   tensor_arg->setPointer(tensor.data_ptr());
   for (int i = 0; i < nDims; i++) {
     tensor_arg->setSize(i, tensor.sizes()[i]);
     tensor_arg->setStride(i, tensor.strides()[i]);
   }
-  arguments.push_back(tensor_arg);
+  arguments.push_back(std::move(tensor_arg));
 }
 
 // Push a scalar or integer to the arguments
@@ -80,10 +75,10 @@ void KernelArgumentHolder::push(const IValue& val) {
       val);
   switch (val.toScalar().type()) {
     case (c10::ScalarType::Double):
-      arguments.push_back(new FloatArg((float)val.toDouble()));
+      arguments.push_back(std::make_unique<FloatArg>((float)val.toDouble()));
       return;
     case (c10::ScalarType::Long):
-      arguments.push_back(new IntArg((int)val.toInt()));
+      arguments.push_back(std::make_unique<IntArg>((int)val.toInt()));
       return;
     default:
       TORCH_INTERNAL_ASSERT(
@@ -96,7 +91,7 @@ void KernelArgumentHolder::push(const IValue& val) {
 }
 
 void KernelArgumentHolder::push(const uint64_t& val) {
-  arguments.push_back(new ULongArg(val));
+  arguments.push_back(std::make_unique<ULongArg>(val));
 }
 
 // Create buffer, flatten arguments into it, align by 8 Bytes, return pointers
@@ -457,14 +452,9 @@ std::vector<at::Tensor> FusionExecutor::runFusion(
 }
 
 void FusionExecutor::nvrtcCompile(std::string code) {
-  // lazily construct context if non-existing yet;
-
-  std::ofstream out("output_fe.cu");
-  out << code;
-  out.close();
-
   std::string func_name = (Namespace() + "::" + KernelName()).c_str();
 
+  // lazily construct context if non-existing yet;
   CUcontext pctx = nullptr;
   AT_CUDA_DRIVER_CHECK(at::globalContext().getNVRTC().cuCtxGetCurrent(&pctx));
   if (!pctx) {

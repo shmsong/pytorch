@@ -87,7 +87,7 @@ class ArgAbstract;
 
 class KernelArgumentHolder {
  public:
-  virtual ~KernelArgumentHolder();
+  ~KernelArgumentHolder() = default;
 
   // Push a tensor to the arguments
   void push(const at::Tensor& tensor);
@@ -108,7 +108,7 @@ class KernelArgumentHolder {
   void appendPhilox(uint64_t rand_offset);
 
  private:
-  std::vector<ArgAbstract*> arguments;
+  std::vector<std::unique_ptr<ArgAbstract>> arguments;
   std::vector<void*> void_ptrs;
   bool changed = true;
 };
