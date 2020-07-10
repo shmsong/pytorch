@@ -5,7 +5,9 @@ namespace jit {
 namespace fuser {
 namespace cuda {
 
-TensorArgAbstract* getTensorArg(c10::ScalarType dtype, int nDims) {
+std::unique_ptr<TensorArgAbstract> getTensorArg(
+    c10::ScalarType dtype,
+    int nDims) {
   switch (dtype) {
     case (at::kFloat):
       return getTensorArg<float>(nDims);

@@ -103,26 +103,26 @@ struct TensorArg : public TensorArgAbstract {
 };
 
 template <typename T>
-TensorArgAbstract* getTensorArg(int nDims) {
+std::unique_ptr<TensorArgAbstract> getTensorArg(int nDims) {
   switch (nDims) {
     case (0):
-      return new TensorArg<TensorArgCodegen<T, 0>>();
+      return std::make_unique<TensorArg<TensorArgCodegen<T, 0>>>();
     case (1):
-      return new TensorArg<TensorArgCodegen<T, 1>>();
+      return std::make_unique<TensorArg<TensorArgCodegen<T, 1>>>();
     case (2):
-      return new TensorArg<TensorArgCodegen<T, 2>>();
+      return std::make_unique<TensorArg<TensorArgCodegen<T, 2>>>();
     case (3):
-      return new TensorArg<TensorArgCodegen<T, 3>>();
+      return std::make_unique<TensorArg<TensorArgCodegen<T, 3>>>();
     case (4):
-      return new TensorArg<TensorArgCodegen<T, 4>>();
+      return std::make_unique<TensorArg<TensorArgCodegen<T, 4>>>();
     case (5):
-      return new TensorArg<TensorArgCodegen<T, 5>>();
+      return std::make_unique<TensorArg<TensorArgCodegen<T, 5>>>();
     case (6):
-      return new TensorArg<TensorArgCodegen<T, 6>>();
+      return std::make_unique<TensorArg<TensorArgCodegen<T, 6>>>();
     case (7):
-      return new TensorArg<TensorArgCodegen<T, 7>>();
+      return std::make_unique<TensorArg<TensorArgCodegen<T, 7>>>();
     case (8):
-      return new TensorArg<TensorArgCodegen<T, 8>>();
+      return std::make_unique<TensorArg<TensorArgCodegen<T, 8>>>();
     default:
       TORCH_INTERNAL_ASSERT(
           false,
@@ -132,7 +132,9 @@ TensorArgAbstract* getTensorArg(int nDims) {
   }
 }
 
-TensorArgAbstract* getTensorArg(c10::ScalarType dtype, int nDims);
+std::unique_ptr<TensorArgAbstract> getTensorArg(
+    c10::ScalarType dtype,
+    int nDims);
 
 } // namespace cuda
 } // namespace fuser

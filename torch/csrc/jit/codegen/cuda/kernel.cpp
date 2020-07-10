@@ -37,15 +37,12 @@ int ceilDiv(const int a, const int b) {
 
 struct KernelArgumentHolder {
  private:
-  std::vector<ArgAbstract*> arguments;
+  std::vector<std::unique_ptr<ArgAbstract>> arguments;
   std::vector<void*> void_ptrs;
   bool changed = true;
 
  public:
-  virtual ~KernelArgumentHolder() {
-    for (auto arg : arguments)
-      delete arg;
-  }
+  ~KernelArgumentHolder() = default;
 
   // Push a tensor to the arguments
   void push(
@@ -56,13 +53,13 @@ struct KernelArgumentHolder {
     int nDims = ess.sizes.size();
 
     c10::ScalarType dtype = val.scalar_type();
-    TensorArgAbstract* tensor_arg = getTensorArg(dtype, nDims);
+    std::unique_ptr<TensorArgAbstract> tensor_arg = getTensorArg(dtype, nDims);
     tensor_arg->setPointer(val.data_ptr());
     for (int i = 0; i < nDims; i++) {
       tensor_arg->setSize(i, ess.sizes[i]);
       tensor_arg->setStride(i, ess.strides[i]);
     }
-    arguments.push_back(tensor_arg);
+    arguments.push_back(std::move(tensor_arg));
   }
 
   // Push a scalar or integer to the arguments
@@ -74,10 +71,10 @@ struct KernelArgumentHolder {
         val);
     switch (val.toScalar().type()) {
       case (c10::ScalarType::Double):
-        arguments.push_back(new FloatArg((float)val.toDouble()));
+        arguments.push_back(std::make_unique<FloatArg>((float)val.toDouble()));
         return;
       case (c10::ScalarType::Long):
-        arguments.push_back(new IntArg((int)val.toInt()));
+        arguments.push_back(std::make_unique<IntArg>((int)val.toInt()));
         return;
       default:
         TORCH_INTERNAL_ASSERT(
@@ -90,7 +87,7 @@ struct KernelArgumentHolder {
   }
 
   void push(const uint64_t& val) {
-    arguments.push_back(new ULongArg(val));
+    arguments.push_back(std::make_unique<ULongArg>(val));
   }
 
   // Create buffer, flatten arguments into it, align by 8 Bytes, return pointers
@@ -340,10 +337,6 @@ void compileKernel(CudaKernel* entry) {
   std::string code;
   std::string func_name;
   std::tie(func_name, code) = codeGeneration(entry->fusion());
-
-  std::ofstream out("output_ke.cu");
-  out << code;
-  out.close();
 
   static int32_t compiled_kernel_id = 0;
   // We increment the id here instead of at the end of the function to avoid
