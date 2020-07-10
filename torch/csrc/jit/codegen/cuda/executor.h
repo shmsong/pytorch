@@ -16,36 +16,6 @@ struct TORCH_CUDA_API CompileOptions {
   int device = 0;
 };
 
-class ArgAbstract;
-
-class KernelArgumentHolder {
- public:
-  ~KernelArgumentHolder() = default;
-
-  // Push a tensor to the arguments
-  void push(const at::Tensor& tensor);
-
-  // Push a scalar or integer to the arguments
-  void push(const IValue& val);
-
-  void push(const uint64_t& val);
-
-  // Create buffer, flatten arguments into it, align by 8 Bytes, return pointers
-  // in the buffer
-  void** getBuffer();
-
-  void appendArgs(const c10::ArrayRef<c10::IValue>& args);
-
-  void appendArgs(const std::vector<at::Tensor>& tensors);
-
-  void appendPhilox(uint64_t rand_offset);
-
- private:
-  std::vector<std::unique_ptr<ArgAbstract>> arguments;
-  std::vector<void*> void_ptrs;
-  bool changed = true;
-};
-
 class TORCH_CUDA_API FusionExecutor {
  public:
   FusionExecutor() {}
