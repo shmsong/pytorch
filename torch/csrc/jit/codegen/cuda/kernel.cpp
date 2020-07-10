@@ -35,48 +35,6 @@ int ceilDiv(const int a, const int b) {
   return (a + b - 1) / b;
 }
 
-// Go through a tensor, and grab it's sizes/strides potentially broadcasted
-struct ExtractSizeStride {
-  std::vector<int64_t> sizes;
-  std::vector<int64_t> strides;
-
-  explicit ExtractSizeStride(
-      const at::Tensor& val,
-      c10::optional<at::IntArrayRef> broadcasted_size = c10::nullopt) {
-    if (broadcasted_size) {
-      // [Note - broadcast support in integration]
-      // PyTorch follows numpy broadcasting rule.
-      // (https://numpy.org/doc/stable/user/basics.broadcasting.html)
-      //
-      // So in case where the rank of two operators differ, we align them on
-      // the higher dimensions, hence the offset o_dim-b_dim to the index here.
-      int b_dim = (int)broadcasted_size->size();
-      int o_dim = (int)val.dim();
-      TORCH_CHECK(b_dim >= o_dim);
-      for (int i = 0; i < b_dim; i++) {
-        sizes.push_back(broadcasted_size->at(i));
-        int index = i + o_dim - b_dim;
-        if (index < 0) {
-          strides.push_back(0);
-        } else if (val.sizes()[index] == sizes[i]) {
-          strides.push_back(val.strides()[index]);
-        } else {
-          TORCH_CHECK(
-              val.sizes()[index] == 1,
-              "Not compatible dimension size for broadcast");
-          strides.push_back(0);
-        }
-      }
-    } else {
-      auto o_dim = val.dim();
-      for (decltype(val.dim()) i{0}; i < o_dim; i++) {
-        sizes.push_back(val.sizes()[i]);
-        strides.push_back(val.strides()[i]);
-      }
-    }
-  }
-};
-
 struct KernelArgumentHolder {
  private:
   std::vector<ArgAbstract*> arguments;
@@ -265,21 +223,21 @@ bool validateKernelArg(
 }
 
 void validateKernelArgs(
-    const CudaKernel& entry,
+    CudaKernel* entry,
     const at::ArrayRef<IValue>& inputs,
     const std::vector<at::Tensor>& outputs) {
   // This is necessary as we were traversing the fusion graph later in the check
-  FusionGuard fg(&entry);
+  FusionGuard fg(entry);
   // Check inputs
   TORCH_INTERNAL_ASSERT(
-      inputs.size() == entry.fusion_->inputs().size(),
+      inputs.size() == entry->fusion()->inputs().size(),
       "Wrong number of kernel inputs.");
   for (size_t i = 0; i < inputs.size(); ++i) {
     const IValue& arg = inputs[i];
-    const Val* param = entry.fusion_->inputs()[i];
+    const Val* param = entry->fusion()->inputs()[i];
     std::stringstream msg;
     TORCH_INTERNAL_ASSERT(
-        validateKernelArg(arg, param, entry.device_, msg),
+        validateKernelArg(arg, param, entry->device(), msg),
         "Input argument at position ",
         i,
         " is invalid; ",
@@ -287,18 +245,18 @@ void validateKernelArgs(
   }
 
   TORCH_INTERNAL_ASSERT(
-      entry.fusion_->outputs().size() != 0,
+      entry->fusion()->outputs().size() != 0,
       "Kernel should have at least one output tensor.");
 
   TORCH_INTERNAL_ASSERT(
-      outputs.size() == entry.fusion_->outputs().size(),
+      outputs.size() == entry->fusion()->outputs().size(),
       "Wrong number of kernel outputs.");
   for (size_t i = 0; i < outputs.size(); ++i) {
     const at::Tensor& arg = outputs[i];
-    const Val* param = entry.fusion_->outputs()[i];
+    const Val* param = entry->fusion()->outputs()[i];
     std::stringstream msg;
     TORCH_INTERNAL_ASSERT(
-        validateKernelArgTensor(arg, param, entry.device_, msg),
+        validateKernelArgTensor(arg, param, entry->device(), msg),
         "Output argument at position ",
         i,
         " is invalid; ",
@@ -339,10 +297,13 @@ size_t numberOfReductionSegments(
       (z_block ? 1 : grid_dim.z);
 }
 
-std::array<size_t, 2> gridReductionTempBufferSizes(CudaKernel* entry) {
+std::array<size_t, 2> gridReductionTempBufferSizes(
+    CudaKernel* entry,
+    const dim3& grid_dim,
+    const dim3& block_dim) {
   size_t buffer_size = 0;
   size_t sync_flag_size = 0;
-  for (auto expr : entry->fusion_->exprs(true)) {
+  for (auto expr : entry->fusion()->exprs(true)) {
     if (expr->getExprType() != ExprType::ReductionOp)
       continue;
     ReductionOp* rop = static_cast<ReductionOp*>(expr);
@@ -360,13 +321,13 @@ std::array<size_t, 2> gridReductionTempBufferSizes(CudaKernel* entry) {
     bool y_thread = domains.find(ParallelType::TIDy) == domains.end();
     bool z_thread = domains.find(ParallelType::TIDz) == domains.end();
     auto rb_size =
-        sizeOfReductionBlock(entry->block_, x_thread, y_thread, z_thread);
-    auto num_blocks = size(entry->grid_);
+        sizeOfReductionBlock(block_dim, x_thread, y_thread, z_thread);
+    auto num_blocks = size(grid_dim);
     auto element_size = dataTypeSize(*(rop->out()->getDataType()));
     auto required_temp_buffer_size = num_blocks * rb_size * element_size;
     buffer_size = std::max(buffer_size, required_temp_buffer_size);
     auto flag_size = sizeof(unsigned) *
-        numberOfReductionSegments(entry->grid_, x_block, y_block, z_block);
+        numberOfReductionSegments(grid_dim, x_block, y_block, z_block);
     sync_flag_size = std::max(sync_flag_size, flag_size);
   }
   return {{buffer_size, sync_flag_size}};
@@ -374,29 +335,11 @@ std::array<size_t, 2> gridReductionTempBufferSizes(CudaKernel* entry) {
 
 } // namespace
 
-bool NaivePWKernelArgsReq::matchKernelSize(const at::ArrayRef<IValue> inputs) {
-  TORCH_INTERNAL_ASSERT(
-      inputs.size() == dims_.size(),
-      "wrong number of inputs feed to generated kernel!");
-  for (size_t i = 0; i < dims_.size(); i++) {
-    if (inputs[i].isTensor()) {
-      if (inputs[i].toTensor().dim() != dims_[i]) {
-        return false;
-      }
-    } else {
-      if (dims_[i] != -1) {
-        return false;
-      }
-    }
-  }
-  return true;
-}
-
 void compileKernel(CudaKernel* entry) {
   // generating cuda code;
   std::string code;
   std::string func_name;
-  std::tie(func_name, code) = codeGeneration(entry->fusion_.get());
+  std::tie(func_name, code) = codeGeneration(entry->fusion());
 
   std::ofstream out("output_ke.cu");
   out << code;
@@ -426,8 +369,7 @@ void compileKernel(CudaKernel* entry) {
   }
 
   // set device for the operation;
-  at::cuda::set_device(entry->device_);
-  entry->has_random_ = entry->fusion_->hasRNG();
+  at::cuda::set_device(entry->device());
 
   const auto prop = at::cuda::getCurrentDeviceProperties();
   int nvrtc_major, nvrtc_minor;
@@ -514,25 +456,13 @@ void compileKernel(CudaKernel* entry) {
     }
 
     // load compiled cubin
-    AT_CUDA_DRIVER_CHECK(nvrtc().cuModuleLoadData(&(entry->module_), cubin));
+    AT_CUDA_DRIVER_CHECK(nvrtc().cuModuleLoadData(entry->module(), cubin));
   } else {
     // load ptx directly
-    AT_CUDA_DRIVER_CHECK(
-        nvrtc().cuModuleLoadData(&(entry->module_), ptx.data()));
+    AT_CUDA_DRIVER_CHECK(nvrtc().cuModuleLoadData(entry->module(), ptx.data()));
   }
   AT_CUDA_DRIVER_CHECK(nvrtc().cuModuleGetFunction(
-      &(entry->function_), entry->module_, lowered_kernel_name));
-#if defined(__HIP_PLATFORM_HCC__) && HIP_VERSION < 305
-  // HIP function signature is not compatible yet
-  uint32_t max_blocks;
-  AT_CUDA_DRIVER_CHECK(nvrtc().hipOccupancyMaxActiveBlocksPerMultiprocessor(
-      &max_blocks, entry->function_, 128, 0));
-  entry->max_blocks_ = max_blocks;
-#else
-  AT_CUDA_DRIVER_CHECK(nvrtc().cuOccupancyMaxActiveBlocksPerMultiprocessor(
-      &entry->max_blocks_, entry->function_, 128, 0));
-#endif
-  entry->max_blocks_ *= prop->multiProcessorCount;
+      entry->function(), *entry->module(), lowered_kernel_name));
 }
 
 void runKernel(
@@ -540,10 +470,10 @@ void runKernel(
     const at::ArrayRef<IValue> inputs,
     const std::vector<at::Tensor>& outputs,
     const c10::optional<at::IntArrayRef>& broadcasted_size) {
-  validateKernelArgs(*entry, inputs, outputs);
+  validateKernelArgs(entry, inputs, outputs);
 
   const auto prior_device = at::cuda::current_device();
-  at::cuda::set_device(entry->device_);
+  at::cuda::set_device(entry->device());
   auto stream = at::cuda::getCurrentCUDAStream();
 
   // TODO: Proper API to establish reasonable launch configurations;
@@ -567,7 +497,7 @@ void runKernel(
     kernel_args.push(output);
   }
 
-  Fusion* fusion = entry->fusion_.get();
+  Fusion* fusion = entry->fusion();
   FusionGuard fg(fusion);
   EvaluationContext eval_context(fusion);
   for (int i = 0; i < (int)inputs.size(); i++) {
@@ -597,8 +527,11 @@ void runKernel(
   const auto nThreadz = expr_eval_fn(LaunchConfigType::TIDz);
   const auto shared_memory = expr_eval_fn(LaunchConfigType::SharedMemory);
 
+  dim3 grid_dim(nBlocks_x, nBlocks_y, nBlocks_z);
+  dim3 block_dim(nThreadx, nThready, nThreadz);
+
   // TODO: this probably won't work for us.
-  if (entry->has_random_) {
+  if (entry->hasRNG()) {
     std::pair<uint64_t, uint64_t> philox_engine_inputs;
     const auto rand_offset =
         4 * (std::ceil(numel / (4.0 * 128 * nBlocks_x)) + 1);
@@ -614,9 +547,26 @@ void runKernel(
     kernel_args.push(philox_engine_inputs.second);
   }
 
+  // When the kernel has global reductions, the kernel needs two
+  // additional temporary buffers, one for intermediate results and
+  // another for synchronization among thread blocks.
+  if (entry->fusion_->hasGridReduction()) {
+    auto temp_buf_type = at::kFloat;
+    auto temp_buf_sizes =
+        gridReductionTempBufferSizes(entry, grid_dim, block_dim);
+    auto options =
+        at::TensorOptions().dtype(temp_buf_type).device(at::kCUDA, 0);
+    at::Tensor reduction_work_buffer = at::empty(
+        {(long)(temp_buf_sizes[0] / c10::elementSize(temp_buf_type))}, options);
+    kernel_args.push(reduction_work_buffer);
+    at::Tensor sync_flags = at::zeros(
+        {(long)(temp_buf_sizes[1] / c10::elementSize(temp_buf_type))}, options);
+    kernel_args.push(sync_flags);
+  }
+
   // launch kernel;
   AT_CUDA_DRIVER_CHECK(nvrtc().cuLaunchKernel(
-      entry->function_,
+      *entry->function(),
       nBlocks_x,
       nBlocks_y,
       nBlocks_z,
@@ -638,14 +588,14 @@ void runTestKernel(
     CudaKernel* entry,
     const at::ArrayRef<IValue> inputs,
     const std::vector<at::Tensor>& outputs) {
-  validateKernelArgs(*entry, inputs, outputs);
+  validateKernelArgs(entry, inputs, outputs);
 
   TORCH_INTERNAL_ASSERT(
       !entry->fusion_->outputs().empty(),
       "No output found for this kernel, aborting.");
 
   const auto prior_device = at::cuda::current_device();
-  at::cuda::set_device(entry->device_);
+  at::cuda::set_device(entry->device());
   auto stream = at::cuda::getCurrentCUDAStream();
 
   // TODO: Proper API to establish reasonable launch configurations;
@@ -654,11 +604,11 @@ void runTestKernel(
   size_t numel = outputs[0].numel();
 
   // TODO: we can't randomly clap down this until we got striding.
-  const auto nBlocks = ceilDiv(numel, 128 * entry->unroll_factor_);
+  const auto nBlocks = ceilDiv(numel, 128);
 
   KernelArgumentHolder kernel_args;
 
-  auto exprs = entry->fusion_->exprs(true);
+  auto exprs = entry->fusion()->exprs(true);
 
   // Naive I/O setup, I'm ignoring all the potential transformation (i.e. I/O
   // allocated here from the subgraph could be, and very likely are, different
@@ -676,7 +626,7 @@ void runTestKernel(
   }
 
   // TODO: this probably won't work for us.
-  if (entry->has_random_) {
+  if (entry->hasRNG()) {
     std::pair<uint64_t, uint64_t> philox_engine_inputs;
     const auto rand_offset = 4 * (std::ceil(numel / (4.0 * 128 * nBlocks)) + 1);
     auto gen = at::cuda::detail::getDefaultCUDAGenerator();
@@ -694,9 +644,10 @@ void runTestKernel(
   // When the kernel has global reductions, the kernel needs two
   // additional temporary buffers, one for intermediate results and
   // another for synchronization among thread blocks.
-  if (entry->fusion_->hasGridReduction()) {
+  if (entry->fusion()->hasGridReduction()) {
     auto temp_buf_type = at::kFloat;
-    auto temp_buf_sizes = gridReductionTempBufferSizes(entry);
+    auto temp_buf_sizes =
+        gridReductionTempBufferSizes(entry, entry->grid_, entry->block_);
     auto options =
         at::TensorOptions().dtype(temp_buf_type).device(at::kCUDA, 0);
     at::Tensor reduction_work_buffer = at::empty(
@@ -709,7 +660,7 @@ void runTestKernel(
 
   // launch kernel;
   AT_CUDA_DRIVER_CHECK(nvrtc().cuLaunchKernel(
-      entry->function_,
+      *entry->function(),
       entry->grid_.x,
       entry->grid_.y,
       entry->grid_.z,
