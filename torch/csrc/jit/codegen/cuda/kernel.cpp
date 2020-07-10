@@ -471,6 +471,23 @@ void runKernel(
     kernel_args.push(philox_engine_inputs.second);
   }
 
+  // When the kernel has global reductions, the kernel needs two
+  // additional temporary buffers, one for intermediate results and
+  // another for synchronization among thread blocks.
+  if (entry->fusion()->hasGridReduction()) {
+    auto temp_buf_type = at::kFloat;
+    auto temp_buf_sizes =
+        gridReductionTempBufferSizes(entry, grid_dim, block_dim);
+    auto options =
+        at::TensorOptions().dtype(temp_buf_type).device(at::kCUDA, 0);
+    at::Tensor reduction_work_buffer = at::empty(
+        {(long)(temp_buf_sizes[0] / c10::elementSize(temp_buf_type))}, options);
+    kernel_args.push(reduction_work_buffer);
+    at::Tensor sync_flags = at::zeros(
+        {(long)(temp_buf_sizes[1] / c10::elementSize(temp_buf_type))}, options);
+    kernel_args.push(sync_flags);
+  }
+
   // launch kernel;
   AT_CUDA_DRIVER_CHECK(nvrtc().cuLaunchKernel(
       entry->function_,
@@ -498,7 +515,7 @@ void runTestKernel(
   validateKernelArgs(*entry, inputs, outputs);
 
   TORCH_INTERNAL_ASSERT(
-      !entry->fusion_->outputs().empty(),
+      !entry->fusion()->outputs().empty(),
       "No output found for this kernel, aborting.");
 
   const auto prior_device = at::cuda::current_device();
