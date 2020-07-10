@@ -53,14 +53,17 @@ class TORCH_CUDA_API LaunchParams {
       int& class_val,
       std::string val) {
     TORCH_INTERNAL_ASSERT(
-        class_val == -1 || incoming_val == class_val,
+        class_val == -1 || incoming_val == 1 || class_val == 1 ||
+            incoming_val == class_val,
         "Tried to set ",
         val,
         " to ",
         incoming_val,
         ", but it was already set and new value does not match.",
         " Thread dims all have to be bound to the same value.");
-    class_val = incoming_val;
+    if (class_val == -1 || class_val == 1) {
+      class_val = incoming_val;
+    }
   }
 
   void bind(int64_t val, ParallelType p_dim);
