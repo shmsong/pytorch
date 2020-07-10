@@ -1,6 +1,8 @@
 #pragma once
 
-#include <c10/core/ScalarType.h>
+#include <ATen/core/ivalue.h>
+#include <c10/util/Exception.h>
+#include <torch/csrc/jit/ir/ir.h>
 
 namespace torch {
 namespace jit {
@@ -135,6 +137,38 @@ std::unique_ptr<TensorArgAbstract> getTensorArg(int nDims) {
 std::unique_ptr<TensorArgAbstract> getTensorArg(
     c10::ScalarType dtype,
     int nDims);
+
+class KernelArgumentHolder {
+ public:
+  ~KernelArgumentHolder() = default;
+
+  // Push a tensor to the arguments
+  void push(const at::Tensor& tensor);
+
+  void push(
+      const at::Tensor& tensor,
+      c10::optional<at::IntArrayRef> broadcasted_size);
+
+  // Push a scalar or integer to the arguments
+  void push(const IValue& val);
+
+  void push(const uint64_t& val);
+
+  // Create buffer, flatten arguments into it, align by 8 Bytes, return pointers
+  // in the buffer
+  void** getBuffer();
+
+  void appendArgs(const c10::ArrayRef<c10::IValue>& args);
+
+  void appendArgs(const std::vector<at::Tensor>& tensors);
+
+  void appendPhilox(uint64_t rand_offset);
+
+ private:
+  std::vector<std::unique_ptr<ArgAbstract>> arguments;
+  std::vector<void*> void_ptrs;
+  bool changed = true;
+};
 
 } // namespace cuda
 } // namespace fuser

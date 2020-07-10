@@ -5,9 +5,6 @@
 
 #include <torch/csrc/jit/codegen/cuda/kernel.h>
 
-/*
- */
-
 namespace torch {
 namespace jit {
 namespace fuser {
