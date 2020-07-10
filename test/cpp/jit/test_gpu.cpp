@@ -3003,8 +3003,8 @@ void testGPU_FusionSimpleGemm() {
   // Set up your input tensor views
   TensorView* tv0 = makeDummyTensor(2); // M, K
   TensorView* tv1 = makeDummyTensor(2); // K, N
-  fusion->addInput(tv0);
-  fusion->addInput(tv1);
+  fusion.addInput(tv0);
+  fusion.addInput(tv1);
 
   TensorView* tv2 = broadcast(tv0, {false, false, true});
   // tv2[I0, I1, B] = tv0[I0, I1]
@@ -3016,7 +3016,7 @@ void testGPU_FusionSimpleGemm() {
   TensorView* tv4 = mul(tv2, tv3);
   // tv5[I0, R1, I2] = tv4[I0, I1, I2]
   TensorView* tv5 = sum(tv4, {1});
-  fusion->addOutput(tv5);
+  fusion.addOutput(tv5);
 
   tv5->split(1, 32);
   // tv5[I0, R1o, R1i{32}, I2]

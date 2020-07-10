@@ -550,7 +550,7 @@ void runKernel(
   // When the kernel has global reductions, the kernel needs two
   // additional temporary buffers, one for intermediate results and
   // another for synchronization among thread blocks.
-  if (entry->fusion_->hasGridReduction()) {
+  if (entry->fusion()->hasGridReduction()) {
     auto temp_buf_type = at::kFloat;
     auto temp_buf_sizes =
         gridReductionTempBufferSizes(entry, grid_dim, block_dim);
@@ -591,7 +591,7 @@ void runTestKernel(
   validateKernelArgs(entry, inputs, outputs);
 
   TORCH_INTERNAL_ASSERT(
-      !entry->fusion_->outputs().empty(),
+      !entry->fusion()->outputs().empty(),
       "No output found for this kernel, aborting.");
 
   const auto prior_device = at::cuda::current_device();
