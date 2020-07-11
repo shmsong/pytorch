@@ -20,11 +20,11 @@ struct TORCH_CUDA_API CompileOptions {
 class TORCH_CUDA_API FusionExecutor {
  public:
   FusionExecutor() {}
-  FusionExecutor(CompileOptions _options) : options_(_options) {}
+  FusionExecutor(CompileOptions options) : options_(options) {}
 
   std::string KernelName() const {
     std::stringstream ss;
-    ss << "kernel"; // << fusion_id;
+    ss << "kernel" << fusion_id;
     return ss.str();
   }
 
@@ -47,8 +47,6 @@ class TORCH_CUDA_API FusionExecutor {
   }
 
  private:
-  // TODO: Make pointer to const, will take some const fixing in codegenerator
-  // to work.
   Fusion fusion_;
 
   CompileOptions options_;
@@ -56,7 +54,7 @@ class TORCH_CUDA_API FusionExecutor {
   executor_utils::NvrtcFunction compiled_kernel;
 
   // State of the fusion that's important
-  bool has_random;
+  bool has_random = false;
 
   // Counter to be used for kernel name.
   int fusion_id = -1;

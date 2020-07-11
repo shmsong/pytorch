@@ -16,7 +16,7 @@ int FusionExecutor::fusion_id_counter = 0;
 std::string FusionExecutor::getKernel() {
   // generating cuda code;
   std::string code = std::string("namespace ") + FusionExecutor::Namespace() +
-      " {\n" + executor_utils::KernelPreamble() +
+      " {\n" + executor_utils::kernelPreamble() +
       GPULower(&fusion_).getKernel(KernelName()) + "}\n";
 
   const char* debug_env = getenv("PYTORCH_CUDA_FUSER_DEBUG");
@@ -79,7 +79,7 @@ LaunchParams FusionExecutor::computeLaunchParams(
     }
   }
 
-  LaunchParams lp;
+  LaunchParams launch_params;
 
   // Grab all used values and run through them
   auto unordered_vals = DependencyCheck::getAllValsBetween(
@@ -106,12 +106,12 @@ LaunchParams FusionExecutor::computeLaunchParams(
             ", within the tensor ",
             tv,
             " to set launch bounds but could not.");
-        lp.bind(val.value(), id->parallel_method());
+        launch_params.bind(val.value(), id->parallel_method());
       }
     }
   }
 
-  return lp;
+  return launch_params;
 }
 
 // This function is here for testing purposes only
@@ -132,16 +132,16 @@ std::vector<at::Tensor> FusionExecutor::runFusion(
 
   TORCH_INTERNAL_ASSERT(!outputs.empty(), "No outputs set for test kernel.");
 
-  KernelArgumentHolder kah;
-  kah.appendArgs(inputs);
-  kah.appendArgs(outputs);
+  KernelArgumentHolder kernel_arguments;
+  kernel_arguments.appendArgs(inputs);
+  kernel_arguments.appendArgs(outputs);
 
   LaunchParams lp = computeLaunchParams(inputs);
 
   if (has_random) {
     const auto rand_offset =
         4 * (std::ceil(outputs[0].numel() / (4.0 * 128 * lp.gdimx())) + 1);
-    kah.appendPhilox(rand_offset);
+    kernel_arguments.appendPhilox(rand_offset);
   }
 
   // TODO SUPPORT GRID REDUCTIONS:
@@ -174,7 +174,7 @@ std::vector<at::Tensor> FusionExecutor::runFusion(
       lp.bdimz(),
       0, // smem
       stream,
-      kah.getBuffer(),
+      kernel_arguments.getBuffer(),
       nullptr));
 
   // // Resets device (see at::DeviceGuard notes above)
