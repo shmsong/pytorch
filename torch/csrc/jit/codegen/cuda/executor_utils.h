@@ -17,7 +17,7 @@ namespace cuda {
 namespace executor_utils {
 
 // Include all the functions we might need in generated code
-std::string KernelPreamble();
+std::string kernelPreamble();
 
 bool validateKernelArgTensor(
     const at::Tensor& arg,
@@ -44,6 +44,7 @@ void validateKernelArgs(
 
 struct NvrtcFunction {
  public:
+  NvrtcFunction() = default;
   CUmodule module;
   CUfunction function;
 };
@@ -52,6 +53,7 @@ NvrtcFunction nvrtcCompile(
     const std::string& code,
     const std::string& func_name,
     int id);
+
 } // namespace executor_utils
 } // namespace cuda
 } // namespace fuser

@@ -20,27 +20,27 @@ class TORCH_CUDA_API LaunchParams {
   }
 
   unsigned int bdimx() const {
-    return (unsigned int)bdimx_ == -1 ? 1 : bdimx_;
+    return static_cast<unsigned int>(bdimx_ == -1 ? 1 : bdimx_);
   }
 
   unsigned int gdimx() const {
-    return (unsigned int)gdimx_ == -1 ? 1 : gdimx_;
+    return static_cast<unsigned int>(gdimx_ == -1 ? 1 : gdimx_);
   }
 
   unsigned int bdimy() const {
-    return (unsigned int)bdimy_ == -1 ? 1 : bdimy_;
+    return static_cast<unsigned int>(bdimy_ == -1 ? 1 : bdimy_);
   }
 
   unsigned int gdimy() const {
-    return (unsigned int)gdimy_ == -1 ? 1 : gdimy_;
+    return static_cast<unsigned int>(gdimy_ == -1 ? 1 : gdimy_);
   }
 
   unsigned int bdimz() const {
-    return (unsigned int)bdimz_ == -1 ? 1 : bdimz_;
+    return static_cast<unsigned int>(bdimz_ == -1 ? 1 : bdimz_);
   }
 
   unsigned int gdimz() const {
-    return (unsigned int)gdimz_ == -1 ? 1 : gdimz_;
+    return static_cast<unsigned int>(gdimz_ == -1 ? 1 : gdimz_);
   }
 
   void checkAndSet(
@@ -73,6 +73,7 @@ class TORCH_CUDA_API LaunchParams {
  private:
   // Spell them out because I want signed ints to know if they were initialized
   // or not.
+  // TODO: convert to c10::optional
   int gdimx_ = -1;
   int gdimy_ = -1;
   int gdimz_ = -1;
@@ -83,7 +84,7 @@ class TORCH_CUDA_API LaunchParams {
   unsigned int smem_ = 0;
 
   // TODO: Fill in output sizes
-  std::vector<std::vector<unsigned int>> output_sizes;
+  std::vector<std::vector<int64_t>> output_sizes;
 };
 } // namespace cuda
 } // namespace fuser

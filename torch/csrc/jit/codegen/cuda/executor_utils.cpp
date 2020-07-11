@@ -14,7 +14,8 @@ namespace jit {
 namespace fuser {
 namespace cuda {
 namespace executor_utils {
-std::string KernelPreamble() {
+
+std::string kernelPreamble() {
   std::stringstream ss;
   ss << code_template_tensor_struct << "\n"
      << code_fp16_support << "\n"
@@ -189,9 +190,8 @@ NvrtcFunction nvrtcCompile(
   // Major and minor is determined by device properties and
   // possibly "downcompiled" to a lower (compatible) compute architecture
   // based on the NVRTC version
-  int major, minor;
-  major = prop->major;
-  minor = prop->minor;
+  const int major = prop->major;
+  const int minor = prop->minor;
   nvrtcProgram program;
   AT_CUDA_NVRTC_CHECK(at::globalContext().getNVRTC().nvrtcCreateProgram(
       &program, code.c_str(), nullptr, 0, nullptr, nullptr));

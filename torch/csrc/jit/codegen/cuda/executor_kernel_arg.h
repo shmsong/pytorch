@@ -140,11 +140,11 @@ std::unique_ptr<TensorArgAbstract> getTensorArg(
 
 class KernelArgumentHolder {
  public:
-  ~KernelArgumentHolder() = default;
-
   // Push a tensor to the arguments
   void push(const at::Tensor& tensor);
 
+  // We want to get rid of this version, it's a hack for now because we don't
+  // have great broadcast support for translation.
   void push(
       const at::Tensor& tensor,
       c10::optional<at::IntArrayRef> broadcasted_size);
