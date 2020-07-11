@@ -4,6 +4,7 @@
 
 #include <torch/csrc/jit/codegen/cuda/arith.h>
 #include <torch/csrc/jit/codegen/cuda/executor.h>
+#include <torch/csrc/jit/codegen/cuda/executor_launch_params.h>
 #include <torch/csrc/jit/codegen/cuda/expr_evaluator.h>
 #include <torch/csrc/jit/codegen/cuda/fusion.h>
 #include <torch/csrc/jit/codegen/cuda/ir_all_nodes.h>
@@ -26,6 +27,7 @@
 namespace torch {
 namespace jit {
 
+using namespace torch::jit::fuser;
 using namespace torch::jit::fuser;
 
 namespace {
@@ -3186,6 +3188,7 @@ void testGPU_FusionSimpleBCast() {
   }
 }
 
+// Test a simple Gemm but also play around with fusion executor features
 void testGPU_FusionSimpleGemm() {
   Fusion fusion;
   FusionGuard fg(&fusion);
@@ -3215,7 +3218,8 @@ void testGPU_FusionSimpleGemm() {
   // tv6[I0, R1o, I1i{32}, I2] = tv4[I0, I1, I2]
   // tv5[I0,    , R1i{32}, I2] = tv6[I0, R1o, I1i{32}, I2]
 
-  tv5->split(0, 4);
+  auto tidz_int = new Int();
+  tv5->split(0, tidz_int);
   tv5->split(-1, 4);
   // tv5[I0o, I0i{4}, R1i{32}, I2o, I2i{4}]
   // tv5[I0o, I0i{4}, R1i{32}, I2o, I2i{4}]
@@ -3254,13 +3258,21 @@ void testGPU_FusionSimpleGemm() {
 
   at::Tensor cg_output = at::empty({M, N}, options);
 
-  // prog.device_ = 0;
-  // prog.grid(1, ceilDiv_(N, 4), ceilDiv_(M, 4));
-  // prog.block(32, 4, 4);
-  // torch::jit::fuser::cuda::compileKernel(&prog);
-  // torch::jit::fuser::cuda::runTestKernel(&prog, {t0, t1}, {cg_output});
   torch::jit::fuser::cuda::FusionExecutor fe;
   fe.compileFusion(&fusion);
+  // Lets specify a few bounds in launch params to make sure it works
+  fe.runFusion(
+      {t0, t1},
+      {cg_output},
+      torch::jit::fuser::cuda::LaunchParams(1, -1, -1, 32, 4, 4));
+
+  // Make sure bad launch params throws
+  ASSERT_ANY_THROW(fe.runFusion(
+      {t0, t1},
+      {cg_output},
+      torch::jit::fuser::cuda::LaunchParams(1, 2, 3, 4, 5, 6)));
+
+  // Don't specify any launch params
   fe.runFusion({t0, t1}, {cg_output});
 
   auto t2 = t0.matmul(t1);

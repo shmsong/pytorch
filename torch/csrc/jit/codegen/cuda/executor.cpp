@@ -47,7 +47,8 @@ void FusionExecutor::compileFusion(Fusion* fusion) {
 // TODO: add options for constraints, if we want to enforce a parallelization
 // strategy because we did something like split on a symbolic size.
 LaunchParams FusionExecutor::computeLaunchParams(
-    const at::ArrayRef<IValue>& aten_inputs) {
+    const at::ArrayRef<IValue>& aten_inputs,
+    const LaunchParams& launch_constraints) {
   TORCH_INTERNAL_ASSERT(
       fusion_.inputs().size() == aten_inputs.size(),
       "Something went wrong configuring launch. Inputs no longer match.");
@@ -81,43 +82,87 @@ LaunchParams FusionExecutor::computeLaunchParams(
 
   LaunchParams launch_params;
 
-  // Grab all used values and run through them
+  // Grab all values that are actually used in the fusion
   auto unordered_vals = DependencyCheck::getAllValsBetween(
       {fusion_inputs.begin(), fusion_inputs.end()}, fusion_.outputs());
 
-  // Grab only the TensorViews
-  std::set<TensorView*> unordered_tvs;
+  // Lets collect all IterDomains that are bound to a thread binding
+  std::unordered_map<ParallelType, std::vector<IterDomain*>, TypeHash>
+      parallel_iter_domains;
+
   for (auto val : unordered_vals) {
     if (val->getValType().value() == ValType::TensorView) {
       TensorView* tv = val->as<TensorView>();
-      unordered_tvs.emplace(tv);
+      for (auto id : tv->domain()->domain()) {
+        if (id->isThread()) {
+          if (parallel_iter_domains.find(id->parallel_method()) !=
+              parallel_iter_domains.end()) {
+            parallel_iter_domains.at(id->parallel_method()).push_back(id);
+          } else {
+            parallel_iter_domains[id->parallel_method()] =
+                std::vector<IterDomain*>({id});
+          }
+        }
+      }
     }
   }
 
-  // Infer bindings
-  for (auto tv : unordered_tvs) {
-    for (auto id : tv->domain()->domain()) {
-      if (id->isThread()) {
-        auto val = ExpressionEvaluator::evaluate(id->rawExtent(), &ec);
-        TORCH_INTERNAL_ASSERT(
-            val,
-            "Tried to evaluate, ",
-            id,
-            ", within the tensor ",
-            tv,
-            " to set launch bounds but could not.");
-        launch_params.bind(val.value(), id->parallel_method());
+  // Check if any dimension was set in launch constraints
+  if (launch_constraints.nBlocks() * launch_constraints.nThreads() != -1) {
+    // If so we need to run through our tensor views, and bind those values. Or
+    // make sure if they could be infered the inference matches what was set.
+    for (auto& entry : parallel_iter_domains) {
+      auto p_type = entry.first;
+      if (launch_constraints.hasDim(p_type)) {
+        auto parallel_ids = entry.second;
+        for (auto parallel_id : parallel_ids) {
+          auto infered_val =
+              ExpressionEvaluator::evaluate(parallel_id->rawExtent(), &ec);
+          if (infered_val.has_value()) {
+            // This value could have been infered, make sure it was set right.
+            TORCH_CHECK(
+                infered_val.value() == launch_constraints.getDim(p_type) ||
+                    launch_constraints.getRawVal(p_type) == -1,
+                "Infered that ",
+                p_type,
+                " should be set to ",
+                infered_val.value(),
+                " but launch constraints specified ",
+                launch_constraints.getDim(p_type));
+          } else {
+            // Bind the launch constraint into our evaluation context
+            ec.bind(
+                parallel_id->rawExtent(),
+                launch_constraints.getDim(entry.first));
+            launch_params.bind(launch_constraints.getDim(p_type), p_type);
+          }
+        }
       }
+    }
+  }
+
+  // Run through the rest of the parallel IterDomains and infer their size
+  for (auto& entry : parallel_iter_domains) {
+    auto p_type = entry.first;
+    auto parallel_ids = entry.second;
+    for (auto parallel_id : parallel_ids) {
+      auto val = ExpressionEvaluator::evaluate(parallel_id->rawExtent(), &ec);
+      TORCH_INTERNAL_ASSERT(
+          val,
+          "Tried to evaluate the extent of ",
+          parallel_id,
+          " to set launch bounds but could not.");
+      launch_params.bind(val.value(), p_type);
     }
   }
 
   return launch_params;
 }
 
-// This function is here for testing purposes only
 std::vector<at::Tensor> FusionExecutor::runFusion(
     const at::ArrayRef<IValue> inputs,
-    const std::vector<at::Tensor>& outputs) {
+    const std::vector<at::Tensor>& outputs,
+    const LaunchParams& launch_constraints) {
   TORCH_INTERNAL_ASSERT(
       fusion_id > 0, "Cannot run fusion, it was not compiled.");
 
@@ -136,11 +181,12 @@ std::vector<at::Tensor> FusionExecutor::runFusion(
   kernel_arguments.appendArgs(inputs);
   kernel_arguments.appendArgs(outputs);
 
-  LaunchParams lp = computeLaunchParams(inputs);
+  LaunchParams launch_params = computeLaunchParams(inputs, launch_constraints);
 
   if (has_random) {
-    const auto rand_offset =
-        4 * (std::ceil(outputs[0].numel() / (4.0 * 128 * lp.gdimx())) + 1);
+    const auto rand_offset = 4 *
+        (std::ceil(outputs[0].numel() / (4.0 * 128 * launch_params.gdimx())) +
+         1);
     kernel_arguments.appendPhilox(rand_offset);
   }
 
@@ -166,12 +212,12 @@ std::vector<at::Tensor> FusionExecutor::runFusion(
   // launch kernel;
   AT_CUDA_DRIVER_CHECK(at::globalContext().getNVRTC().cuLaunchKernel(
       compiled_kernel.function,
-      lp.gdimx(),
-      lp.gdimy(),
-      lp.gdimz(),
-      lp.bdimx(),
-      lp.bdimy(),
-      lp.bdimz(),
+      launch_params.gdimx(),
+      launch_params.gdimy(),
+      launch_params.gdimz(),
+      launch_params.bdimx(),
+      launch_params.bdimy(),
+      launch_params.bdimz(),
       0, // smem
       stream,
       kernel_arguments.getBuffer(),
