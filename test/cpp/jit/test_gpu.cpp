@@ -2899,8 +2899,7 @@ void testGPU_FusionSimpleGemm() {
   // tv6[I0, R1o, I1i{32}, I2] = tv4[I0, I1, I2]
   // tv5[I0,    , R1i{32}, I2] = tv6[I0, R1o, I1i{32}, I2]
 
-  auto tidz_int = new Int();
-  tv5->split(0, tidz_int);
+  tv5->split(0, 4);
   tv5->split(-1, 4);
   // tv5[I0o, I0i{4}, R1i{32}, I2o, I2i{4}]
   // tv5[I0o, I0i{4}, R1i{32}, I2o, I2i{4}]
