@@ -25,9 +25,6 @@ class ReplayRFactor : public ReplayTransformations {
         "Transform traversal failed, dependencies not met.");
     // Grab the ID we're going to replay on
     auto mapped = (*it).second;
-    TORCH_INTERNAL_ASSERT(
-        s->factor()->isConst(),
-        "Transform traversal does not support splitting on non-const values.");
     // This ID should be a leaf ID (meaning it has no uses we generated)
     TORCH_INTERNAL_ASSERT(
         leaf_ids_.find(mapped) != leaf_ids_.end(),

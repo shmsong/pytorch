@@ -138,11 +138,12 @@ Statement* OptOutMutator::mutate(Split* s) {
   IterDomain* ot = static_cast<IterDomain*>(mutateAsVal(s->outer()));
   IterDomain* inr = static_cast<IterDomain*>(mutateAsVal(s->inner()));
   IterDomain* in = static_cast<IterDomain*>(mutateAsVal(s->in()));
-  Int* fact = static_cast<Int*>(mutateAsVal(s->factor()));
+  Val* fact = static_cast<Val*>(mutateAsVal(s->factor()));
 
   if (ot->sameAs(s->outer()) && inr->sameAs(s->inner()) &&
-      in->sameAs(s->in()) && fact->sameAs(s->factor()))
+      in->sameAs(s->in()) && areEqualScalars(fact, s->factor())) {
     return s;
+  }
   FusionGuard::getCurFusion()->removeExpr(s);
   return new Split(ot, inr, in, fact);
 }

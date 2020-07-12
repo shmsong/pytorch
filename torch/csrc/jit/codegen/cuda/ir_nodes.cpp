@@ -65,6 +65,10 @@ class ScalarCheck : OptInDispatch {
 
 } // namespace
 
+bool areEqualScalars(Val* v1, Val* v2) {
+  return ScalarCheck::sameAs(v1, v2);
+}
+
 Bool::Bool(const Bool* src, IrCloner* ir_cloner)
     : Val(src, ir_cloner), maybe_value_(src->maybe_value_) {}
 
@@ -393,7 +397,7 @@ IterDomain* IterDomain::merge(IterDomain* outer, IterDomain* inner) {
 
 std::pair<IterDomain*, IterDomain*> IterDomain::split(
     IterDomain* in,
-    unsigned int factor) {
+    Val* factor) {
   TORCH_CHECK(
       in->start()->isZeroInt(),
       "Splitting IterDomains with starting values that aren't 0 is not supported at this time.");
@@ -404,9 +408,24 @@ std::pair<IterDomain*, IterDomain*> IterDomain::split(
         "Splitting an axis of non-Serial iteration is not supported at this time."
         " Parallelization strategy must be set after calling split.");
 
-  Int* fact = new Int(factor);
+  TORCH_CHECK(factor->isAnInt(), "Cannot split by non-integer value ", factor);
+
+  if (factor->getValType() == ValType::Scalar) {
+    TORCH_CHECK(
+        factor->isConstScalar() ||
+            FusionGuard::getCurFusion()->hasInput(factor),
+        factor,
+        " is not a constant nor an input. It must be one or the other to be used in a split.",
+        " If you want a symbolic split based on a thread dimension please use IterDomain::split(IterDomain*, ParallelType);");
+  } else if (factor->getValType() == ValType::NamedScalar) {
+    TORCH_CHECK(
+        factor->as<NamedScalar>()->getParallelDim() != c10::nullopt,
+        "Splitting a dimension by a named scalar is only supported on block or grid dimensions but received ",
+        factor);
+  }
+
   // outer loop size
-  Val* vo = ceilDiv(in->extent(), fact);
+  Val* vo = ceilDiv(in->extent(), factor);
 
   // outer loop IterDomain
   IterDomain* ido = new IterDomain(
@@ -420,12 +439,12 @@ std::pair<IterDomain*, IterDomain*> IterDomain::split(
   // inner loop IterDomain
   IterDomain* idi = new IterDomain(
       new Int(0),
-      fact,
+      factor,
       in->parallel_method(),
       in->isReduction(),
       in->isRFactorProduct(),
       in->isBroadcast());
-  new Split(ido, idi, in, fact);
+  new Split(ido, idi, in, factor);
   return {ido, idi};
 }
 
@@ -435,8 +454,7 @@ Val* IterDomain::extent() const {
       if (static_cast<Int*>(extent_)->isConst())
         return extent_;
 
-    std::string parallel_dim = stringifyThreadSize(parallel_method_);
-    return new NamedScalar(parallel_dim, DataType::Int);
+    return NamedScalar::getParallelDim(parallel_method());
   }
   return extent_;
 }
@@ -605,9 +623,7 @@ size_t TensorDomain::posOf(IterDomain* id) const {
   TORCH_CHECK(false, "Provided id is not part of this domain.");
 }
 
-// Split "axis" into 2 axes where the inner axes is size of "factor"
-// and outer axis is size axis.extent() / factor
-void TensorDomain::split(int axis_, unsigned int factor) {
+void TensorDomain::split(int axis_, Val* factor) {
   TORCH_INTERNAL_ASSERT(nDims() > 0, "Tried to do split on a 0-dim domain");
   if (axis_ < 0)
     axis_ += nDims();
@@ -875,12 +891,15 @@ Split::Split(
     IterDomain* _outer,
     IterDomain* _inner,
     IterDomain* _in,
-    Int* _factor)
+    Val* _factor)
     : Expr(ExprType::Split),
       outer_{_outer},
       inner_{_inner},
       in_{_in},
       factor_{_factor} {
+  TORCH_INTERNAL_ASSERT(
+      factor_->isAnInt(),
+      "Attempted to create a Split node with a non-integer factor.");
   addOutput(_outer);
   addOutput(_inner);
   addInput(_in);
@@ -1053,6 +1072,50 @@ bool Allocate::sameAs(const Allocate* other) const {
 
 NamedScalar::NamedScalar(const NamedScalar* src, IrCloner* ir_cloner)
     : Val(src, ir_cloner), name_(src->name_) {}
+
+NamedScalar* NamedScalar::getParallelDim(ParallelType p_type) {
+  std::string parallel_dim = stringifyThreadSize(p_type);
+  return new NamedScalar(parallel_dim, DataType::Int);
+}
+
+NamedScalar* NamedScalar::getParallelIndex(ParallelType p_type) {
+  std::string parallel_ind = stringifyThread(p_type);
+  return new NamedScalar(parallel_ind, DataType::Int);
+}
+
+c10::optional<ParallelType> NamedScalar::getParallelDim() const {
+  if (stringifyThreadSize(ParallelType::TIDx).compare(name()) == 0) {
+    return c10::optional<ParallelType>(ParallelType::TIDx);
+  } else if (stringifyThreadSize(ParallelType::TIDy).compare(name()) == 0) {
+    return c10::optional<ParallelType>(ParallelType::TIDy);
+  } else if (stringifyThreadSize(ParallelType::TIDz).compare(name()) == 0) {
+    return c10::optional<ParallelType>(ParallelType::TIDz);
+  } else if (stringifyThreadSize(ParallelType::BIDx).compare(name()) == 0) {
+    return c10::optional<ParallelType>(ParallelType::BIDx);
+  } else if (stringifyThreadSize(ParallelType::BIDy).compare(name()) == 0) {
+    return c10::optional<ParallelType>(ParallelType::BIDy);
+  } else if (stringifyThreadSize(ParallelType::BIDz).compare(name()) == 0) {
+    return c10::optional<ParallelType>(ParallelType::BIDz);
+  }
+  return c10::nullopt;
+}
+
+c10::optional<ParallelType> NamedScalar::getParallelIndex() const {
+  if (stringifyThread(ParallelType::TIDx).compare(name()) == 0) {
+    return c10::optional<ParallelType>(ParallelType::TIDx);
+  } else if (stringifyThread(ParallelType::TIDy).compare(name()) == 0) {
+    return c10::optional<ParallelType>(ParallelType::TIDy);
+  } else if (stringifyThread(ParallelType::TIDz).compare(name()) == 0) {
+    return c10::optional<ParallelType>(ParallelType::TIDz);
+  } else if (stringifyThread(ParallelType::BIDx).compare(name()) == 0) {
+    return c10::optional<ParallelType>(ParallelType::BIDx);
+  } else if (stringifyThread(ParallelType::BIDy).compare(name()) == 0) {
+    return c10::optional<ParallelType>(ParallelType::BIDy);
+  } else if (stringifyThread(ParallelType::BIDz).compare(name()) == 0) {
+    return c10::optional<ParallelType>(ParallelType::BIDz);
+  }
+  return c10::nullopt;
+}
 
 } // namespace fuser
 } // namespace jit

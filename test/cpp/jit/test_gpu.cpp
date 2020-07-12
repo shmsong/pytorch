@@ -2501,7 +2501,7 @@ void testGPU_FusionRFactorReplay() {
   // new_domain[I0oi{16}, I0oo*I0i{32}, ir1oi{4}rf, R(R1oo*R1i{8})rf]
   //       casp[I0oi{16}, I0oo*I0i{32},  R1oi{4}]
 
-  casp->split(1, 2);
+  casp->split(1, new Int(2));
   // casp      [I0oi{16}, (I0oo*I0i{32})o, I(Ioo*I0i)i{2}, ir1oi{4} ]
   // new_domain[I0oi{16},  I0oo*I0i{32}  ,                 ir1oi{4}rf,
   // R(R1oo*R1i{8})rf]
@@ -3218,8 +3218,7 @@ void testGPU_FusionSimpleGemm() {
   // tv6[I0, R1o, I1i{32}, I2] = tv4[I0, I1, I2]
   // tv5[I0,    , R1i{32}, I2] = tv6[I0, R1o, I1i{32}, I2]
 
-  auto tidz_int = new Int();
-  tv5->split(0, tidz_int);
+  tv5->split(0, 4);
   tv5->split(-1, 4);
   // tv5[I0o, I0i{4}, R1i{32}, I2o, I2i{4}]
   // tv5[I0o, I0i{4}, R1i{32}, I2o, I2i{4}]
@@ -4609,6 +4608,61 @@ void testGPU_FusionReductionScheduler() {
       aten_output.allclose(cg_output),
       "Error of: ",
       aten_output.sub(cg_output).abs().max());
+}
+
+// Simple reduction parallelized on a symbolic size.
+void testGPU_FusionSymbolicReduction() {
+  Fusion fusion;
+  FusionGuard fg(&fusion);
+
+  // Set up your input tensor views
+  TensorView* tv0 = makeDummyTensor(2);
+  fusion.addInput(tv0);
+
+  // tv1[I0, R1] = tv0[I0, I1]
+  TensorView* tv1 = reductionOp(BinaryOpType::Add, {1}, new Float(0), tv0);
+  fusion.addOutput(tv1);
+
+  // Interface should just be a direct split with a Parallel type. We can
+  // include the parallelize call if we do this.
+  tv1->split(1, NamedScalar::getParallelDim(ParallelType::TIDx));
+  // tv1[I0, R1o, R1i{BIDx}] = tv0[I0, I1]
+
+  TensorView* tv2 = tv1->rFactor({1});
+  // tv2[I0, R1oo, Ir1oi{4}, Ir1i{BIDx}] = tv0[I0, I1]
+  // tv1[I0,        R1oi{4},  R1i{BIDx}] = tv2[I0, R1oo, Ir1oi{4}, Ir1i{BIDx}]
+
+  // Incrementally, can print in between for debugging
+  tv0->computeAt(tv2, 1);
+  tv2->computeAt(tv1, 1);
+
+  tv2->axis(-1)->parallelize(ParallelType::TIDx);
+
+  tv1->axis(0)->parallelize(ParallelType::BIDx);
+  tv1->axis(-1)->parallelize(ParallelType::TIDx);
+
+  fusion.printMath();
+
+  int numel_x = 65000;
+  int numel_y = 1025;
+
+  auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
+  at::Tensor input = at::rand({numel_x, numel_y}, options);
+  at::Tensor cg_output = at::empty({numel_x}, options);
+
+  // How many threads to use for the block reduction
+  int runtime_threadIdx_dim = 128;
+
+  torch::jit::fuser::cuda::FusionExecutor executor;
+  executor.compileFusion(&fusion);
+  executor.runFusion(
+      {input},
+      {cg_output},
+      torch::jit::fuser::cuda::LaunchParams(
+          -1, -1, -1, runtime_threadIdx_dim, -1, -1));
+
+  auto aten_output = input.sum({1});
+  TORCH_CHECK(aten_output.allclose(cg_output));
 }
 
 } // namespace jit

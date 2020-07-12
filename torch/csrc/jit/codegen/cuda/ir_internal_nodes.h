@@ -16,6 +16,11 @@ namespace torch {
 namespace jit {
 namespace fuser {
 
+// Returns true if both v1 and v2 are scalars, are the same type of scalars, and
+// dispatches to the inherited Val type's `->sameAs` call. e.g. if both vals are
+// `Int` will dispatch to v1->as<Int>()->sameAs(v2.as<Int>())
+bool areEqualScalars(Val* v1, Val* v2);
+
 /*
  * TODO: improve implementation bool IterDomain::sameAs(const IterDomain*) const
  * TODO: Add testing of sameAs functions for these nodes
@@ -259,9 +264,10 @@ class TORCH_CUDA_API IterDomain : public Val {
   }
 
   static IterDomain* merge(IterDomain* outer, IterDomain* inner);
-  static std::pair<IterDomain*, IterDomain*> split(
-      IterDomain* in,
-      unsigned int factor);
+
+  // TODO: Make protected and friend TensorDomain so only it can call into this
+  // directly, users should not be able to use this call
+  static std::pair<IterDomain*, IterDomain*> split(IterDomain* in, Val* factor);
 
   bool isReduction() const {
     return is_reduction_domain_;
@@ -302,14 +308,6 @@ class TORCH_CUDA_API IterDomain : public Val {
 
   void parallelize(ParallelType t) {
     parallel_method_ = t;
-
-    // Currently a limitation as we allocate shared memory as static (not based
-    // off a dynamic size.)
-    if (isReduction())
-      if (isThreadDim())
-        TORCH_CHECK(
-            extent()->isConstScalar(),
-            "Reductions can only be parallelized across dimensions of compile-time known constants.");
 
     TORCH_CHECK(
         t != ParallelType::Vectorize, "Vectorization not yet supported.");
@@ -437,8 +435,11 @@ class TORCH_CUDA_API TensorDomain : public Val {
   size_t posOf(IterDomain* id) const;
 
   // Split "axis" into 2 axes where the inner axes is size of "factor"
-  // and outer axis is size axis.size() / factor
-  void split(int axis, unsigned int factor);
+  // and outer axis is size axis.size() / factor. Allow factor to be symbolic
+  // value instead of constant.
+  // TODO: Make protected and friend TensorDomain so only it can call into this
+  // directly, users should not be able to use this call
+  void split(int axis_, Val* factor);
 
   // Merge axis_o and axis_i. axis_i is the fast changing dimension. Resulting
   // axis is by default placed at original position axis_o
@@ -482,7 +483,7 @@ class TORCH_CUDA_API Split : public Expr {
   Split(Split&& other) = delete;
   Split& operator=(Split&& other) = delete;
 
-  Split(IterDomain* _outer, IterDomain* _inner, IterDomain* _in, Int* _factor);
+  Split(IterDomain* _outer, IterDomain* _inner, IterDomain* _in, Val* _factor);
 
   Split(const Split* src, IrCloner* ir_cloner);
 
@@ -495,7 +496,7 @@ class TORCH_CUDA_API Split : public Expr {
   IterDomain* in() const {
     return in_;
   }
-  Int* factor() const {
+  Val* factor() const {
     return factor_;
   }
   bool sameAs(const Split* const other) const;
@@ -504,7 +505,7 @@ class TORCH_CUDA_API Split : public Expr {
   IterDomain* const outer_ = nullptr;
   IterDomain* const inner_ = nullptr;
   IterDomain* const in_ = nullptr;
-  Int* const factor_ = nullptr;
+  Val* const factor_ = nullptr;
 };
 
 /*
@@ -786,6 +787,20 @@ class TORCH_CUDA_API NamedScalar : public Val {
   bool sameAs(const NamedScalar* const other) const {
     return other->name().compare(name()) == 0;
   }
+
+  // Return the named scalar extent of a parallel dimension (e.g. blockDim.x)
+  static NamedScalar* getParallelDim(ParallelType p_type);
+
+  // Return the named scalar index of a parallel dimension (e.g. threadIdx.x)
+  static NamedScalar* getParallelIndex(ParallelType p_type);
+
+  // Return the parallel type of this NamedScalar if it is an extent of a
+  // parallel dimension
+  c10::optional<ParallelType> getParallelDim() const;
+
+  // Return the parallel type of this NamedScalar if it is an index of a
+  // parallel dimension
+  c10::optional<ParallelType> getParallelIndex() const;
 
  private:
   std::string name_;

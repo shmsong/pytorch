@@ -44,8 +44,6 @@ void FusionExecutor::compileFusion(Fusion* fusion) {
       getKernel(), (Namespace() + "::" + KernelName()).c_str(), fusion_id);
 }
 
-// TODO: add options for constraints, if we want to enforce a parallelization
-// strategy because we did something like split on a symbolic size.
 LaunchParams FusionExecutor::computeLaunchParams(
     const at::ArrayRef<IValue>& aten_inputs,
     const LaunchParams& launch_constraints) {
@@ -107,10 +105,10 @@ LaunchParams FusionExecutor::computeLaunchParams(
     }
   }
 
-  // Check if any dimension was set in launch constraints
+  // If any dimension was set in launch constraints we need to run through
+  // IterDomains that have been parallelized, and bind those values. Or make
+  // sure if they could be infered the inference matches what was set.
   if (launch_constraints.nBlocks() * launch_constraints.nThreads() != -1) {
-    // If so we need to run through our tensor views, and bind those values. Or
-    // make sure if they could be infered the inference matches what was set.
     for (auto& entry : parallel_iter_domains) {
       auto p_type = entry.first;
       if (launch_constraints.hasDim(p_type)) {
