@@ -215,22 +215,13 @@ Val* binaryOp(BinaryOpType type, Val* v1, Val* v2) {
   new BinaryOp(type, out, v1, v2);
   return out;
 }
-TensorView* binaryOp(
-    BinaryOpType type,
-    TensorView* v1,
-    Val* v2) {
+TensorView* binaryOp(BinaryOpType type, TensorView* v1, Val* v2) {
   return arithOpOverloads(type, v1, v2);
 }
-TensorView* binaryOp(
-    BinaryOpType type,
-    Val* v1,
-    TensorView* v2) {
+TensorView* binaryOp(BinaryOpType type, Val* v1, TensorView* v2) {
   return arithOpOverloads(type, v1, v2);
 }
-TensorView* binaryOp(
-    BinaryOpType type,
-    TensorView* v1,
-    TensorView* v2) {
+TensorView* binaryOp(BinaryOpType type, TensorView* v1, TensorView* v2) {
   return arithOpOverloads(type, v1, v2);
 }
 
@@ -571,10 +562,7 @@ TensorView* lerp(TensorView* v1, Val* v2, TensorView* v3) {
 TensorView* lerp(Val* v1, TensorView* v2, TensorView* v3) {
   return arithOpOverloads(lerp, v1, v2, v3);
 }
-TensorView* lerp(
-    TensorView* v1,
-    TensorView* v2,
-    TensorView* v3) {
+TensorView* lerp(TensorView* v1, TensorView* v2, TensorView* v3) {
   return arithOpOverloads(lerp, v1, v2, v3);
 }
 // addcmul
@@ -597,32 +585,16 @@ TensorView* addcmul(Val* v1, TensorView* v2, Val* v3, Val* v4) {
 TensorView* addcmul(Val* v1, Val* v2, TensorView* v3, Val* v4) {
   return arithOpOverloads(addcmul, v1, v2, v3, v4);
 }
-TensorView* addcmul(
-    TensorView* v1,
-    TensorView* v2,
-    Val* v3,
-    Val* v4) {
+TensorView* addcmul(TensorView* v1, TensorView* v2, Val* v3, Val* v4) {
   return arithOpOverloads(addcmul, v1, v2, v3, v4);
 }
-TensorView* addcmul(
-    TensorView* v1,
-    Val* v2,
-    TensorView* v3,
-    Val* v4) {
+TensorView* addcmul(TensorView* v1, Val* v2, TensorView* v3, Val* v4) {
   return arithOpOverloads(addcmul, v1, v2, v3, v4);
 }
-TensorView* addcmul(
-    Val* v1,
-    TensorView* v2,
-    TensorView* v3,
-    Val* v4) {
+TensorView* addcmul(Val* v1, TensorView* v2, TensorView* v3, Val* v4) {
   return arithOpOverloads(addcmul, v1, v2, v3, v4);
 }
-TensorView* addcmul(
-    TensorView* v1,
-    TensorView* v2,
-    TensorView* v3,
-    Val* v4) {
+TensorView* addcmul(TensorView* v1, TensorView* v2, TensorView* v3, Val* v4) {
   return arithOpOverloads(addcmul, v1, v2, v3, v4);
 }
 
@@ -656,10 +628,7 @@ TensorView* where(TensorView* v1, Val* v2, TensorView* v3) {
 TensorView* where(Val* v1, TensorView* v2, TensorView* v3) {
   return arithOpOverloads(where, v1, v2, v3);
 }
-TensorView* where(
-    TensorView* v1,
-    TensorView* v2,
-    TensorView* v3) {
+TensorView* where(TensorView* v1, TensorView* v2, TensorView* v3) {
   return arithOpOverloads(where, v1, v2, v3);
 }
 
