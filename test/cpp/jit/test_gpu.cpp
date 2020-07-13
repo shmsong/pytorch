@@ -192,6 +192,9 @@ void testGPU_FusionExprEvalBindings() {
   checkIntValue(&eval_context, ceilDiv(a, b), 3);
   checkIntValue(&eval_context, d, -4);
 
+  // Reset evaluation context
+  eval_context = EvaluationContext(&fusion);
+
   eval_context.bind(a, 2);
   eval_context.bind(b, 5);
 
@@ -1069,32 +1072,32 @@ void testGPU_FusionParser() {
 __global__ void CUDAGeneratedKernel(Tensor<float, 1> T0, Tensor<float, 1> T1, Tensor<float, 1> T3){
   float T2[4];
   if ( ( ( ( ( ( blockIdx.x * 4 ) + ( 4 - 1 ) ) * 128 ) + threadIdx.x ) < T3.size[0] ) ) {
-    for(size_t i29 = 0; i29 < 4; ++i29 ) {
-      T2[ i29 ]
-         = T0[ ( ( ( ( ( blockIdx.x * 4 ) + i29 ) * 128 ) + threadIdx.x ) * T0.stride[0] ) ]
-         * T1[ ( ( ( ( ( blockIdx.x * 4 ) + i29 ) * 128 ) + threadIdx.x ) * T1.stride[0] ) ];
+    for(size_t i27 = 0; i27 < 4; ++i27 ) {
+      T2[ i27 ]
+         = T0[ ( ( ( ( ( blockIdx.x * 4 ) + i27 ) * 128 ) + threadIdx.x ) * T0.stride[0] ) ]
+         * T1[ ( ( ( ( ( blockIdx.x * 4 ) + i27 ) * 128 ) + threadIdx.x ) * T1.stride[0] ) ];
     }
   } else {
-    for(size_t i29 = 0; i29 < 4; ++i29 ) {
-      if ( ( ( ( ( ( blockIdx.x * 4 ) + i29 ) * 128 ) + threadIdx.x ) < T3.size[0] ) ) {
-        T2[ i29 ]
-           = T0[ ( ( ( ( ( blockIdx.x * 4 ) + i29 ) * 128 ) + threadIdx.x ) * T0.stride[0] ) ]
-           * T1[ ( ( ( ( ( blockIdx.x * 4 ) + i29 ) * 128 ) + threadIdx.x ) * T1.stride[0] ) ];
+    for(size_t i27 = 0; i27 < 4; ++i27 ) {
+      if ( ( ( ( ( ( blockIdx.x * 4 ) + i27 ) * 128 ) + threadIdx.x ) < T3.size[0] ) ) {
+        T2[ i27 ]
+           = T0[ ( ( ( ( ( blockIdx.x * 4 ) + i27 ) * 128 ) + threadIdx.x ) * T0.stride[0] ) ]
+           * T1[ ( ( ( ( ( blockIdx.x * 4 ) + i27 ) * 128 ) + threadIdx.x ) * T1.stride[0] ) ];
       }
     }
   }
   if ( ( ( ( ( ( blockIdx.x * 4 ) + ( 4 - 1 ) ) * 128 ) + threadIdx.x ) < T3.size[0] ) ) {
-    for(size_t i30 = 0; i30 < 4; ++i30 ) {
-      T3[ ( ( ( ( ( blockIdx.x * 4 ) + i30 ) * 128 ) + threadIdx.x ) * T3.stride[0] ) ]
-         = T2[ i30 ]
-         * T0[ ( ( ( ( ( blockIdx.x * 4 ) + i30 ) * 128 ) + threadIdx.x ) * T0.stride[0] ) ];
+    for(size_t i28 = 0; i28 < 4; ++i28 ) {
+      T3[ ( ( ( ( ( blockIdx.x * 4 ) + i28 ) * 128 ) + threadIdx.x ) * T3.stride[0] ) ]
+         = T2[ i28 ]
+         * T0[ ( ( ( ( ( blockIdx.x * 4 ) + i28 ) * 128 ) + threadIdx.x ) * T0.stride[0] ) ];
     }
   } else {
-    for(size_t i30 = 0; i30 < 4; ++i30 ) {
-      if ( ( ( ( ( ( blockIdx.x * 4 ) + i30 ) * 128 ) + threadIdx.x ) < T3.size[0] ) ) {
-        T3[ ( ( ( ( ( blockIdx.x * 4 ) + i30 ) * 128 ) + threadIdx.x ) * T3.stride[0] ) ]
-           = T2[ i30 ]
-           * T0[ ( ( ( ( ( blockIdx.x * 4 ) + i30 ) * 128 ) + threadIdx.x ) * T0.stride[0] ) ];
+    for(size_t i28 = 0; i28 < 4; ++i28 ) {
+      if ( ( ( ( ( ( blockIdx.x * 4 ) + i28 ) * 128 ) + threadIdx.x ) < T3.size[0] ) ) {
+        T3[ ( ( ( ( ( blockIdx.x * 4 ) + i28 ) * 128 ) + threadIdx.x ) * T3.stride[0] ) ]
+           = T2[ i28 ]
+           * T0[ ( ( ( ( ( blockIdx.x * 4 ) + i28 ) * 128 ) + threadIdx.x ) * T0.stride[0] ) ];
       }
     }
   }
@@ -4640,8 +4643,6 @@ void testGPU_FusionSymbolicReduction() {
 
   tv1->axis(0)->parallelize(ParallelType::BIDx);
   tv1->axis(-1)->parallelize(ParallelType::TIDx);
-
-  fusion.printMath();
 
   int numel_x = 65000;
   int numel_y = 1025;
