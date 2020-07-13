@@ -126,12 +126,21 @@ Statement* OptOutMutator::mutate(NamedScalar* ns) {
 // MUTATE FUNCTIONS FOR EXPRESSIONS.
 
 Statement* OptOutMutator::mutate(Allocate* a) {
-  TensorView* tv = static_cast<TensorView*>(mutateAsVal(a->buffer()));
-  Val* ext = mutateAsVal(a->extent())->asVal();
-  if (ext->sameAs(a->extent()) && tv->sameAs(a->buffer()))
-    return a;
-  FusionGuard::getCurFusion()->removeExpr(a);
-  return new Allocate(tv, ext);
+  if (a->buffer()->getValType().value() == ValType::TensorView) {
+    TensorView* tv = static_cast<TensorView*>(mutateAsVal(a->buffer()));
+    Val* ext = mutateAsVal(a->size())->asVal();
+    if (ext->sameAs(a->size()) && tv->sameAs(a->buffer()))
+      return a;
+    FusionGuard::getCurFusion()->removeExpr(a);
+    return new Allocate(tv, a->getMemoryType(), a->size());
+  } else {
+    Val* buffer = mutateAsVal(a->buffer())->asVal();
+    Val* ext = mutateAsVal(a->size())->asVal();
+    if (ext->sameAs(a->size()) && buffer->sameAs(a->buffer()))
+      return a;
+    FusionGuard::getCurFusion()->removeExpr(a);
+    return new Allocate(buffer, a->getMemoryType(), a->size());
+  }
 }
 
 Statement* OptOutMutator::mutate(Split* s) {

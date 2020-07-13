@@ -135,6 +135,7 @@ TORCH_CUDA_API std::ostream& operator<<(std::ostream&, const UnaryOpType);
 TORCH_CUDA_API std::ostream& operator<<(std::ostream&, const BinaryOpType);
 TORCH_CUDA_API std::ostream& operator<<(std::ostream&, const TernaryOpType);
 TORCH_CUDA_API std::ostream& operator<<(std::ostream&, const ParallelType);
+TORCH_CUDA_API std::ostream& operator<<(std::ostream&, const MemoryType);
 
 std::string stringifyThreadSize(const ParallelType);
 std::string stringifyThread(const ParallelType);

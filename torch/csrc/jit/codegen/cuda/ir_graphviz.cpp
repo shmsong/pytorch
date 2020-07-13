@@ -488,8 +488,11 @@ void IrGraphGenerator::handle(const IfThenElse* if_then_else) {
 }
 
 void IrGraphGenerator::handle(const Allocate* allocate) {
-  printExpr(allocate, "Allocate");
-  addArc(allocate->extent(), allocate);
+  std::stringstream msg;
+  msg << "Allocate( memory type = " << allocate->getMemoryType() << ")";
+
+  printExpr(allocate, msg.str());
+  addArc(allocate->size(), allocate);
   addArc(allocate->buffer(), allocate);
 }
 

@@ -738,23 +738,35 @@ class TORCH_CUDA_API Allocate : public Expr {
   Allocate(Allocate&& other) = delete;
   Allocate& operator=(Allocate&& other) = delete;
 
-  Allocate(Val* _tv, Val* size);
+  Allocate(
+      Val* _buffer,
+      MemoryType _memory_type = MemoryType::Local,
+      Val* _size = nullptr);
 
   Allocate(const Allocate* src, IrCloner* ir_cloner);
 
-  DataType buf_type() const;
-  Val* extent() const {
-    return extent_;
-  }
   Val* buffer() const {
     return buffer_;
+  }
+
+  MemoryType getMemoryType() const {
+    return memory_type_;
+  }
+
+  Val* size() const {
+    return size_;
+  }
+
+  DataType buffer_type() const {
+    return buffer_->getDataType().value();
   }
 
   bool sameAs(const Allocate* other) const;
 
  private:
   Val* buffer_ = nullptr;
-  Val* extent_ = nullptr;
+  MemoryType memory_type_ = MemoryType::Local;
+  Val* size_ = nullptr;
 };
 
 /*

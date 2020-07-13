@@ -1031,38 +1031,62 @@ Val* TensorIndex::index(int i) const {
   return indices_[i];
 }
 
-Allocate::Allocate(Val* _val, Val* _size)
-    : Expr(ExprType::Allocate), buffer_(_val), extent_{_size} {
-  if (!_size->isAnInt() || !_size->isConstScalar()) {
-    std::stringstream flat_size;
-    IRPrinter irp(flat_size);
-    irp.print_inline(_size);
+Allocate::Allocate(Val* _buffer, MemoryType _memory_type, Val* _size)
+    : Expr(ExprType::Allocate),
+      buffer_(_buffer),
+      memory_type_(_memory_type),
+      size_(_size) {
+  if (size_ == nullptr) {
     TORCH_INTERNAL_ASSERT(
-        false,
-        "Allocations must be based on constant integers but tried to alloc ",
-        _val,
-        " with size ",
-        flat_size.str(),
-        ".");
+        size_->isOneInt() ||
+            buffer_->getValType().value() == ValType::TensorView,
+        "Cannot allocate a non-TensorView buffer with a size != 1, received buffer: ",
+        buffer_);
+
+    if (buffer_->getValType().value() == ValType::TensorView) {
+      auto tv = buffer_->as<TensorView>();
+      size_ = tv->nDims() == 0 ? new Int(1) : tv->axis(0)->extent();
+      for (size_t i = 1; i < tv->nDims(); i++) {
+        size_ = mul(size_, tv->axis(i)->extent());
+      }
+
+      if ((memory_type_ == MemoryType::Local ||
+           memory_type_ == MemoryType::Shared)) {
+        if (!size_->isConstScalar()) {
+          std::stringstream flat_size;
+          IRPrinter irp(flat_size);
+          irp.print_inline(size_);
+          TORCH_INTERNAL_ASSERT(
+              false,
+              "Allocations must be based on constant integers for the memory type ",
+              memory_type_,
+              " but tried to alloc ",
+              buffer_,
+              " with size ",
+              flat_size.str(),
+              ".");
+        }
+      }
+    }
   }
-  addInput(_size);
-  addInput(_val);
+
+  addInput(buffer_);
+  addInput(size_);
   this->name_ = FusionGuard::getCurFusion()->registerExpr(this);
 }
 
 Allocate::Allocate(const Allocate* src, IrCloner* ir_cloner)
     : Expr(src, ir_cloner),
       buffer_(ir_cloner->clone(src->buffer_)),
-      extent_(ir_cloner->clone(src->extent_)) {}
-
-DataType Allocate::buf_type() const {
-  return buffer_->getDataType().value();
-}
+      memory_type_(src->memory_type_),
+      size_(ir_cloner->clone(src->size_)) {}
 
 bool Allocate::sameAs(const Allocate* other) const {
   if (!this->buffer_->sameAs(other->buffer()))
     return false;
-  if (!this->extent()->sameAs(other->extent()))
+  if (!this->size()->sameAs(other->size()))
+    return false;
+  if (this->getMemoryType() != other->getMemoryType())
     return false;
   if (this->type() != other->type())
     return false;

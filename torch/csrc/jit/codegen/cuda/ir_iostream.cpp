@@ -121,13 +121,35 @@ void IRPrinter::handle(const TensorDomain* td) {
 }
 
 void IRPrinter::handle(const TensorView* tv) {
-  os << "T" << tv->name();
-  handle(tv->domain());
+  if (tv->nDims() == 0) {
+    switch (tv->getDataType().value()) {
+      case (DataType::Bool):
+        os << "b";
+        break;
+      case (DataType::Float):
+        os << "f";
+        break;
+      case (DataType::Half):
+        os << "h";
+        break;
+      case (DataType::Int):
+        os << "i";
+        break;
+      default:
+        TORCH_INTERNAL_ASSERT(
+            false, "Did not recognize type ", tv->getDataType().value());
+    }
+    os << tv->name();
 
-  if (tv->getComputeAtView() != nullptr) {
-    os << " compute_at( ";
-    os << "T" << tv->getComputeAtView()->name();
-    os << ", " << tv->getRelativeComputeAtAxis() << " )";
+  } else {
+    os << "T" << tv->name();
+    handle(tv->domain());
+
+    if (tv->getComputeAtView() != nullptr) {
+      os << " compute_at( ";
+      os << "T" << tv->getComputeAtView()->name();
+      os << ", " << tv->getRelativeComputeAtAxis() << " )";
+    }
   }
 }
 
@@ -584,22 +606,39 @@ void IRPrinter::handle(const IfThenElse* ite) {
 
 void IRPrinter::handle(const Allocate* a) {
   indent();
-  os << a->buf_type();
-  if (a->buffer()->getValType() == ValType::TensorView) {
-    os << " T" << a->buffer()->name() << "[";
-    print_inline(a->extent());
-    os << "];\n";
-  } else {
-    if (a->extent()->isOneInt()) {
-      os << " " << a->buffer() << ";\n";
-    } else {
-      TORCH_INTERNAL_ASSERT(
-          false,
-          "Received unexpected allocation: ",
-          a->buffer(),
-          " with alloc of ",
-          a->extent());
+  if (a->buffer()->getValType().value() == ValType::TensorView) {
+    auto tv = a->buffer()->as<TensorView>();
+
+    switch (tv->getMemoryType()) {
+      case (MemoryType::Global):
+        os << "// Allocate global tensor " << a->buffer_type() << " ";
+        if (a->size() == nullptr) {
+          handle(tv);
+        } else {
+          print_inline(a->size());
+        }
+        os << ";";
+        break;
+      case (MemoryType::Shared):
+        os << "__shared__ ";
+        __attribute__((fallthrough));
+      case (MemoryType::Local):
+        os << a->buffer_type();
+        if (tv->nDims() == 0) {
+          os << tv;
+        } else {
+          os << " T" << tv->name();
+          os << "[";
+          print_inline(a->size());
+          os << "]";
+        }
+        os << ";\n";
+        break;
     }
+  } else {
+    os << a->buffer_type() << " ";
+    handle(a->buffer());
+    os << ";\n";
   }
 }
 
