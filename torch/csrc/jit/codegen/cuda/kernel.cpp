@@ -522,9 +522,6 @@ void runKernel(
   const auto nThreadz = expr_eval_fn(LaunchConfigType::TIDz);
   const auto shared_memory = expr_eval_fn(LaunchConfigType::SharedMemory);
 
-  dim3 grid_dim(nBlocks_x, nBlocks_y, nBlocks_z);
-  dim3 block_dim(nThreadx, nThready, nThreadz);
-
   // TODO: this probably won't work for us.
   if (entry->hasRNG()) {
     std::pair<uint64_t, uint64_t> philox_engine_inputs;
