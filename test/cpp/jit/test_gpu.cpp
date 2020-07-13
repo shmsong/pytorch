@@ -3367,12 +3367,11 @@ void testGPU_FusionSoftmax1DNormalized() {
   TensorView* sum_exp_tv5 = sum(exp_tv4, {-1});
   TensorView* bcast_sum_tv6 = broadcast(sum_exp_tv5, {true});
 
-  // Replicate exp_tv4 as exp_tv4_copy because exp_tv4 is going to be
+  // Replicate exp_tv4 because exp_tv4 is going to be
   // computed at sum_exp_rf_tv8.
-  TensorView* sub_tv3_copy = sub(input_tv0, bcast_max_tv2);
-  TensorView* exp_tv4_copy = unaryOp(UnaryOpType::Exp, sub_tv3_copy);
+  const auto tv4_replica = replicate(exp_tv4);
 
-  TensorView* output_tv7 = div(exp_tv4_copy, bcast_sum_tv6);
+  TensorView* output_tv7 = div(tv4_replica[exp_tv4], bcast_sum_tv6);
 
   fusion->addOutput(output_tv7);
 
@@ -3385,7 +3384,7 @@ void testGPU_FusionSoftmax1DNormalized() {
   output_tv7->split(-1, tidx);
 
   sub_tv3->computeAt(sum_exp_rf_tv9, -1);
-  sub_tv3_copy->computeAt(output_tv7, -1);
+  tv4_replica[sub_tv3]->computeAt(output_tv7, -1);
 
   TensorView* tensors_to_parallelize[] = {max_val_tv1,
                                           bcast_max_tv2,

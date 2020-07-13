@@ -185,9 +185,10 @@ TORCH_CUDA_API TensorView* threshold(TensorView* in, Val* thresh, Val* value);
 TORCH_CUDA_API Val* clamp(Val* in, Val* min_val, Val* max_val);
 TORCH_CUDA_API TensorView* clamp(TensorView* in, Val* min_val, Val* max_val);
 
-class TORCH_CUDA_API ReplicaMap {
+// A mapping between the original Fusion nodes and their replicas
+class TORCH_CUDA_API IrReplicaMap {
  public:
-  explicit ReplicaMap(
+  explicit IrReplicaMap(
       const std::unordered_map<const Statement*, Statement*>& map)
       : map_(map) {}
 
@@ -201,7 +202,9 @@ class TORCH_CUDA_API ReplicaMap {
   std::unordered_map<const Statement*, Statement*> map_;
 };
 
-TORCH_CUDA_API ReplicaMap replicate(const Val* value);
+// Replicates a subset of the fusion IR, starting from `start` 
+// and recursing towards the inputs
+TORCH_CUDA_API IrReplicaMap replicate(const Val* start);
 
 } // namespace fuser
 } // namespace jit

@@ -4,6 +4,8 @@
 #include <torch/csrc/jit/codegen/cuda/ir_cloner.h>
 #include <torch/csrc/jit/codegen/cuda/type.h>
 
+#include <vector>
+
 namespace torch {
 namespace jit {
 namespace fuser {
@@ -676,11 +678,25 @@ TensorView* clamp(TensorView* in, Val* min_val, Val* max_val) {
   return clamp(in->as<Val>(), min_val, max_val)->as<TensorView>();
 }
 
-ReplicaMap replicate(const Val* value) {
+IrReplicaMap replicate(const Val* start) {
   auto fusion = FusionGuard::getCurFusion();
   IrCloner ir_cloner(fusion);
-  ir_cloner.clone(value);
-  return ReplicaMap(ir_cloner.clonesMap());
+  std::vector<const Statement*> clone_queue = {start};
+  while (!clone_queue.empty()) {
+    const auto* stm = clone_queue.back();
+    clone_queue.pop_back();
+    ir_cloner.clone(stm);
+    if (stm->isVal()) {
+      if (const auto* def = fusion->origin(stm->as<Val>())) {
+        clone_queue.push_back(def);
+      }
+    } else if (stm->isExpr()) {
+      for (const auto* input : stm->as<Expr>()->inputs()) {
+        clone_queue.push_back(input);
+      }
+    }
+  }
+  return IrReplicaMap(ir_cloner.clonesMap());
 }
 
 } // namespace fuser
