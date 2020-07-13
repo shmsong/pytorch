@@ -5,6 +5,8 @@
 #include <torch/csrc/jit/codegen/cuda/ir_interface_nodes.h>
 #include <torch/csrc/jit/codegen/cuda/type.h>
 
+#include <unordered_map>
+
 class Val;
 
 /*
@@ -182,6 +184,24 @@ TORCH_CUDA_API TensorView* threshold(TensorView* in, Val* thresh, Val* value);
 // clamp
 TORCH_CUDA_API Val* clamp(Val* in, Val* min_val, Val* max_val);
 TORCH_CUDA_API TensorView* clamp(TensorView* in, Val* min_val, Val* max_val);
+
+class TORCH_CUDA_API ReplicaMap {
+ public:
+  explicit ReplicaMap(
+      const std::unordered_map<const Statement*, Statement*>& map)
+      : map_(map) {}
+
+  template<class T>
+  T* operator[](const T* original) const {
+    return map_.at(original)->template as<T>();
+  }
+
+ private:
+  // original node -> replica node map
+  std::unordered_map<const Statement*, Statement*> map_;
+};
+
+TORCH_CUDA_API ReplicaMap replicate(const Val* value);
 
 } // namespace fuser
 } // namespace jit

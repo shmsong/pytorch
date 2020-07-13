@@ -18,7 +18,7 @@ class TORCH_CUDA_API IrCloner : private OptInConstDispatch {
   friend class Statement;
 
  public:
-  explicit IrCloner(Fusion* new_fusion) : fusion_(new_fusion) {}
+  explicit IrCloner(Fusion* dst_fusion) : fusion_(dst_fusion) {}
 
   Statement* clone(const Statement* statement);
 
@@ -39,6 +39,10 @@ class TORCH_CUDA_API IrCloner : private OptInConstDispatch {
 
   Fusion* fusion() const {
     return fusion_;
+  }
+
+  const auto& clonesMap() const {
+    return clones_map_;
   }
 
  private:
