@@ -4817,13 +4817,13 @@ void testGPU_FusionCacheBcast() {
   TensorView* tv5 = tv0->cache_after();
 
   // Case 2
-  // TensorView* tv5 = tv1->cache_before();
+  TensorView* tv7 = tv1->cache_before();
 
   // Case 3
-  // TensorView* tv5 = tv1->cache_after();
+  TensorView* tv8 = tv1->cache_after();
 
   // Case 4
-  TensorView* tv6 = tv4->cache_before();
+  TensorView* tv9 = tv4->cache_before();
   // Schedule
   // fusion->printMath();
 
@@ -4832,7 +4832,7 @@ void testGPU_FusionCacheBcast() {
   tv4->axis(-1)->parallelize(ParallelType::TIDx);
   // Manual Replay on TV3
   tv3->axis(-1)->parallelize(ParallelType::TIDx);
-  tv6->axis(-1)->parallelize(ParallelType::TIDx);
+  tv9->axis(-1)->parallelize(ParallelType::TIDx);
   // Thread and Block binding
   // fusion->printKernel();
 

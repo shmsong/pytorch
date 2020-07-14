@@ -379,22 +379,22 @@ TensorView* TensorView::cache_before() {
     TransformReplay::replayPasC(producer, consumer, -1);
     auto this_ca_pos = this->getThisComputeAtAxis();
     producer->computeAt(consumer, this_ca_pos);
-  }
+  } else {
+    // Before: Prev TV -> This TV
+    // After:  Prev TV -> New TV (CB) -> This TV
+    // Iterate over origin expression inputs for cache_before on outputs
+    for (Val* v : expr_inputs) {
+      if (v->getValType().value() == ValType::TensorView) {
+        TensorView* origin_input = dynamic_cast<TensorView*>(v);
+        if (origin_input->hasComputeAt() &&
+            origin_input->getComputeAtView() == this) {
+          TransformReplay::replayPasC(producer, consumer, -1);
 
-  // Before: Prev TV -> This TV
-  // After:  Prev TV -> New TV (CB) -> This TV
-  // Iterate over origin expression inputs for cache_before on outputs
-  for (Val* v : expr_inputs) {
-    if (v->getValType().value() == ValType::TensorView) {
-      TensorView* origin_input = dynamic_cast<TensorView*>(v);
-      if (origin_input->hasComputeAt() &&
-          origin_input->getComputeAtView() == this) {
-        TransformReplay::replayPasC(producer, consumer, -1);
-
-        auto origin_ca_pos = origin_input->getThisComputeAtAxis();
-        auto origin_rel_ca_pos = origin_input->getRelativeComputeAtAxis();
-        origin_input->computeAt(producer, origin_ca_pos);
-        producer->setComputeAt(consumer, origin_rel_ca_pos);
+          auto origin_ca_pos = origin_input->getThisComputeAtAxis();
+          auto origin_rel_ca_pos = origin_input->getRelativeComputeAtAxis();
+          origin_input->computeAt(producer, origin_ca_pos);
+          producer->setComputeAt(consumer, origin_rel_ca_pos);
+        }
       }
     }
   }
@@ -465,20 +465,20 @@ TensorView* TensorView::cache_after() {
 
     this->computeAt(consumer, this_ca_pos);
     consumer->setComputeAt(this_ca_view, rel_ca_pos);
-  }
-
-  // Check users of this TV for computeAt for cache_after on inputs
-  std::unordered_set<Expr*> consumer_uses =
-      this->fusion()->unordered_uses(consumer);
-  for (auto expr : consumer_uses) {
-    auto expr_outputs = expr->outputs();
-    for (Val* v : expr_outputs) {
-      if (v->getValType().value() == ValType::TensorView) {
-        TensorView* output = dynamic_cast<TensorView*>(v);
-        if (output->hasComputeAt()) {
-          TransformReplay::replayPasC(consumer, output, -1);
-          auto output_ca_pos = output->getThisComputeAtAxis();
-          consumer->setComputeAt(output, output_ca_pos);
+  } else {
+    // Check users of this TV for computeAt for cache_after on inputs
+    std::unordered_set<Expr*> consumer_uses =
+        this->fusion()->unordered_uses(consumer);
+    for (auto expr : consumer_uses) {
+      auto expr_outputs = expr->outputs();
+      for (Val* v : expr_outputs) {
+        if (v->getValType().value() == ValType::TensorView) {
+          TensorView* output = dynamic_cast<TensorView*>(v);
+          if (output->hasComputeAt()) {
+            TransformReplay::replayPasC(consumer, output, -1);
+            auto output_ca_pos = output->getThisComputeAtAxis();
+            consumer->setComputeAt(output, output_ca_pos);
+          }
         }
       }
     }
