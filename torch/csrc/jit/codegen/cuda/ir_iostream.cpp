@@ -501,6 +501,10 @@ void IRPrinter::handle(const ReductionOp* rop) {
   }
 }
 
+void IRPrinter::handle(const GridReduction* gr) {
+  TORCH_INTERNAL_ASSERT(false, "Not implemented yet.");
+}
+
 void IRPrinter::handle(const BroadcastOp* bop) {
   // Check if we've lowered yet.
   bool lowered = bop->out()->getValType() == ValType::TensorIndex;

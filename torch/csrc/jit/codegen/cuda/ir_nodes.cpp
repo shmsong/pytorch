@@ -290,10 +290,12 @@ std::vector<IterDomain*> ReductionOp::getReductionDomains() const {
       out_val->getValType() == ValType::TensorView ||
           out_val->getValType() == ValType::TensorIndex,
       "Output of reduction must be TensorView or TensorIndex");
+
   // out is a TensorIndex after lowering
   if (out_val->getValType() == ValType::TensorIndex) {
     out_val = static_cast<const TensorIndex*>(out_val)->view();
   }
+
   auto vec_domain = out_val->as<TensorView>()->domain()->domain();
   vec_domain.erase(
       std::remove_if(
@@ -313,6 +315,26 @@ std::unordered_map<ParallelType, IterDomain*, TypeHash> ReductionOp::
     }
   }
   return parallel_domains;
+}
+
+GridReduction::GridReduction(ReductionOp* _reduction_op)
+    : Expr(ExprType::GridReduction), reduction_op_(_reduction_op) {
+  TORCH_INTERNAL_ASSERT(false, "Not implemented yet.");
+}
+
+GridReduction::GridReduction(
+    ReductionOp* _reduction_op,
+    Allocate* _reduction_buffer,
+    Allocate* _sync_buffer)
+    : Expr(ExprType::GridReduction),
+      reduction_op_(_reduction_op),
+      reduction_buffer_(_reduction_buffer),
+      sync_buffer_(_sync_buffer) {
+  TORCH_INTERNAL_ASSERT(false, "Not implemented yet.");
+}
+
+bool GridReduction::sameAs(const GridReduction* other) const {
+  TORCH_INTERNAL_ASSERT(false, "Not implemented yet.");
 }
 
 IterDomain::IterDomain(

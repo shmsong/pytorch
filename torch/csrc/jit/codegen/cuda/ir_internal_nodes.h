@@ -187,6 +187,46 @@ class TORCH_CUDA_API ReductionOp : public Expr {
   Val* const in_ = nullptr;
 };
 
+/*
+ * Reduction operatoin. Out is first initialized to _init. Then
+ * _reduction_op_type is used to update out as out = reductionOp(out, in).
+ * Output's axes marked as reduction will be reduced to produce an output
+ * tensor. The output tensors size will be the size of all
+ * non-reduction/non-broadcast dimensions.
+ */
+class TORCH_CUDA_API GridReduction : public Expr {
+ public:
+  ~GridReduction() = default;
+  GridReduction(ReductionOp* _reduction_op);
+  GridReduction(
+      ReductionOp* _reduction_op,
+      Allocate* _reduction_buffer,
+      Allocate* _sync_buffer);
+
+  GridReduction(const GridReduction& other) = delete;
+  GridReduction& operator=(const GridReduction& other) = delete;
+
+  GridReduction(GridReduction&& other) = delete;
+  GridReduction& operator=(GridReduction&& other) = delete;
+
+  ReductionOp* reduction_op() const {
+    return reduction_op_;
+  }
+  Allocate* reduction_buffer() const {
+    return reduction_buffer_;
+  }
+  Allocate* sync_buffer() const {
+    return sync_buffer_;
+  }
+
+  bool sameAs(const GridReduction* other) const;
+
+ private:
+  ReductionOp* reduction_op_ = nullptr;
+  Allocate* reduction_buffer_ = nullptr;
+  Allocate* sync_buffer_ = nullptr;
+};
+
 class TORCH_CUDA_API TernaryOp : public Expr {
  public:
   ~TernaryOp() = default;

@@ -22,6 +22,7 @@ class UnaryOp;
 class BinaryOp;
 class TernaryOp;
 class ReductionOp;
+class GridReduction;
 class BroadcastOp;
 
 class ForLoop;
@@ -106,6 +107,7 @@ class TORCH_CUDA_API IRPrinter : public OptInConstDispatch {
   void handle(const BinaryOp*) override;
   void handle(const TernaryOp*) override;
   void handle(const ReductionOp*) override;
+  void handle(const GridReduction*) override;
   void handle(const BroadcastOp*) override;
 
   void handle(const ForLoop*) override;

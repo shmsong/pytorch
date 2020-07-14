@@ -32,6 +32,7 @@ enum class ExprType {
   TernaryOp,
   ReductionOp,
   BroadcastOp,
+  GridReduction,
   ForLoop,
   IfThenElse,
   Allocate,
