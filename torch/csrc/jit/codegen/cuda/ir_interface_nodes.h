@@ -301,13 +301,12 @@ class TORCH_CUDA_API TensorView : public Val {
   TensorView* rFactor(const std::vector<int>& axes);
 
   // Create a TensorView before the original tensor. A common use case is to
-  // read original tensor into shared memory or local registers. Analogous to
-  // TVM Cache_Write
+  // write results into shared memory or registers before moving to global
+  // memory. Analogous to TVM Cache_Write
   TensorView* cache_before();
 
   // Create a TensorView after the original tensor. A common use case is to
-  // write results into shared memory or local registers before moving to global
-  // memory. Analogous to TVM Cache_Read
+  // read tensor into shared memory or registers. Analogous to TVM Cache_Read
   TensorView* cache_after();
 
   MemoryType getMemoryType() const {
@@ -352,10 +351,16 @@ class TORCH_CUDA_API TensorView : public Val {
   }
 
  private:
-  // Create New Expr given consumer - [output of the expression]
+  // In Cache Before, for the origin expr of the original tensor,
+  // we create a new operation where the original tensor is replaced
+  // with the new cache tensor. This function creates a new expr
+  // given the consumer, the output of the expression.
   void createExprConsumer(Expr* expr, TensorView* consumer);
 
-  // Create New Expr given producer - [an input for the expression]
+  // In Cache After, for all the uses of the original tensor, we create
+  // a new operation where the original tensor is replaced with the new
+  // cache tensor. This function creates a new expr given a producer,
+  // an input for the expression.
   void createExprProducer(
       Expr* expr,
       TensorView* current,

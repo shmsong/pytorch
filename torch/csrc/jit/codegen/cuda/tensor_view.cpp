@@ -314,8 +314,8 @@ TensorView* TensorView::rFactor(const std::vector<int>& axes) {
   return producer;
 }
 
-// Create a TensorView before the original tensor. A common use case is to read
-// original tensor into shared memory or local registers.
+// Create a TensorView before the original tensor. A common use case is to write
+// results into shared memory or local registers before moving to global memory.
 // Analogous to TVM Cache_Write
 TensorView* TensorView::cache_before() {
   FusionGuard fg(this->fusion());
@@ -402,8 +402,8 @@ TensorView* TensorView::cache_before() {
   return producer;
 }
 
-// Create a TensorView after the original tensor. A common use case is to write
-// results into shared memory or local registers before moving to global memory.
+// Create a TensorView after the original tensor. A common use case is to read
+// original tensor into shared memory or local registers.
 // Analogous to TVM Cache_Read
 TensorView* TensorView::cache_after() {
   FusionGuard fg(this->fusion());
@@ -486,6 +486,8 @@ TensorView* TensorView::cache_after() {
 
   return consumer;
 }
+
+namespace {
 
 // Create New Expr given consumer - [output of the expression]
 struct CreateExprConsumer : public OptInDispatch {
@@ -616,13 +618,20 @@ struct CreateExprProducer : public OptInDispatch {
   TensorView* current_;
   TensorView* producer_;
 };
+} // namespace
 
-// Create New Expr given consumer - [output of the expression]
+// In Cache Before, for the origin expr of the original tensor,
+// we create a new operation where the original tensor is replaced
+// with the new cache tensor. This function creates a new expr
+// given the consumer, the output of the expression.
 void TensorView::createExprConsumer(Expr* expr, TensorView* consumer) {
   CreateExprConsumer::create(expr, consumer);
 }
 
-// Create New Expr given producer - [an input for the expression]
+// In Cache After, for all the uses of the original tensor, we create
+// a new operation where the original tensor is replaced with the new
+// cache tensor. This function creates a new expr given a producer,
+// an input for the expression.
 void TensorView::createExprProducer(
     Expr* expr,
     TensorView* current,

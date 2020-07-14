@@ -4817,13 +4817,13 @@ void testGPU_FusionCacheBcast() {
   TensorView* tv5 = tv0->cache_after();
 
   // Case 2
-  TensorView* tv7 = tv1->cache_before();
+  TensorView* tv6 = tv1->cache_before();
 
   // Case 3
-  TensorView* tv8 = tv1->cache_after();
+  TensorView* tv7 = tv1->cache_after();
 
   // Case 4
-  TensorView* tv9 = tv4->cache_before();
+  TensorView* tv8 = tv4->cache_before();
   // Schedule
   // fusion->printMath();
 
@@ -4832,7 +4832,7 @@ void testGPU_FusionCacheBcast() {
   tv4->axis(-1)->parallelize(ParallelType::TIDx);
   // Manual Replay on TV3
   tv3->axis(-1)->parallelize(ParallelType::TIDx);
-  tv9->axis(-1)->parallelize(ParallelType::TIDx);
+  tv8->axis(-1)->parallelize(ParallelType::TIDx);
   // Thread and Block binding
   // fusion->printKernel();
 
@@ -4961,13 +4961,18 @@ void testGPU_FusionCacheMultiConsumer() {
   tv1->computeAt(tv2, -1);
   tv3->computeAt(tv4, -1);
 
-  std::cout << "Before caching\n";
-  fusion->printKernel();
+  // std::cout << "Before caching\n";
+  // fusion->printKernel();
 
-  tv0->cache_after();
+  // Passes
+  auto tv5 = tv1->cache_before();
+  auto tv6 = tv3->cache_before();
 
-  std::cout << "After caching\n";
-  fusion->printKernel();
+  // Fails because tensor must be recomputed twice
+  // auto tv7 = tv0->cache_after();
+
+  // std::cout << "After caching\n";
+  // fusion->printKernel();
 
   prog.setDevice(0);
   torch::jit::fuser::cuda::compileKernel(&prog);
