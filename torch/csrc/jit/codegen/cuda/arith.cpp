@@ -5,6 +5,7 @@
 #include <torch/csrc/jit/codegen/cuda/type.h>
 
 #include <vector>
+#include <unordered_set>
 
 namespace torch {
 namespace jit {
@@ -678,25 +679,53 @@ TensorView* clamp(TensorView* in, Val* min_val, Val* max_val) {
   return clamp(in->as<Val>(), min_val, max_val)->as<TensorView>();
 }
 
-IrReplicaMap replicate(const Val* start) {
+// HACK HACK: toxic dump below, do not touch!
+IrReplicaMap replicate(const Statement* start) {
   auto fusion = FusionGuard::getCurFusion();
-  IrCloner ir_cloner(fusion);
-  std::vector<const Statement*> clone_queue = {start};
-  while (!clone_queue.empty()) {
-    const auto* stm = clone_queue.back();
-    clone_queue.pop_back();
-    ir_cloner.clone(stm);
+
+  std::vector<const Statement*> queue = {start};
+  std::unordered_set<const Statement*> clones;
+  for (size_t i = 0; i < queue.size(); ++i) {
+    const auto* stm = queue[i];
     if (stm->isVal()) {
       if (const auto* def = fusion->origin(stm->as<Val>())) {
-        clone_queue.push_back(def);
+        clones.insert(stm);
+        queue.push_back(def);
       }
     } else if (stm->isExpr()) {
+      clones.insert(stm);
       for (const auto* input : stm->as<Expr>()->inputs()) {
-        clone_queue.push_back(input);
+        queue.push_back(input);
       }
     }
   }
-  return IrReplicaMap(ir_cloner.clonesMap());
+
+  IrCloner ir_cloner(fusion);
+  ir_cloner.setFilter([&](const Statement* stm) {
+    return clones.find(stm) != clones.end();
+  });
+
+  for (const auto* stm : clones) {
+    ir_cloner.clone(stm);
+  }
+
+  const auto& clones_map = ir_cloner.clonesMap();
+  for (const auto& kv : clones_map) {
+    auto stm = kv.second;
+    if (stm->isVal()) {
+      auto val = stm->as<Val>();
+      val->name_ = fusion->registerVal(val);
+    }
+  }
+  for (const auto& kv : clones_map) {
+    auto stm = kv.second;
+    if (stm->isExpr()) {
+      auto expr = stm->as<Expr>();
+      expr->name_ = fusion->registerExpr(expr);
+    }
+  }
+
+  return IrReplicaMap(clones_map);
 }
 
 } // namespace fuser

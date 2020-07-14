@@ -12,6 +12,11 @@ Statement* IrCloner::clone(const Statement* statement) {
     return nullptr;
   }
 
+  // HACK HACK
+  if (filter_ && !filter_(statement)) {
+    return const_cast<Statement*>(statement);
+  }
+
   // Have we already cloned this node?
   const auto it = clones_map_.find(statement);
   if (it != clones_map_.end()) {

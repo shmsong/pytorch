@@ -204,7 +204,7 @@ class TORCH_CUDA_API IrReplicaMap {
 
 // Replicates a subset of the fusion IR, starting from `start` 
 // and recursing towards the inputs
-TORCH_CUDA_API IrReplicaMap replicate(const Val* start);
+TORCH_CUDA_API IrReplicaMap replicate(const Statement* start);
 
 } // namespace fuser
 } // namespace jit

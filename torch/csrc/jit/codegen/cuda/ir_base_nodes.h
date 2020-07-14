@@ -153,7 +153,8 @@ class TORCH_CUDA_API Statement {
 
   void print() const;
 
- protected:
+ //protected:
+ public:
   StmtNameType name_ = UNINITIALIZED_STMTNAMETYPE;
   Fusion* fusion_ = nullptr;
 };

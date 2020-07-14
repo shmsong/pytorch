@@ -4,6 +4,7 @@
 #include <torch/csrc/WindowsTorchApiMacro.h>
 #include <torch/csrc/jit/codegen/cuda/dispatch.h>
 
+#include <functional>
 #include <unordered_map>
 #include <vector>
 
@@ -43,6 +44,10 @@ class TORCH_CUDA_API IrCloner : private OptInConstDispatch {
 
   const auto& clonesMap() const {
     return clones_map_;
+  }
+
+  void setFilter(const std::function<bool (const Statement*)>& filter) {
+    filter_ = filter;
   }
 
  private:
@@ -88,6 +93,8 @@ class TORCH_CUDA_API IrCloner : private OptInConstDispatch {
   // We keep track of the original -> clone map so we don't
   // duplicate clones of the same object if referenced multiple times
   std::unordered_map<const Statement*, Statement*> clones_map_;
+
+  std::function<bool (const Statement*)> filter_;
 };
 
 } // namespace fuser
