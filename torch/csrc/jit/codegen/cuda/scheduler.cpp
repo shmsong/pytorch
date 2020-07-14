@@ -261,10 +261,6 @@ ReductionParams reductionHeuristic(
     rparams.block_dim_y_ = red_elems;
   }
 
-  // std::cout << "Heur1: " << rparams.grid_dim_x_ << " " << rparams.grid_dim_y_
-  // << " " << rparams.block_dim_x_ << " " << rparams.block_dim_y_ << std::flush
-  // << std::endl;
-
   // 3. Applying Power of 2 Blocking based on the Maximum Number of threads
 
   constexpr int kMaxNumThreads = 512;
@@ -290,9 +286,6 @@ ReductionParams reductionHeuristic(
       std::min(block_dim_x_prev, num_threads / rparams.block_dim_y_);
 
   // 4. Distributing work across a block
-  // std::cout << "Heur2: " << rparams.grid_dim_x_ << " " << rparams.grid_dim_y_
-  // << " " << rparams.block_dim_x_ << " " << rparams.block_dim_y_ << std::flush
-  // << std::endl;
 
   // Magic numbers of calculations allowed per thread.
   constexpr int kMinValuesPerThread = 16;
@@ -339,12 +332,7 @@ ReductionParams reductionHeuristic(
       (rparams.block_dim_x_ * rparams.block_dim_y_);
   int target_grid_size = device_multiprocessor_count * blocks_per_sm;
 
-  // std::cout << "Blocks and Target grid: " << blocks_per_sm << " " <<
-  // target_grid_size << " " << outputs_produced_per_block_iter << std::endl;
-
   // Setting the number of blocks based on the number of outputs
-  // grid_dim_x = ceilDiv(red_outputs / (red_on_fastest_dim ? 1 : 4),
-  // outputs_produced_per_block_iter);
   rparams.grid_dim_x_ = ceilDiv(red_outputs, outputs_produced_per_block_iter);
 
   // Cross-block reductions (if necessary)
@@ -360,9 +348,6 @@ ReductionParams reductionHeuristic(
     // If a cross-block reduction was generated
     if (blks_per_output > 1) {
       rparams.cross_block_ = true;
-      //  inputs_consumed_per_block_iter *= blks_per_output;
-      //  red_elems_per_thread = ceilDiv(red_elems_per_thread,
-      //  inputs_consumed_per_block_iter);
     }
   }
 
@@ -571,9 +556,6 @@ bool scheduleReduction(Fusion* fusion, const at::ArrayRef<c10::IValue> inputs) {
   fusion->setLaunchConfig(LaunchConfigType::BIDz, new Int(1));
   fusion->setLaunchConfig(LaunchConfigType::SharedMemory, new Int(0));
   fusion->setLaunchConfig(LaunchConfigType::Compatible, new Int(1));
-  // std::cout << "Blocking: " << rparams.grid_dim_x_ << " " <<
-  // rparams.grid_dim_y_ << " " << rparams.block_dim_x_ << " " <<
-  // rparams.block_dim_y_ << std::flush << std::endl;
 
   return rparams;
 }
