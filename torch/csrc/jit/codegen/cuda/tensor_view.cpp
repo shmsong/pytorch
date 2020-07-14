@@ -314,15 +314,12 @@ TensorView* TensorView::rFactor(const std::vector<int>& axes) {
   return producer;
 }
 
-// Create a TensorView before the original tensor. A common use case is to write
-// results into shared memory or local registers before moving to global memory.
-// Analogous to TVM Cache_Write
 TensorView* TensorView::cache_before() {
-  FusionGuard fg(this->fusion());
+  FusionGuard fg(fusion());
 
-  Expr* origin_expr = this->fusion()->origin(this);
+  Expr* origin_expr = fusion()->origin(this);
   TORCH_CHECK(
-      origin_expr != nullptr && !this->fusion()->hasInput(this),
+      origin_expr != nullptr && !fusion()->hasInput(this),
       "Error adding cache_before ",
       this,
       " its origin is a nullptr and we restrict using cache_before on an input.");
@@ -354,8 +351,8 @@ TensorView* TensorView::cache_before() {
   }
 
   // This domain will be the consumer, so create the producer
-  TensorView* producer = new TensorView(
-      new TensorDomain(new_root_domain), this->getDataType().value());
+  TensorView* producer =
+      new TensorView(new TensorDomain(new_root_domain), getDataType().value());
 
   // Set domain of consumer
   TensorView* consumer = this;
@@ -375,9 +372,9 @@ TensorView* TensorView::cache_before() {
 
   // Before: This TV -> Next TV
   // After:  New TV (CB) -> This TV -> Next TV
-  if (this->hasComputeAt()) {
+  if (hasComputeAt()) {
     TransformReplay::replayPasC(producer, consumer, -1);
-    auto this_ca_pos = this->getThisComputeAtAxis();
+    auto this_ca_pos = getThisComputeAtAxis();
     producer->computeAt(consumer, this_ca_pos);
   } else {
     // Before: Prev TV -> This TV
@@ -402,15 +399,12 @@ TensorView* TensorView::cache_before() {
   return producer;
 }
 
-// Create a TensorView after the original tensor. A common use case is to read
-// original tensor into shared memory or local registers.
-// Analogous to TVM Cache_Read
 TensorView* TensorView::cache_after() {
-  FusionGuard fg(this->fusion());
+  FusionGuard fg(fusion());
 
   // Get all the uses for this Tensorview
   TORCH_CHECK(
-      !this->fusion()->hasOutput(this),
+      !fusion()->hasOutput(this),
       "Error adding cache_after ",
       this,
       " we restrict using cache_after on an output.");
@@ -435,8 +429,8 @@ TensorView* TensorView::cache_after() {
   }
 
   // This domain will be the producer, so create the consumer
-  TensorView* consumer = new TensorView(
-      new TensorDomain(new_root_domain), this->getDataType().value());
+  TensorView* consumer =
+      new TensorView(new TensorDomain(new_root_domain), getDataType().value());
 
   // Set domain of producer - No Change
   TensorView* producer = this;
@@ -446,8 +440,7 @@ TensorView* TensorView::cache_after() {
   // After:  This TV -> [Set Op] -> New CA TV -> [Use Op] -> Next TV
 
   // Expr* consumer_uses =
-  std::unordered_set<Expr*> uses_expr = this->fusion()->unordered_uses(this);
-  for (auto expr : uses_expr) {
+  for (auto expr : fusion()->unordered_uses(this)) {
     createExprProducer(expr, this, consumer);
   }
 
@@ -456,20 +449,18 @@ TensorView* TensorView::cache_after() {
 
   // Before: This TV -> Next TV
   // After:  This TV -> New TV (After) -> Next TV
-  if (this->hasComputeAt()) {
+  if (hasComputeAt()) {
     TransformReplay::replayCasP(consumer, producer, -1);
 
-    auto rel_ca_pos = this->getRelativeComputeAtAxis();
-    auto this_ca_pos = this->getThisComputeAtAxis();
-    auto this_ca_view = this->getComputeAtView();
+    auto rel_ca_pos = getRelativeComputeAtAxis();
+    auto this_ca_pos = getThisComputeAtAxis();
+    auto this_ca_view = getComputeAtView();
 
-    this->computeAt(consumer, this_ca_pos);
+    computeAt(consumer, this_ca_pos);
     consumer->setComputeAt(this_ca_view, rel_ca_pos);
   } else {
     // Check users of this TV for computeAt for cache_after on inputs
-    std::unordered_set<Expr*> consumer_uses =
-        this->fusion()->unordered_uses(consumer);
-    for (auto expr : consumer_uses) {
+    for (auto expr : fusion()->unordered_uses(consumer)) {
       auto expr_outputs = expr->outputs();
       for (Val* v : expr_outputs) {
         if (v->getValType().value() == ValType::TensorView) {
@@ -538,7 +529,7 @@ struct CreateExprConsumer : public OptInDispatch {
   }
 
  private:
-  TensorView* consumer_;
+  TensorView* consumer_ = nullptr;
 };
 
 // Create New Expr given producer - [an input for the expression]
@@ -615,9 +606,10 @@ struct CreateExprProducer : public OptInDispatch {
   }
 
  private:
-  TensorView* current_;
-  TensorView* producer_;
+  TensorView* current_ = nullptr;
+  TensorView* producer_ = nullptr;
 };
+
 } // namespace
 
 // In Cache Before, for the origin expr of the original tensor,
