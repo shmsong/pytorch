@@ -454,7 +454,7 @@ void IRPrinter::handle(const ReductionOp* rop) {
     indent();
     // Since block-level reduction is already done, those dimensions
     // with tidx/y/z being true do not participate in the grid reduction.
-    os << "reduction::gridReduce< " << (bidx ? "true" : "false") << ", "
+    os << "if (!reduction::gridReduce< " << (bidx ? "true" : "false") << ", "
        << (bidy ? "true" : "false") << ", " << (bidz ? "true" : "false") << ", "
        << (!tidx ? "true" : "false") << ", " << (!tidy ? "true" : "false")
        << ", " << (!tidz ? "true" : "false") << " >"
@@ -471,7 +471,13 @@ void IRPrinter::handle(const ReductionOp* rop) {
     os << ", static_cast<" << d_type << "*>(work_buf)";
     os << ", sync_flags";
     os << ", reinterpret_cast<" << d_type << "*>(shared_mem)";
-    os << ");\n";
+    os << ")) {\n";
+    indent_size++;
+    indent();
+    os << "return;\n";
+    indent_size--;
+    indent();
+    os << "}\n";
   }
 }
 
