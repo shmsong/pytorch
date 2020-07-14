@@ -4942,6 +4942,38 @@ void testGPU_FusionCacheComplex() {
       aten_output.sub(cg_output).abs().sum());
 }
 
+void testGPU_FusionCacheMultiConsumer() {
+  torch::jit::fuser::cuda::CudaKernel prog;
+  prog.setFusionPtr(std::make_unique<Fusion>());
+  Fusion* fusion = prog.fusion();
+  FusionGuard fg(fusion);
+
+  TensorView* tv0 = makeDummyTensor(1);
+  TensorView* tv1 = add(tv0, new Float(1));
+  TensorView* tv2 = add(tv1, new Float(2));
+  TensorView* tv3 = add(tv0, new Float(1));
+  TensorView* tv4 = add(tv3, new Float(2));
+
+  fusion->addInput(tv0);
+  fusion->addOutput(tv2);
+  fusion->addOutput(tv4);
+
+  tv1->computeAt(tv2, -1);
+  tv3->computeAt(tv4, -1);
+
+  std::cout << "Before caching\n";
+  fusion->printKernel();
+
+  tv0->cache_after();
+
+  std::cout << "After caching\n";
+  fusion->printKernel();
+
+  prog.setDevice(0);
+  torch::jit::fuser::cuda::compileKernel(&prog);
+  return;
+}
+
 } // namespace jit
 } // namespace torch
 
