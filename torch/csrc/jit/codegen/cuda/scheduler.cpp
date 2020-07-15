@@ -358,7 +358,9 @@ ReductionParams reductionHeuristic(
 } // anonymous namespace
 
 // fusion is the input IR that will be modified by this function
-c10::optional<ReductionParams> scheduleReduction(Fusion* fusion, const at::ArrayRef<c10::IValue> inputs) {
+c10::optional<ReductionParams> scheduleReduction(
+    Fusion* fusion,
+    const at::ArrayRef<c10::IValue> inputs) {
   FusionGuard fg(fusion);
 
   if (!fusion->hasReduction()) {
