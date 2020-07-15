@@ -32,7 +32,7 @@ struct ReductionParams {
 // TODO: This function is currently a redundant API as I populate a more
 // substantial reduction heuristic
 // fusion is the input IR that will be modified by this function
-TORCH_CUDA_API bool scheduleReduction(
+TORCH_CUDA_API c10::optional<ReductionParams> scheduleReduction(
     Fusion* fusion,
     const at::ArrayRef<c10::IValue>& inputs);
 
