@@ -140,6 +140,9 @@ class TORCH_CUDA_API Statement {
   std::string name() const;
 
   void setName(const std::string& name) {
+    // TODO:
+    // - unregister old name, if any
+    // - register new name with the fusion & check for duplicates
     name_ = name;
   }
 

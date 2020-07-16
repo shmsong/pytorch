@@ -3289,35 +3289,37 @@ void testGPU_FusionSoftmax1D() {
   const int dimx = 1000;
 
   // Set up your input tensor views
-  TensorView* input_tv0 = makeDummyTensor(1);
-  fusion->addInput(input_tv0);
+  auto input = named("input", makeDummyTensor(1));
+  fusion->addInput(input);
 
-  TensorView* exp_tv1 = unaryOp(UnaryOpType::Exp, input_tv0);
-  TensorView* sum_exp_tv2 = sum(exp_tv1, {-1});
-  TensorView* bcast_sum_tv3 = broadcast(sum_exp_tv2, {true});
+  auto exp = named("exp", unaryOp(UnaryOpType::Exp, input));
+  auto sum_exp = named("sum_exp", sum(exp, {-1}));
+  auto bcast_sum = named("bcast_sum", broadcast(sum_exp, {true}));
 
   // Replicate exp_tv4 as exp_tv4_copy because exp_tv4 is going to be
   // computed at sum_exp_rf_tv8.
-  TensorView* exp_tv1_copy = unaryOp(UnaryOpType::Exp, input_tv0);
+  auto exp_copy = named("exp_copy", unaryOp(UnaryOpType::Exp, input));
 
-  TensorView* output_tv4 = div(exp_tv1_copy, bcast_sum_tv3);
+  auto output = named("output", div(exp_copy, bcast_sum));
 
-  fusion->addOutput(output_tv4);
+  fusion->addOutput(output);
 
-  sum_exp_tv2->split(-1, tidx);
-  TensorView* sum_exp_rf_tv5 = sum_exp_tv2->rFactor({-2});
+  sum_exp->split(-1, tidx);
+  auto sum_exp_rf = named("sum_exp_rf", sum_exp->rFactor({-2}));
 
-  output_tv4->split(-1, tidx);
+  output->split(-1, tidx);
 
-  exp_tv1->computeAt(sum_exp_rf_tv5, -1);
-  exp_tv1_copy->computeAt(output_tv4, -1);
+  exp->computeAt(sum_exp_rf, -1);
+  exp_copy->computeAt(output, -1);
 
   TensorView* tensors_to_parallelize[] = {
-      sum_exp_tv2, bcast_sum_tv3, output_tv4, sum_exp_rf_tv5};
+      sum_exp, bcast_sum, output, sum_exp_rf};
 
   for (auto tv : tensors_to_parallelize) {
     tv->axis(-1)->parallelize(ParallelType::TIDx);
   }
+
+  fusion->print();
 
   prog.setDevice(0);
   setupLaunchConfig(
@@ -3330,6 +3332,8 @@ void testGPU_FusionSoftmax1D() {
       1, // gid_z
       0 // shared_memory size
   );
+
+  fusion->printKernel();
 
   auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
   at::Tensor t0 = at::randn({dimx}, options);

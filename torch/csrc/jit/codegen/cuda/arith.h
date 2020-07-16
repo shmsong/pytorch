@@ -183,6 +183,13 @@ TORCH_CUDA_API TensorView* threshold(TensorView* in, Val* thresh, Val* value);
 TORCH_CUDA_API Val* clamp(Val* in, Val* min_val, Val* max_val);
 TORCH_CUDA_API TensorView* clamp(TensorView* in, Val* min_val, Val* max_val);
 
+// Explicit node name helper
+template<class T>
+T* named(const std::string& name, T* node) {
+  node->setName(name);
+  return node;
+}
+
 } // namespace fuser
 } // namespace jit
 } // namespace torch

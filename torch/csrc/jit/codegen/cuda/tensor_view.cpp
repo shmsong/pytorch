@@ -96,6 +96,8 @@ TensorView* TensorView::unsafeClone() const {
   new_view->this_compute_at_axis_ = this_compute_at_axis_;
   new_view->setMemoryType(memory_type_);
   new_view->statement_number_ = statementNumber();
+  // This is problematic if we want to use names as identifiers
+  new_view->name_ = name();
   return new_view;
 }
 
