@@ -3968,8 +3968,7 @@ void testGPU_FusionReductionScheduler() {
       reductionOp(BinaryOpType::Add, {red_dim}, new Float(0), tv0);
   fusion.addOutput(tv1);
 
-  const auto options =
-      at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
+  const auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
   at::Tensor input = at::rand({bid_x, tid_x}, options);
 
   // Apply reduction heuristic
@@ -3993,14 +3992,14 @@ void testGPU_FusionReductionScheduler() {
 
 void testGPU_FusionReductionSchedulerMultiDimNonFastest() {
   const std::vector<int> red_dims = {0, 2};
+  // Copy is because CodeGen requires int and Pytorch requires int64_t
+  // for a vector of reduction dimensions
   const std::vector<int64_t> red_dims64 = {0, 2};
-  const std::vector<int64_t> tensor_dims_in({5, 10, 15, 20});
+  const std::vector<int64_t> tensor_dims_in = {5, 10, 15, 20};
   const std::vector<int64_t> tensor_dims_out = {10, 20};
 
-  torch::jit::fuser::cuda::CudaKernel prog;
-  prog.setFusionPtr(std::make_unique<Fusion>());
-  Fusion* fusion = prog.fusion();
-  FusionGuard fg(fusion);
+  auto fusion = std::make_unique<Fusion>();
+  FusionGuard fg(fusion.get());
 
   // Set up your input tensor views
   TensorView* tv0 = makeDummyTensor(tensor_dims_in.size());
@@ -4009,7 +4008,7 @@ void testGPU_FusionReductionSchedulerMultiDimNonFastest() {
   TensorView* tv1 = reductionOp(BinaryOpType::Add, red_dims, new Float(0), tv0);
   fusion->addOutput(tv1);
 
-  auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
+  const auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
   at::Tensor input = at::rand(tensor_dims_in, options);
   at::Tensor cg_output = at::empty(tensor_dims_out, options);
 
@@ -4017,9 +4016,11 @@ void testGPU_FusionReductionSchedulerMultiDimNonFastest() {
   const at::ArrayRef<c10::IValue> inputs({input});
 
   TORCH_CHECK(
-      cuda::scheduleReduction(prog.fusion(), inputs),
+      cuda::scheduleReduction(fusion.get(), inputs),
       "Reduction schedule was not generated!");
 
+  torch::jit::fuser::cuda::CudaKernel prog;
+  prog.setFusionPtr(std::move(fusion));
   prog.setDevice(0);
 
   torch::jit::fuser::cuda::compileKernel(&prog);
@@ -4035,14 +4036,14 @@ void testGPU_FusionReductionSchedulerMultiDimNonFastest() {
 
 void testGPU_FusionReductionSchedulerMultiDimFastest() {
   const std::vector<int> red_dims = {1, 3};
+  // Copy is because CodeGen requires int and Pytorch requires int64_t
+  // for a vector of reduction dimensions
   const std::vector<int64_t> red_dims64 = {1, 3};
   const std::vector<int64_t> tensor_dims_in = {5, 10, 15, 20};
   const std::vector<int64_t> tensor_dims_out = {5, 15};
 
-  torch::jit::fuser::cuda::CudaKernel prog;
-  prog.setFusionPtr(std::make_unique<Fusion>());
-  Fusion* fusion = prog.fusion();
-  FusionGuard fg(fusion);
+  auto fusion = std::make_unique<Fusion>();
+  FusionGuard fg(fusion.get());
 
   // Set up your input tensor views
   TensorView* tv0 = makeDummyTensor(tensor_dims_in.size());
@@ -4051,16 +4052,18 @@ void testGPU_FusionReductionSchedulerMultiDimFastest() {
   TensorView* tv1 = reductionOp(BinaryOpType::Add, red_dims, new Float(0), tv0);
   fusion->addOutput(tv1);
 
-  auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
+  const auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
   at::Tensor input = at::rand(tensor_dims_in, options);
 
   // Apply reduction heuristic
   const at::ArrayRef<c10::IValue> inputs({input});
 
   TORCH_CHECK(
-      cuda::scheduleReduction(prog.fusion(), inputs),
+      cuda::scheduleReduction(fusion.get(), inputs),
       "Reduction schedule was not generated!");
 
+  torch::jit::fuser::cuda::CudaKernel prog;
+  prog.setFusionPtr(std::move(fusion));
   prog.setDevice(0);
 
   torch::jit::fuser::cuda::compileKernel(&prog);

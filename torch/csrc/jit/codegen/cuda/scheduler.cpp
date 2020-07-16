@@ -333,6 +333,26 @@ ReductionParams reductionHeuristic(
       rparams.cross_block_ = true;
     }
   }
+
+  const char* debug_env = getenv("PYTORCH_CUDA_FUSER_RED_SCHED_DEBUG");
+  if (debug_env && atoi(debug_env)) {
+    std::cout << "\n===== Reduction Parameters ========" << std::endl
+              << "Inputs:" << std::endl
+              << "\tRed Elems: " << red_elems
+              << " Red Outputs: " << red_outputs
+              << " Red On Fastest Dim? " << red_on_fastest_dim << std::endl
+              << "Reduction Characteristics:" << std::endl
+              << "\tMultiple Reds Per Block? " << rparams.mul_reds_per_blk_
+              << " Cross Warp? " << rparams.cross_warp_
+              << " Cross Block? " << rparams.cross_block_ << std::endl
+              << "Recommended Blocking:" << std::endl
+              << "\tGridX: " << rparams.grid_dim_x_
+              << " GridY: " << rparams.grid_dim_y_
+              << " BlckX: " << rparams.block_dim_x_
+              << " BlckY: " << rparams.block_dim_y_ << std::endl
+              << "====================================" << std::endl;
+  }
+
   return rparams;
 }
 } // anonymous namespace
@@ -354,18 +374,17 @@ c10::optional<ReductionParams> scheduleReduction(
   for (auto& expr : fusion->exprs(/*from_outputs_only*/ true)) {
     if (expr->type() == ExprType::ReductionOp) {
       red_tv = expr->output(0)->as<TensorView>();
-      ;
       break;
     }
   }
   TORCH_INTERNAL_ASSERT(
       red_tv != nullptr, "Reduction TensorView wasn't found.");
 
-  bool red_on_fastest_dim =
+  const bool red_on_fastest_dim =
       red_tv->axis(static_cast<int>(red_tv->nDims()) - 1)->isReduction();
 
   // We coalesc all reduction axes to the right;
-  size_t num_reduction_axes = coalescReduction(red_tv);
+  const size_t num_reduction_axes = coalescReduction(red_tv);
 
   // Merge all iteration dimensions
   while (red_tv->nDims() > num_reduction_axes + 1) {
@@ -397,15 +416,18 @@ c10::optional<ReductionParams> scheduleReduction(
   auto red_ids = red_tv->domain()->domain();
   TORCH_INTERNAL_ASSERT(
       red_ids.size() == 2, "We coalesced all dimensions into 2 previously.");
-  int red_outputs =
-      ExpressionEvaluator::evaluate(red_ids[0]->extent(), &eval_context)
-          .value();
-  int red_elems =
-      ExpressionEvaluator::evaluate(red_ids[1]->extent(), &eval_context)
-          .value();
+  const auto red_outputs =
+      ExpressionEvaluator::evaluate(red_ids[0]->extent(), &eval_context);
+  const auto red_elems =
+      ExpressionEvaluator::evaluate(red_ids[1]->extent(), &eval_context);
+  TORCH_INTERNAL_ASSERT(red_outputs != c10::nullopt,
+                        "The number of reduction outputs is expected.");
+  TORCH_INTERNAL_ASSERT(red_elems != c10::nullopt,
+                        "The number of reduction elements is expected.");
 
   ReductionParams rparams =
-      reductionHeuristic(red_elems, red_outputs, red_on_fastest_dim);
+      reductionHeuristic(red_elems.value(), red_outputs.value(),
+                         red_on_fastest_dim);
 
   // Heuristic Definition
   // TODO: Need to factor in unrolling
@@ -416,11 +438,13 @@ c10::optional<ReductionParams> scheduleReduction(
 
     // Do multiple reductions per block
     if (rparams.mul_reds_per_blk_) {
-      red_tv->split(-1, rparams.block_dim_x_);
+      red_tv->split(1, rparams.block_dim_x_);
+      // Unroll a certain number of rFactored elements
+      red_tv->split(1, 4);
       // Split Grid dimension to get multiple reds per block
       red_tv->split(0, rparams.block_dim_y_);
 
-      auto red_tv_rf = red_tv->rFactor({-2, -3});
+      auto red_tv_rf = red_tv->rFactor({-2,-3});
       red_tv_rf->computeAt(red_tv, 1);
 
       red_tv->axis(0)->parallelize(ParallelType::BIDx);
@@ -429,6 +453,7 @@ c10::optional<ReductionParams> scheduleReduction(
 
       red_tv_rf->axis(1)->parallelize(ParallelType::TIDy);
       red_tv_rf->axis(-1)->parallelize(ParallelType::TIDx);
+      red_tv_rf->axis(-2)->parallelize(ParallelType::Unroll);
       // Do a cross-warp reduction per block
     } else {
       if (rparams.cross_block_) {
