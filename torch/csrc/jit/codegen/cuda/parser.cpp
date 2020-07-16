@@ -138,7 +138,9 @@ class IrParser {
     // shape propagation during parsing is effctively done in parsing rules, as
     // we only explicitly register inputs in the graph.
     for (auto val : block->inputs()) {
-      TORCH_INTERNAL_ASSERT(registerValue(val, broadcast_dim));
+      TORCH_INTERNAL_ASSERT(
+          registerValue(val),
+          "Error trying to register value with code generation.");
       fusion->addInput(value_map_[val->unique()]);
 
       auto opt_dtype = value_map_[val->unique()]->getDataType();
@@ -593,8 +595,8 @@ class IrParser {
     }
   }
 
-  bool registerValue(const JitValue* val, int broadcast_dim = -1) {
-    return registerTensor(val, broadcast_dim) || registerScalar(val);
+  bool registerValue(const JitValue* val) {
+    return registerTensor(val) || registerScalar(val);
   }
 
   bool registerScalar(const JitValue* val) {
@@ -640,17 +642,9 @@ class IrParser {
     return false;
   }
 
-  bool registerTensor(const JitValue* val, int broadcast_dim = -1) {
+  bool registerTensor(const JitValue* val) {
     CgValue cg_val;
     if (auto tensor_type = val->type()->cast<TensorType>()) {
-      // TODO: make this a static function in Tensor class;
-      // create tensor;
-      if (broadcast_dim >= 0) {
-        TORCH_INTERNAL_ASSERT(
-            broadcast_dim >= (int)*tensor_type->dim(),
-            "attempt to broadcast a tensor to shrinked dimension is invalid");
-        tensor_type = tensor_type->withDim(broadcast_dim);
-      }
       // TODO: make this a static function in Tensor class;
       // create tensor;
       cg_val = new TensorView(tensor_type);

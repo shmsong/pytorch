@@ -81,14 +81,47 @@ TensorView* newOutputTV(const std::vector<Val*>& vals, DataType dtype) {
   return new TensorView(new TensorDomain(out_domain), dtype);
 }
 
-Val* newOutputVal(const std::vector<Val*>& vals) {
-  TORCH_INTERNAL_ASSERT(
-      !vals.empty(), "Cannot promote values if there aren't any.");
-
-  ValType out_vtype = vals[0]->getValType().value();
-  DataType out_dtype = vals[0]->getDataType().value();
-
+std::vector<Val*> maybe_broadcast(const std::vector<Val*>& vals) {
+  std::vector<Val*> out_vals(vals.size(), nullptr);
+  size_t n_dims = 0;
   for (auto val : vals) {
+    if (val->getValType().value() == ValType::TensorView) {
+      n_dims = std::max(
+          n_dims,
+          TensorDomain::noReductions(val->as<TensorView>()->getRootDomain())
+              .size());
+    }
+  }
+
+  for (size_t i = 0; i < vals.size(); i++) {
+    if (vals[i]->getValType().value() == ValType::TensorView) {
+      auto tv = vals[i]->as<TensorView>();
+      size_t tv_dims = TensorDomain::noReductions(tv->getRootDomain()).size();
+      if (tv_dims < n_dims) {
+        std::vector<bool> bcast_flags(n_dims, false);
+        for (size_t j = 0; j < n_dims - tv_dims; i++) {
+          bcast_flags[j] = true;
+        }
+        out_vals[i] = broadcast(tv, bcast_flags);
+      } else {
+        out_vals[i] = vals[i];
+      }
+    } else {
+      out_vals[i] = vals[i];
+    }
+  }
+  return out_vals;
+}
+
+Val* newOutputVal(const std::vector<Val*>& vals) {
+  auto bcasted_vals = maybe_broadcast(vals);
+  TORCH_INTERNAL_ASSERT(
+      !bcasted_vals.empty(), "Cannot promote values if there aren't any.");
+
+  ValType out_vtype = bcasted_vals[0]->getValType().value();
+  DataType out_dtype = bcasted_vals[0]->getDataType().value();
+
+  for (auto val : bcasted_vals) {
     TORCH_CHECK(val->isVal(), "Invalid statement found during promotion.");
     TORCH_CHECK(
         val->getDataType().value() != DataType::Null,
@@ -98,7 +131,7 @@ Val* newOutputVal(const std::vector<Val*>& vals) {
   }
 
   if (out_vtype == ValType::TensorView)
-    return newOutputTV(vals, out_dtype);
+    return newOutputTV(bcasted_vals, out_dtype);
 
   return newScalar(out_vtype, out_dtype);
 }
@@ -226,6 +259,7 @@ TORCH_CUDA_API TensorView* binaryOp(
     TensorView* v2) {
   return arithOpOverloads(type, v1, v2);
 }
+
 TORCH_CUDA_API TensorView* binaryOp(
     BinaryOpType type,
     TensorView* v1,
@@ -473,9 +507,10 @@ TORCH_CUDA_API TensorView* broadcast(
     if (ent)
       n_broadcasts++;
   TORCH_CHECK(
-      nBCastDims - n_broadcasts == inp->domain()->noReductions().size(),
+      nBCastDims - n_broadcasts ==
+          TensorDomain::noReductions(inp->getRootDomain()).size(),
       "Invalid broadcast, number of false entries in is_broadcast_dim expected to be ",
-      inp->domain()->noReductions().size(),
+      TensorDomain::noReductions(inp->getRootDomain()).size(),
       " but received ",
       nBCastDims - n_broadcasts);
 
@@ -488,6 +523,7 @@ TORCH_CUDA_API TensorView* broadcast(
   }
 
   std::vector<IterDomain*> out_domain;
+  auto inp_domain = TensorDomain::noReductions(inp->getRootDomain());
   size_t iinp = 0, ibdim = 0;
   while (ibdim < is_broadcast_dim.size()) {
     if (is_broadcast_dim[ibdim]) {
@@ -495,7 +531,7 @@ TORCH_CUDA_API TensorView* broadcast(
           new Int(0), new Int(1), ParallelType::Serial, false, false, true));
     } else {
       // Don't propagate reduction IDs through arith ops.
-      out_domain.push_back(inp->domain()->noReductions()[iinp]);
+      out_domain.push_back(inp_domain[iinp]);
       iinp++;
     }
     ibdim++;

@@ -31,12 +31,21 @@ TensorView::TensorView(const std::shared_ptr<c10::TensorType>& tensor_type)
           aten_opt_type_map(tensor_type->scalarType()),
           false) {
   std::vector<IterDomain*> sizes;
+
   TORCH_CHECK(
       tensor_type->dim().has_value(), "Requires static rank for Tensor");
+
   for (decltype(tensor_type->dim().value()) i = 0;
        i < tensor_type->dim().value();
        i++) {
-    sizes.push_back(new IterDomain(new Int(0), new Int()));
+    if (tensor_type->sizes()[i].has_value() &&
+        tensor_type->sizes()[i].value() == 1) {
+      // If size is known to be 1, assuem it needs to be broadcasted.
+      sizes.push_back(new IterDomain(
+          new Int(0), new Int(1), ParallelType::Serial, false, false, true));
+    } else {
+      sizes.push_back(new IterDomain(new Int(0), new Int()));
+    }
   }
   domain_ = new TensorDomain(sizes);
 
