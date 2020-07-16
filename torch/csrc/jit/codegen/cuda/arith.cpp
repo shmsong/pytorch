@@ -81,7 +81,7 @@ TensorView* newOutputTV(const std::vector<Val*>& vals, DataType dtype) {
   return new TensorView(new TensorDomain(out_domain), dtype);
 }
 
-std::vector<Val*> maybe_broadcast(const std::vector<Val*>& vals) {
+std::vector<Val*> maybeBroadcast(const std::vector<Val*>& vals) {
   std::vector<Val*> out_vals(vals.size(), nullptr);
   size_t n_dims = 0;
   for (auto val : vals) {
@@ -99,7 +99,7 @@ std::vector<Val*> maybe_broadcast(const std::vector<Val*>& vals) {
       size_t tv_dims = TensorDomain::noReductions(tv->getRootDomain()).size();
       if (tv_dims < n_dims) {
         std::vector<bool> bcast_flags(n_dims, false);
-        for (size_t j = 0; j < n_dims - tv_dims; i++) {
+        for (size_t j = 0; j < n_dims - tv_dims; j++) {
           bcast_flags[j] = true;
         }
         out_vals[i] = broadcast(tv, bcast_flags);
@@ -114,14 +114,10 @@ std::vector<Val*> maybe_broadcast(const std::vector<Val*>& vals) {
 }
 
 Val* newOutputVal(const std::vector<Val*>& vals) {
-  auto bcasted_vals = maybe_broadcast(vals);
-  TORCH_INTERNAL_ASSERT(
-      !bcasted_vals.empty(), "Cannot promote values if there aren't any.");
+  ValType out_vtype = vals[0]->getValType().value();
+  DataType out_dtype = vals[0]->getDataType().value();
 
-  ValType out_vtype = bcasted_vals[0]->getValType().value();
-  DataType out_dtype = bcasted_vals[0]->getDataType().value();
-
-  for (auto val : bcasted_vals) {
+  for (auto val : vals) {
     TORCH_CHECK(val->isVal(), "Invalid statement found during promotion.");
     TORCH_CHECK(
         val->getDataType().value() != DataType::Null,
@@ -131,7 +127,7 @@ Val* newOutputVal(const std::vector<Val*>& vals) {
   }
 
   if (out_vtype == ValType::TensorView)
-    return newOutputTV(bcasted_vals, out_dtype);
+    return newOutputTV(vals, out_dtype);
 
   return newScalar(out_vtype, out_dtype);
 }
@@ -213,10 +209,11 @@ TensorView* arithOpOverloads(
     T1* v1,
     T2* v2,
     T3* v3) {
+  auto vals = maybeBroadcast({v1, v2, v3});
   return func(
-             v1->template as<Val>(),
-             v2->template as<Val>(),
-             v3->template as<Val>())
+             vals[0]->template as<Val>(),
+             vals[1]->template as<Val>(),
+             vals[2]->template as<Val>())
       ->template as<TensorView>();
 }
 template <typename T1, typename T2, typename T3, typename T4>
@@ -226,17 +223,19 @@ TensorView* arithOpOverloads(
     T2* v2,
     T3* v3,
     T4* v4) {
+  auto vals = maybeBroadcast({v1, v2, v3, v4});
   return func(
-             v1->template as<Val>(),
-             v2->template as<Val>(),
-             v3->template as<Val>(),
-             v4->template as<Val>())
+             vals[0]->template as<Val>(),
+             vals[1]->template as<Val>(),
+             vals[2]->template as<Val>(),
+             vals[3]->template as<Val>())
       ->template as<TensorView>();
 }
 } // namespace
 
 TORCH_CUDA_API Val* binaryOp(BinaryOpType type, Val* v1, Val* v2) {
-  Val* out = newOutputVal({v1, v2});
+  auto vals = maybeBroadcast({v1, v2});
+  Val* out = newOutputVal({vals[0], vals[1]});
   if (is_logical_op(type)) {
     if (out->getDataType().value() != DataType::Bool)
       out = newValLike(out, DataType::Bool);
@@ -244,7 +243,8 @@ TORCH_CUDA_API Val* binaryOp(BinaryOpType type, Val* v1, Val* v2) {
     if (out->getDataType().value() != DataType::Int)
       out = newValLike(out, DataType::Int);
   }
-  new BinaryOp(type, out, v1, v2);
+
+  new BinaryOp(type, out, vals[0], vals[1]);
   return out;
 }
 TORCH_CUDA_API TensorView* binaryOp(
@@ -551,8 +551,9 @@ TORCH_CUDA_API Val* add_alpha(Val* v1, Val* v2, Val* s) {
       "Alpha value should be a Scalar Valtype and not ",
       s->getValType().value());
 
-  Val* intrm = binaryOp(BinaryOpType::Mul, v2, s);
-  return binaryOp(BinaryOpType::Add, v1, intrm);
+  auto vals = maybeBroadcast({v1, v2, s});
+  Val* intrm = binaryOp(BinaryOpType::Mul, vals[1], vals[2]);
+  return binaryOp(BinaryOpType::Add, vals[0], intrm);
 }
 TORCH_CUDA_API TensorView* add_alpha(TensorView* v1, Val* v2, Val* v3) {
   return arithOpOverloads(add_alpha, v1, v2, v3);
@@ -570,8 +571,9 @@ TORCH_CUDA_API Val* sub_alpha(Val* v1, Val* v2, Val* s) {
       "Alpha value should be a Scalar Valtype and not ",
       s->getValType().value());
 
-  Val* intrm = binaryOp(BinaryOpType::Mul, v2, s);
-  return binaryOp(BinaryOpType::Sub, v1, intrm);
+  auto vals = maybeBroadcast({v1, v2, s});
+  Val* intrm = binaryOp(BinaryOpType::Mul, vals[1], vals[2]);
+  return binaryOp(BinaryOpType::Sub, vals[0], intrm);
 }
 TORCH_CUDA_API TensorView* sub_alpha(TensorView* v1, Val* v2, Val* v3) {
   return arithOpOverloads(sub_alpha, v1, v2, v3);
@@ -584,9 +586,10 @@ TORCH_CUDA_API TensorView* sub_alpha(TensorView* v1, TensorView* v2, Val* v3) {
 }
 // lerp
 TORCH_CUDA_API Val* lerp(Val* start, Val* end, Val* weight) {
-  Val* intrm1 = binaryOp(BinaryOpType::Sub, end, start);
-  Val* intrm2 = binaryOp(BinaryOpType::Mul, weight, intrm1);
-  return binaryOp(BinaryOpType::Add, start, intrm2);
+  auto vals = maybeBroadcast({start, end, weight});
+  Val* intrm1 = binaryOp(BinaryOpType::Sub, vals[1], vals[0]);
+  Val* intrm2 = binaryOp(BinaryOpType::Mul, vals[2], intrm1);
+  return binaryOp(BinaryOpType::Add, vals[0], intrm2);
 }
 TORCH_CUDA_API TensorView* lerp(TensorView* v1, Val* v2, Val* v3) {
   return arithOpOverloads(lerp, v1, v2, v3);
@@ -619,9 +622,10 @@ TORCH_CUDA_API Val* addcmul(Val* v1, Val* v2, Val* v3, Val* s) {
       "Alpha value should be a Scalar Valtype and not ",
       s->getValType().value());
 
-  Val* intrm1 = binaryOp(BinaryOpType::Mul, v3, s);
-  Val* intrm2 = binaryOp(BinaryOpType::Mul, v2, intrm1);
-  return binaryOp(BinaryOpType::Add, v1, intrm2);
+  auto vals = maybeBroadcast({v1, v2, v3, s});
+  Val* intrm1 = binaryOp(BinaryOpType::Mul, vals[2], vals[3]);
+  Val* intrm2 = binaryOp(BinaryOpType::Mul, vals[1], intrm1);
+  return binaryOp(BinaryOpType::Add, vals[0], intrm2);
 }
 TORCH_CUDA_API TensorView* addcmul(TensorView* v1, Val* v2, Val* v3, Val* v4) {
   return arithOpOverloads(addcmul, v1, v2, v3, v4);
@@ -669,8 +673,9 @@ TORCH_CUDA_API Val* where(Val* c, Val* v1, Val* v2) {
       "Condition should be of DataType Bool, not ",
       c->getDataType().value());
 
-  Val* out = newOutputVal({v1, v2});
-  new TernaryOp(TernaryOpType::Where, out, c, v1, v2);
+  auto vals = maybeBroadcast({c, v1, v2});
+  Val* out = newOutputVal({vals[1], vals[2]});
+  new TernaryOp(TernaryOpType::Where, out, vals[0], vals[1], vals[2]);
   return out;
 }
 TORCH_CUDA_API TensorView* where(TensorView* v1, Val* v2, Val* v3) {

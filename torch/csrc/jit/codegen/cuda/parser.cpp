@@ -100,43 +100,7 @@ class IrParser {
     FusionGuard fg(fusion.get());
     auto block = graph_->block();
 
-    // [ Note - broadcast support in integration ]
-    //
-    // in case of broadcast, we don't support explicit broadcast,
-    // 1. for point-wise fusion, so we need to convert/expand all inputs
-    // tensors to comply to the broadcasted size. This supports very limited
-    // case, which we try to accomodate in graph partition, that we only merge
-    // nodes with identical output shapes.
-    // 2. in case of reduction-at-end fusion, right now we only support single
-    // reduction operation in fusion, hence we can use the same logig for PW
-    // fusion and conver/expand all inputs to the input tensor to reduction op.
-
-    // TODO: proper broadcast support in integration
-    int broadcast_dim = -1;
-    // broadcast support hack is disabled to reduction.
-    if (hasReductionNode(graph_->block())) {
-      // reduction-at-end fusion, broadcast all inputs to tensor before
-      // reduction
-      // TODO: Not perfectly safe! We could have intermediate output that is not
-      // part of outputs of reduction operations. But we have similar limitation
-      // for broadcast support in PW fusion. We should properly fix this after
-      // broadcast integration.
-      broadcast_dim = block->outputs()[0]
-                          ->node()
-                          ->inputs()[0]
-                          ->type()
-                          ->cast<TensorType>()
-                          ->dim()
-                          .value();
-    } else {
-      // point-wise fusion, broadcast all inputs to output size.
-      broadcast_dim =
-          block->outputs()[0]->type()->cast<TensorType>()->dim().value();
-    }
-
     // register all inputs;
-    // shape propagation during parsing is effctively done in parsing rules, as
-    // we only explicitly register inputs in the graph.
     for (auto val : block->inputs()) {
       TORCH_INTERNAL_ASSERT(
           registerValue(val),
@@ -182,7 +146,7 @@ class IrParser {
       }
       fusion->addOutput(out);
     }
-
+    fusion->printMath();
     return fusion;
   }
 
