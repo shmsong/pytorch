@@ -91,7 +91,7 @@ TensorView* newOutputTV(const std::vector<Val*>& vals, DataType dtype) {
   return new TensorView(new TensorDomain(out_domain), dtype);
 }
 
-std::vector<Val*> maybeBroadcast(const std::vector<Val*>& vals) {
+std::vector<Val*> maybe_broadcast(const std::vector<Val*>& vals) {
   std::vector<Val*> out_vals(vals.size(), nullptr);
   size_t n_dims = 0;
   for (auto val : vals) {
@@ -109,7 +109,7 @@ std::vector<Val*> maybeBroadcast(const std::vector<Val*>& vals) {
       size_t tv_dims = TensorDomain::noReductions(tv->getRootDomain()).size();
       if (tv_dims < n_dims) {
         std::vector<bool> bcast_flags(n_dims, false);
-        for (size_t j = 0; j < n_dims - tv_dims; j++) {
+        for (size_t j = 0; j < n_dims - tv_dims; i++) {
           bcast_flags[j] = true;
         }
         out_vals[i] = broadcast(tv, bcast_flags);
@@ -124,10 +124,14 @@ std::vector<Val*> maybeBroadcast(const std::vector<Val*>& vals) {
 }
 
 Val* newOutputVal(const std::vector<Val*>& vals) {
-  ValType out_vtype = vals[0]->getValType().value();
-  DataType out_dtype = vals[0]->getDataType().value();
+  auto bcasted_vals = maybe_broadcast(vals);
+  TORCH_INTERNAL_ASSERT(
+      !bcasted_vals.empty(), "Cannot promote values if there aren't any.");
 
-  for (auto val : vals) {
+  ValType out_vtype = bcasted_vals[0]->getValType().value();
+  DataType out_dtype = bcasted_vals[0]->getDataType().value();
+
+  for (auto val : bcasted_vals) {
     TORCH_CHECK(val->isVal(), "Invalid statement found during promotion.");
     TORCH_CHECK(
         val->getDataType().value() != DataType::Null,
@@ -137,7 +141,7 @@ Val* newOutputVal(const std::vector<Val*>& vals) {
   }
 
   if (out_vtype == ValType::TensorView)
-    return newOutputTV(vals, out_dtype);
+    return newOutputTV(bcasted_vals, out_dtype);
 
   return newScalar(out_vtype, out_dtype);
 }
