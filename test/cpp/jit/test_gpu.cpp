@@ -3361,49 +3361,51 @@ void testGPU_FusionSoftmax1DNormalized() {
   const int dimx = 1000;
 
   // Set up your input tensor views
-  TensorView* input_tv0 = makeDummyTensor(1);
-  fusion->addInput(input_tv0);
+  TORCH_JIT_LET(input) = makeDummyTensor(1);
+  fusion->addInput(input);
 
   // Normalize with the max value before computing exp.
-  TensorView* max_val_tv1 =
-      reductionOp(BinaryOpType::Max, {-1}, new Float(0), input_tv0);
-  TensorView* bcast_max_tv2 = broadcast(max_val_tv1, {true});
-  TensorView* sub_tv3 = sub(input_tv0, bcast_max_tv2);
-  TensorView* exp_tv4 = unaryOp(UnaryOpType::Exp, sub_tv3);
-  TensorView* sum_exp_tv5 = sum(exp_tv4, {-1});
-  TensorView* bcast_sum_tv6 = broadcast(sum_exp_tv5, {true});
+  TORCH_JIT_LET(max_val) =
+      reductionOp(BinaryOpType::Max, {-1}, new Float(0), input);
+  TORCH_JIT_LET(bcast_max) = broadcast(max_val, {true});
+  TORCH_JIT_LET(delta) = sub(input, bcast_max);
+  TORCH_JIT_LET(exp) = unaryOp(UnaryOpType::Exp, delta);
+  TORCH_JIT_LET(sum_exp) = sum(exp, {-1});
+  TORCH_JIT_LET(bcast_sum) = broadcast(sum_exp, {true});
 
-  // Replicate exp_tv4 as exp_tv4_copy because exp_tv4 is going to be
+  // Replicate exp as exp_copy because exp is going to be
   // computed at sum_exp_rf_tv8.
-  TensorView* sub_tv3_copy = sub(input_tv0, bcast_max_tv2);
-  TensorView* exp_tv4_copy = unaryOp(UnaryOpType::Exp, sub_tv3_copy);
+  TORCH_JIT_LET(sub_copy) = sub(input, bcast_max);
+  TORCH_JIT_LET(exp_copy) = unaryOp(UnaryOpType::Exp, sub_copy);
 
-  TensorView* output_tv7 = div(exp_tv4_copy, bcast_sum_tv6);
+  TORCH_JIT_LET(output) = div(exp_copy, bcast_sum);
 
-  fusion->addOutput(output_tv7);
+  fusion->addOutput(output);
 
-  max_val_tv1->split(-1, tidx);
-  TensorView* max_val_rf_tv8 = max_val_tv1->rFactor({-2});
+  max_val->split(-1, tidx);
+  TORCH_JIT_LET(max_val_rf) = max_val->rFactor({-2});
 
-  sum_exp_tv5->split(-1, tidx);
-  TensorView* sum_exp_rf_tv9 = sum_exp_tv5->rFactor({-2});
+  sum_exp->split(-1, tidx);
+  TORCH_JIT_LET(sum_exp_rf) = sum_exp->rFactor({-2});
 
-  output_tv7->split(-1, tidx);
+  output->split(-1, tidx);
 
-  sub_tv3->computeAt(sum_exp_rf_tv9, -1);
-  sub_tv3_copy->computeAt(output_tv7, -1);
+  delta->computeAt(sum_exp_rf, -1);
+  sub_copy->computeAt(output, -1);
 
-  TensorView* tensors_to_parallelize[] = {max_val_tv1,
-                                          bcast_max_tv2,
-                                          sum_exp_tv5,
-                                          bcast_sum_tv6,
-                                          output_tv7,
-                                          max_val_rf_tv8,
-                                          sum_exp_rf_tv9};
+  TensorView* tensors_to_parallelize[] = {max_val,
+                                          bcast_max,
+                                          sum_exp,
+                                          bcast_sum,
+                                          output,
+                                          max_val_rf,
+                                          sum_exp_rf};
 
   for (auto tv : tensors_to_parallelize) {
     tv->axis(-1)->parallelize(ParallelType::TIDx);
   }
+
+  fusion->print();
 
   prog.setDevice(0);
   setupLaunchConfig(
@@ -3416,6 +3418,8 @@ void testGPU_FusionSoftmax1DNormalized() {
       1, // gid_z
       0 // shared_memory size
   );
+
+  fusion->printKernel();
 
   auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
   at::Tensor t0 = at::randn({dimx}, options);

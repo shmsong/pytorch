@@ -190,6 +190,24 @@ T* named(const std::string& name, T* node) {
   return node;
 }
 
+// Auto-naming machinery
+class AutoNamingHelper {
+ public:
+  explicit AutoNamingHelper(const char* name) : name_(name) {}
+
+  template<class T>
+  T* operator=(T* node) {
+    node->setName(name_);
+    return node;
+  }
+
+ private:
+  const char* name_ = nullptr;
+};
+
+// Magic auto-naming helper macro
+#define TORCH_JIT_LET(x) auto x = AutoNamingHelper(#x)
+
 } // namespace fuser
 } // namespace jit
 } // namespace torch
