@@ -143,6 +143,11 @@ Statement* OptOutMutator::mutate(kir::Allocate* a) {
   }
 }
 
+Statement* OptOutMutator::mutate(kir::Sync* a) {
+  FusionGuard::getCurFusion()->removeExpr(a);
+  return new kir::Sync();
+}
+
 Statement* OptOutMutator::mutate(Split* s) {
   IterDomain* ot = mutateAsVal(s->outer())->as<IterDomain>();
   IterDomain* inr = mutateAsVal(s->inner())->as<IterDomain>();

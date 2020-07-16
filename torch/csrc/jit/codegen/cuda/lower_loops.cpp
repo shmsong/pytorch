@@ -22,7 +22,7 @@ Expr* LoopNestGenerator::pushAlloc(TensorView* tv) {
   size_t alloc_pos = 0;
   // If there's no computeAt, then we want to be allocated at the root
   while (alloc_pos <= tv->nDims() && tv->hasComputeAt()) {
-    // If we have a computeAt and we reached computeAt pos that's where it  goes
+    // If we have a computeAt and we reached computeAt pos that's where it goes
     if (tv->hasComputeAt() && alloc_pos == tv->getThisComputeAtAxis()) {
       break;
     }
@@ -70,7 +70,7 @@ Expr* LoopNestGenerator::pushAlloc(TensorView* tv) {
   }
 
   // Create the allocation node
-  kir::Allocate* alloc = new kir::Allocate(tv, MemoryType::Local, size);
+  kir::Allocate* alloc = new kir::Allocate(tv, tv->getMemoryType(), size);
 
   // Place the allocation
   if (alloc_pos == 0) {
@@ -273,6 +273,16 @@ void LoopNestGenerator::handle(Expr* expr) {
     return;
   }
 
+  //  0) Apply SyncThreads if any shared memory inputs are modified
+  bool shared_memory_sync = false;
+  for (auto in : expr->inputs()) {
+    shared_memory_sync |= statusSharedMemory(in);
+  }
+  if (shared_memory_sync) {
+    // push to the back of the last for loop
+    scope_utils::pushBack(for_loops[for_loops.size() - 1], new kir::Sync());
+  }
+
   TensorView* out = expr->output(0)->as<TensorView>();
   // 1) Reduce loop structure
   while (compute_at_scope.size() > out->getThisComputeAtAxis() &&
@@ -303,8 +313,12 @@ void LoopNestGenerator::handle(Expr* expr) {
   //  5) Open to inner most loop
   for (decltype(out->nDims()) i = for_loops.size(); i < out->nDims(); i++)
     openFor(out->getComputeAtAxis(i));
+
   //  6) Run expression
   pushBack(expr);
+
+  // If output is a shared memory buffer, set modified status
+  modifySharedMemory(out);
 
   // 7) Reduce loop structure back to computeAt
   while (!compute_at_scope.empty() &&
@@ -525,6 +539,15 @@ void reorderExprsForComputeAt(std::vector<Expr*>& exprs) {
 void LoopNestGenerator::generate(const std::vector<Expr*>& exprs) {
   FusionGuard fg(fusion_);
 
+  for (auto v : fusion_->vals()) {
+    if (v->getValType().value() == ValType::TensorView) {
+      TensorView* tv = dynamic_cast<TensorView*>(v);
+      if (tv->getMemoryType() == MemoryType::Shared) {
+        smem_.insert({v, false});
+      }
+    }
+  }
+
   // Initialize members of the class
   lowered_exprs = std::vector<Expr*>();
 
@@ -534,6 +557,27 @@ void LoopNestGenerator::generate(const std::vector<Expr*>& exprs) {
   for (auto* expr : reordered) {
     handle(expr);
   }
+}
+
+void LoopNestGenerator::cleanSharedMemory() {
+  for (auto& item : smem_) {
+    item.second = false;
+  }
+}
+
+void LoopNestGenerator::modifySharedMemory(Val* const key) {
+  auto it = smem_.find(key);
+  if (it != smem_.end()) {
+    it->second = true;
+  }
+}
+
+bool LoopNestGenerator::statusSharedMemory(Val* const key) const {
+  auto it = smem_.find(key);
+  if (it != smem_.end()) {
+    return it->second;
+  }
+  return false;
 }
 
 } // namespace fuser

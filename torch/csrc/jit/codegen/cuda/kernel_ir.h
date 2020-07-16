@@ -352,6 +352,15 @@ class TORCH_CUDA_API Allocate : public Expr {
   Val* size_ = nullptr;
 };
 
+/*
+ * Sync represents __syncthreads barrier for block level coordination.
+ */
+class TORCH_CUDA_API Sync : public Expr {
+ public:
+  explicit Sync();
+  Sync(const Sync* src, IrCloner* ir_cloner);
+};
+
 class TORCH_CUDA_API Scope {
  public:
   Scope() = default;

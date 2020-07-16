@@ -94,6 +94,7 @@ class Allocate;
 class ForLoop;
 class IfThenElse;
 class GridReduction;
+class Sync;
 
 } // namespace kir
 
@@ -154,6 +155,7 @@ class TORCH_CUDA_API OptOutConstDispatch {
   virtual void handle(const kir::ForLoop*) {}
   virtual void handle(const kir::IfThenElse*) {}
   virtual void handle(const kir::Allocate*) {}
+  virtual void handle(const kir::Sync*) {}
 };
 
 class TORCH_CUDA_API OptOutDispatch {
@@ -209,6 +211,7 @@ class TORCH_CUDA_API OptOutDispatch {
   virtual void handle(kir::ForLoop*) {}
   virtual void handle(kir::IfThenElse*) {}
   virtual void handle(kir::Allocate*) {}
+  virtual void handle(kir::Sync*) {}
 };
 
 class TORCH_CUDA_API OptInConstDispatch {
@@ -321,6 +324,9 @@ class TORCH_CUDA_API OptInConstDispatch {
   }
   virtual void handle(const kir::Allocate*) {
     TORCH_INTERNAL_ASSERT(false, "Handle not overriden for Allocate.");
+  }
+  virtual void handle(const kir::Sync*) {
+    TORCH_INTERNAL_ASSERT(false, "Handle not overriden for Sync.");
   }
   virtual void handle(const kir::IfThenElse*) {
     TORCH_INTERNAL_ASSERT(false, "Handle not overriden for IfThenElse.");
@@ -445,6 +451,9 @@ class TORCH_CUDA_API OptInDispatch {
   virtual void handle(kir::Allocate*) {
     AT_ERROR("Handle not overriden for Allocate.");
   }
+  virtual void handle(kir::Sync*) {
+    AT_ERROR("Handle not overriden for Sync.");
+  }
   virtual void handle(kir::IfThenElse*) {
     TORCH_INTERNAL_ASSERT(false, "Handle not overriden for IfThenElse.");
   }
@@ -512,6 +521,7 @@ class TORCH_CUDA_API OptOutMutator {
   virtual Statement* mutate(kir::ForLoop*);
   virtual Statement* mutate(kir::IfThenElse*);
   virtual Statement* mutate(kir::Allocate*);
+  virtual Statement* mutate(kir::Sync*);
 };
 
 class TORCH_CUDA_API OptInMutator {
@@ -596,6 +606,9 @@ class TORCH_CUDA_API OptInMutator {
   }
   virtual Statement* mutate(kir::Allocate*) {
     AT_ERROR("Mutate not overriden for Allocate.");
+  }
+  virtual Statement* mutate(kir::Sync*) {
+    AT_ERROR("Mutate not overriden for Sync.");
   }
   virtual Statement* mutate(kir::IfThenElse*) {
     TORCH_INTERNAL_ASSERT(false, "Mutate not overriden for IfThenElse.");
