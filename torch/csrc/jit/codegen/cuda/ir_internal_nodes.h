@@ -247,6 +247,8 @@ class TORCH_CUDA_API IterDomain : public Val {
 
   bool sameAs(const IterDomain* const other) const;
 
+  const char* automaticNamePrefix() const override { return "ID"; }
+
   // Returns a new IterDomain matching properties of this
   IterDomain* clone() const {
     return new IterDomain(
@@ -398,6 +400,8 @@ class TORCH_CUDA_API TensorDomain : public Val {
   static bool sameAs(
       const std::vector<IterDomain*>& lhs,
       const std::vector<IterDomain*>& rhs);
+
+  const char* automaticNamePrefix() const override { return "TD"; }
 
   const std::vector<IterDomain*>& domain() const {
     return domain_;
@@ -713,6 +717,8 @@ class TORCH_CUDA_API TensorIndex : public Val {
 
   bool sameAs(const TensorIndex* const other) const;
 
+  const char* automaticNamePrefix() const override { return "TI"; }
+
  private:
   const TensorView* view_ = nullptr;
   std::vector<Val*> indices_;
@@ -766,10 +772,11 @@ class TORCH_CUDA_API Allocate : public Expr {
 class TORCH_CUDA_API NamedScalar : public Val {
  public:
   ~NamedScalar() = default;
-  NamedScalar() = delete;
 
-  NamedScalar(std::string _name, DataType dtype)
-      : Val(ValType::NamedScalar, dtype), name_(_name) {}
+  NamedScalar(std::string name, DataType dtype)
+      : Val(ValType::NamedScalar, dtype) {
+    setName(name);
+  }
 
   NamedScalar(const NamedScalar* src, IrCloner* ir_cloner);
 
@@ -779,16 +786,13 @@ class TORCH_CUDA_API NamedScalar : public Val {
   NamedScalar(NamedScalar&& other) = delete;
   NamedScalar& operator=(NamedScalar&& other) = delete;
 
-  const std::string& name() const {
-    return name_;
-  }
-
   bool sameAs(const NamedScalar* const other) const {
     return other->name().compare(name()) == 0;
   }
 
- private:
-  std::string name_;
+  const char* automaticNamePrefix() const override {
+    TORCH_INTERNAL_ASSERT(false);
+  }
 };
 
 } // namespace fuser

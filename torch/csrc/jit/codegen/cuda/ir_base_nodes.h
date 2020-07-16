@@ -34,9 +34,10 @@ namespace torch {
 namespace jit {
 namespace fuser {
 
-using StmtNameType = unsigned int;
-constexpr StmtNameType UNINITIALIZED_STMTNAMETYPE =
-    std::numeric_limits<unsigned int>::max();
+using StatementNumber = unsigned int;
+
+constexpr StatementNumber kInvalidStatementNumber =
+    std::numeric_limits<StatementNumber>::max();
 
 class Fusion;
 class FusionGuard;
@@ -132,9 +133,14 @@ class TORCH_CUDA_API Statement {
     return fusion_;
   }
 
-  // Return the int that represents its name
-  StmtNameType name() const {
-    return name_;
+  StatementNumber statementNumber() const {
+    return statement_number_;
+  }
+
+  std::string name() const;
+
+  void setName(const std::string& name) {
+    name_ = name;
   }
 
   virtual bool sameType(const Statement* const other) {
@@ -154,7 +160,11 @@ class TORCH_CUDA_API Statement {
   void print() const;
 
  protected:
-  StmtNameType name_ = UNINITIALIZED_STMTNAMETYPE;
+  virtual const char* automaticNamePrefix() const = 0;
+
+ protected:
+  std::string name_;
+  StatementNumber statement_number_ = kInvalidStatementNumber;
   Fusion* fusion_ = nullptr;
 };
 
@@ -412,6 +422,9 @@ class TORCH_CUDA_API Expr : public Statement {
   void addOutput(Val* output) {
     outputs_.push_back(output);
   }
+
+ private:
+  const char* automaticNamePrefix() const override { return "expr"; }
 
  private:
   ExprType type_ = ExprType::Invalid;

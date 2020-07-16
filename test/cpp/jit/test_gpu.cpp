@@ -693,10 +693,12 @@ void testGPU_FusionRegister() {
   Float* v2 = new Float{2.f};
   Val* v3 = binaryOp(BinaryOpType::Add, v1, v2);
   Val* v4 = binaryOp(BinaryOpType::Add, v1, v2);
-  TORCH_CHECK(v1->name() + 1 == v2->name());
-  TORCH_CHECK(v2->name() + 1 == v3->name());
-  TORCH_CHECK(v3->name() + 1 == v4->name());
-  TORCH_CHECK(fusion.origin(v3)->name() + 1 == fusion.origin(v4)->name());
+  TORCH_CHECK(v1->statementNumber() + 1 == v2->statementNumber());
+  TORCH_CHECK(v2->statementNumber() + 1 == v3->statementNumber());
+  TORCH_CHECK(v3->statementNumber() + 1 == v4->statementNumber());
+  TORCH_CHECK(
+      fusion.origin(v3)->statementNumber() + 1 ==
+      fusion.origin(v4)->statementNumber());
 }
 
 // dummy expr with 2 outputs only for toposort test.
@@ -709,7 +711,7 @@ struct DummyExpr : public Expr {
     addOutput(_outrhs);
     addInput(_lhs);
     addInput(_rhs);
-    this->name_ = FusionGuard::getCurFusion()->registerExpr(this);
+    statement_number_ = FusionGuard::getCurFusion()->registerExpr(this);
   }
   DummyExpr(const DummyExpr& other) = delete;
   DummyExpr& operator=(const DummyExpr& other) = delete;
@@ -777,11 +779,11 @@ void testGPU_FusionTopoSort() {
   TORCH_CHECK(exprs[2] == e2);
   TORCH_CHECK(exprs[3] == e3);
 
-  TORCH_CHECK(fusion.origin(v2)->name() == 0);
-  TORCH_CHECK(fusion.origin(v3)->name() == 0);
-  TORCH_CHECK(fusion.origin(v4)->name() == 1);
-  TORCH_CHECK(fusion.origin(v5)->name() == 2);
-  TORCH_CHECK(fusion.origin(v6)->name() == 3);
+  TORCH_CHECK(fusion.origin(v2)->statementNumber() == 0);
+  TORCH_CHECK(fusion.origin(v3)->statementNumber() == 0);
+  TORCH_CHECK(fusion.origin(v4)->statementNumber() == 1);
+  TORCH_CHECK(fusion.origin(v5)->statementNumber() == 2);
+  TORCH_CHECK(fusion.origin(v6)->statementNumber() == 3);
 }
 
 void testGPU_FusionTensor() {

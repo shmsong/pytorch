@@ -40,7 +40,7 @@ TensorView::TensorView(const std::shared_ptr<c10::TensorType>& tensor_type)
   }
   domain_ = new TensorDomain(sizes);
 
-  this->name_ = fusion_->registerVal(this);
+  statement_number_ = fusion_->registerVal(this);
 }
 
 TensorView::TensorView(const TensorView* src, IrCloner* ir_cloner)
@@ -95,8 +95,7 @@ TensorView* TensorView::unsafeClone() const {
   new_view->relative_compute_at_axis_ = relative_compute_at_axis_;
   new_view->this_compute_at_axis_ = this_compute_at_axis_;
   new_view->setMemoryType(memory_type_);
-  new_view->name_ = name();
-
+  new_view->statement_number_ = statementNumber();
   return new_view;
 }
 
@@ -139,7 +138,7 @@ void TensorView::copyDomain(const TensorDomain* td) {
   setDomain(new TensorDomain(idv));
 }
 
-// Where in compute_at_view does this->axis(pos) match up?
+// Where in compute_at_view does axis(pos) match up?
 int TensorView::getComputeAtRelPos(int pos) {
   if (!hasComputeAt())
     return pos;
@@ -197,8 +196,7 @@ void TensorView::setThisComputeAtAxis() {
 
 TensorView* TensorView::computeAt(TensorView* consumer, int axis) {
   // Make sure this and consumer are not the same tensor, that's illegal
-  TORCH_CHECK(
-      !this->sameAs(consumer), "Cannot call this->computeAt(this, ...)");
+  TORCH_CHECK(!sameAs(consumer), "Cannot call computeAt(this, ...)");
 
   // We support negative axes, so increment it by consumer->nDims() + 1 and make
   // sure the result is within consumer->nDims() + 1. being at consumer->nDims()
@@ -267,8 +265,8 @@ TensorView* TensorView::reorder(const std::unordered_map<int, int>& old2new_) {
 
 TensorView* TensorView::rFactor(const std::vector<int>& axes) {
   TORCH_INTERNAL_ASSERT(nDims() > 0, "Tried to rFactor a 0-dim TensorView");
-  FusionGuard fg(this->fusion());
-  Expr* origin_expr = this->fusion()->origin(this);
+  FusionGuard fg(fusion());
+  Expr* origin_expr = fusion()->origin(this);
   TORCH_CHECK(
       origin_expr != nullptr &&
           origin_expr->getExprType() == ExprType::ReductionOp,
@@ -289,11 +287,10 @@ TensorView* TensorView::rFactor(const std::vector<int>& axes) {
   auto consumer_domain = domain_pair.second;
 
   // This domain will be the consumer, so create the producer
-  TensorView* producer =
-      new TensorView(producer_domain, this->getDataType().value());
+  TensorView* producer = new TensorView(producer_domain, getDataType().value());
 
   // Set domain of consumer
-  this->setDomain(consumer_domain);
+  setDomain(consumer_domain);
   TensorView* consumer = this;
 
   // Setup dependency chain, inserting producer before this op.

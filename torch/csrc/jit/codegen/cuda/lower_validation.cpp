@@ -91,7 +91,7 @@ void IrBuildSizesMap(Fusion* fusion) {
       Val* orig_size = id->extent();
 
       std::stringstream ss;
-      ss << "T" << tv->name() << ".size[" << dim++ << "]";
+      ss << tv->name() << ".size[" << dim++ << "]";
       Val* new_size =
           new NamedScalar(ss.str(), orig_size->getDataType().value());
       if (!orig_size->sameAs(new_size) ||

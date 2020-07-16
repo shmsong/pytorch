@@ -105,7 +105,7 @@ UnaryOp::UnaryOp(UnaryOpType _type, Val* _out, Val* _in)
     : Expr(ExprType::UnaryOp), unary_op_type_{_type}, out_{_out}, in_{_in} {
   addOutput(_out);
   addInput(_in);
-  this->name_ = FusionGuard::getCurFusion()->registerExpr(this);
+  statement_number_ = FusionGuard::getCurFusion()->registerExpr(this);
 }
 
 UnaryOp::UnaryOp(const UnaryOp* src, IrCloner* ir_cloner)
@@ -115,7 +115,7 @@ UnaryOp::UnaryOp(const UnaryOp* src, IrCloner* ir_cloner)
       in_(ir_cloner->clone(src->in_)) {}
 
 bool UnaryOp::sameAs(const UnaryOp* const other) const {
-  if (this->type() != other->type())
+  if (type() != other->type())
     return false;
   return static_cast<const Expr*>(this)->sameAs(other);
 }
@@ -129,7 +129,7 @@ BinaryOp::BinaryOp(BinaryOpType _type, Val* _out, Val* _lhs, Val* _rhs)
   addOutput(_out);
   addInput(_lhs);
   addInput(_rhs);
-  this->name_ = FusionGuard::getCurFusion()->registerExpr(this);
+  statement_number_ = FusionGuard::getCurFusion()->registerExpr(this);
 }
 
 BinaryOp::BinaryOp(const BinaryOp* src, IrCloner* ir_cloner)
@@ -163,7 +163,7 @@ TernaryOp::TernaryOp(
   addInput(_in1);
   addInput(_in2);
   addInput(_in3);
-  this->name_ = FusionGuard::getCurFusion()->registerExpr(this);
+  statement_number_ = FusionGuard::getCurFusion()->registerExpr(this);
 }
 
 TernaryOp::TernaryOp(const TernaryOp* src, IrCloner* ir_cloner)
@@ -215,7 +215,7 @@ BroadcastOp::BroadcastOp(Val* _out, Val* _in)
 
   addOutput(_out);
   addInput(_in);
-  this->name_ = FusionGuard::getCurFusion()->registerExpr(this);
+  statement_number_ = FusionGuard::getCurFusion()->registerExpr(this);
 }
 
 BroadcastOp::BroadcastOp(const BroadcastOp* src, IrCloner* ir_cloner)
@@ -263,7 +263,7 @@ ReductionOp::ReductionOp(
 
   addOutput(_out);
   addInput(_in);
-  this->name_ = FusionGuard::getCurFusion()->registerExpr(this);
+  statement_number_ = FusionGuard::getCurFusion()->registerExpr(this);
 }
 
 ReductionOp::ReductionOp(const ReductionOp* src, IrCloner* ir_cloner)
@@ -274,10 +274,9 @@ ReductionOp::ReductionOp(const ReductionOp* src, IrCloner* ir_cloner)
       in_(ir_cloner->clone(src->in_)) {}
 
 bool ReductionOp::sameAs(const ReductionOp* other) const {
-  return (
-      this->in()->sameAs(other->in()) &&
-      this->getReductionOpType() == other->getReductionOpType() &&
-      this->init()->sameAs(other->init()));
+  return in()->sameAs(other->in()) &&
+      getReductionOpType() == other->getReductionOpType() &&
+      init()->sameAs(other->init());
 }
 
 std::vector<IterDomain*> ReductionOp::getReductionDomains() const {
@@ -342,7 +341,7 @@ IterDomain::IterDomain(
       "Cannot create an iter domain with a start that is not an int but recieved ",
       _extent,
       " .");
-  this->name_ = fusion_->registerVal(this);
+  statement_number_ = fusion_->registerVal(this);
 }
 
 IterDomain::IterDomain(const IterDomain* src, IrCloner* ir_cloner)
@@ -470,7 +469,7 @@ TensorDomain::TensorDomain(
 
   resetDomains();
 
-  this->name_ = fusion_->registerVal(this);
+  statement_number_ = fusion_->registerVal(this);
 }
 
 TensorDomain::TensorDomain(
@@ -507,7 +506,7 @@ TensorDomain::TensorDomain(
   });
 
   resetDomains();
-  this->name_ = fusion_->registerVal(this);
+  statement_number_ = fusion_->registerVal(this);
 }
 
 TensorDomain::TensorDomain(const TensorDomain* src, IrCloner* ir_cloner)
@@ -884,7 +883,7 @@ Split::Split(
   addOutput(_outer);
   addOutput(_inner);
   addInput(_in);
-  this->name_ = FusionGuard::getCurFusion()->registerExpr(this);
+  statement_number_ = FusionGuard::getCurFusion()->registerExpr(this);
 }
 
 Split::Split(const Split* src, IrCloner* ir_cloner)
@@ -905,7 +904,7 @@ Merge::Merge(IterDomain* _out, IterDomain* _outer, IterDomain* _inner)
   addOutput(_out);
   addInput(_outer);
   addInput(_inner);
-  this->name_ = FusionGuard::getCurFusion()->registerExpr(this);
+  statement_number_ = FusionGuard::getCurFusion()->registerExpr(this);
 }
 
 Merge::Merge(const Merge* src, IrCloner* ir_cloner)
@@ -934,7 +933,7 @@ ForLoop::ForLoop(
       "Cannot create a for loop with an index that is not an int.");
   addInput(_index);
   addInput(_iter_domain);
-  this->name_ = FusionGuard::getCurFusion()->registerExpr(this);
+  statement_number_ = FusionGuard::getCurFusion()->registerExpr(this);
   for (Expr* expr : _body)
     body().push_back(expr);
 }
@@ -947,7 +946,7 @@ ForLoop::ForLoop(const ForLoop* src, IrCloner* ir_cloner)
       parent_scope_(ir_cloner->clone(src->parent_scope_)) {}
 
 bool ForLoop::sameAs(const ForLoop* other) const {
-  if (this->iter_domain() != other->iter_domain())
+  if (iter_domain() != other->iter_domain())
     return false;
   if (!(constBody().sameAs(other->constBody())))
     return false;
@@ -961,7 +960,7 @@ IfThenElse::IfThenElse(
     Expr* _parent_scope)
     : Expr(ExprType::IfThenElse), cond_{_cond}, parent_scope_(_parent_scope) {
   addInput(_cond);
-  this->name_ = FusionGuard::getCurFusion()->registerExpr(this);
+  statement_number_ = FusionGuard::getCurFusion()->registerExpr(this);
 
   for (auto* expr : _if_body)
     body_.push_back(expr);
@@ -977,9 +976,9 @@ IfThenElse::IfThenElse(const IfThenElse* src, IrCloner* ir_cloner)
       parent_scope_(ir_cloner->clone(src->parent_scope_)) {}
 
 bool IfThenElse::sameAs(const IfThenElse* other) const {
-  if (!(this->cond()->sameAs(other->cond()) &&
-        this->constBody().sameAs(other->constBody()) &&
-        this->constElseBody().sameAs(other->constElseBody())))
+  if (!(cond()->sameAs(other->cond()) &&
+        constBody().sameAs(other->constBody()) &&
+        constElseBody().sameAs(other->constElseBody())))
     return false;
   return true;
 }
@@ -1028,7 +1027,7 @@ Allocate::Allocate(Val* _val, Val* _size)
   }
   addInput(_size);
   addInput(_val);
-  this->name_ = FusionGuard::getCurFusion()->registerExpr(this);
+  statement_number_ = FusionGuard::getCurFusion()->registerExpr(this);
 }
 
 Allocate::Allocate(const Allocate* src, IrCloner* ir_cloner)
@@ -1041,18 +1040,17 @@ DataType Allocate::buf_type() const {
 }
 
 bool Allocate::sameAs(const Allocate* other) const {
-  if (!this->buffer_->sameAs(other->buffer()))
+  if (!buffer_->sameAs(other->buffer()))
     return false;
-  if (!this->extent()->sameAs(other->extent()))
+  if (!extent()->sameAs(other->extent()))
     return false;
-  if (this->type() != other->type())
+  if (type() != other->type())
     return false;
-
   return true;
 }
 
 NamedScalar::NamedScalar(const NamedScalar* src, IrCloner* ir_cloner)
-    : Val(src, ir_cloner), name_(src->name_) {}
+    : Val(src, ir_cloner) {}
 
 } // namespace fuser
 } // namespace jit

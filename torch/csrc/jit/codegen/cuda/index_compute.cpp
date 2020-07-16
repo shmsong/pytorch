@@ -153,7 +153,7 @@ TensorIndex* Index::getGlobalProducerIndex(
   std::vector<Val*> strided_inds;
   for (size_t i = 0; i < p_inds.size(); i++) {
     std::stringstream ss;
-    ss << "T" << producer->name() << ".stride[" << i << "]";
+    ss << producer->name() << ".stride[" << i << "]";
     strided_inds.push_back(
         mul(p_inds[i], new NamedScalar(ss.str(), DataType::Int)));
   }
@@ -274,7 +274,7 @@ TensorIndex* Index::getGlobalConsumerIndex(
   std::vector<Val*> strided_inds;
   for (size_t i = 0; i < computed_inds.size(); i++) {
     std::stringstream ss;
-    ss << "T" << consumer->name() << ".stride[" << i << "]";
+    ss << consumer->name() << ".stride[" << i << "]";
     strided_inds.push_back(
         mul(computed_inds[i], new NamedScalar(ss.str(), DataType::Int)));
   }

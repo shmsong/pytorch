@@ -28,7 +28,7 @@ void EvaluationContext::print() const {
   std::cout << "--------------------\n";
   for (const auto& kv : bindings_) {
     const auto val = kv.first->as<Int>();
-    std::cout << "i" << val->name() << " = " << kv.second;
+    std::cout << val->name() << " = " << kv.second;
     if (!val->isSymbolic()) {
       std::cout << " ; original value = " << *val->value();
     }

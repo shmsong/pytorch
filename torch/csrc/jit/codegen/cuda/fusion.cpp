@@ -384,27 +384,27 @@ void Fusion::printTransforms() {
   t_exprs.handle(this);
 }
 
-StmtNameType Fusion::registerVal(Val* val) {
+StatementNumber Fusion::registerVal(Val* val) {
   if (val->fusion()) {
     if (val->fusion() != this) {
       TORCH_CHECK(false, val, " was not found in the active fusion.");
     }
     if (inFusion(val)) {
-      return val->name();
+      return val->statementNumber();
     }
   }
   val_set_.emplace(val);
   val_deque_.push_back(val);
-  return getValName(*(val->getValType()));
+  return allocValNumber(*(val->getValType()));
 }
 
-StmtNameType Fusion::registerExpr(Expr* expr) {
+StatementNumber Fusion::registerExpr(Expr* expr) {
   if (expr->fusion()) {
     if (expr->fusion() != this) {
       TORCH_CHECK(false, expr, " was not found in the active fusion.");
     }
     if (inFusion(expr)) {
-      return expr->name();
+      return expr->statementNumber();
     }
   }
 
@@ -428,12 +428,12 @@ StmtNameType Fusion::registerExpr(Expr* expr) {
   }
 
   expr_set_.emplace(expr);
-  return getExprName();
+  return allocExprNumber();
 }
 
-StmtNameType Fusion::registerStatement(Statement* stmt) {
+StatementNumber Fusion::registerStatement(Statement* stmt) {
   if (inFusion(stmt))
-    return stmt->name();
+    return stmt->statementNumber();
 
   if (stmt->isVal()) {
     return registerVal(static_cast<Val*>(stmt));
@@ -444,7 +444,7 @@ StmtNameType Fusion::registerStatement(Statement* stmt) {
   TORCH_INTERNAL_ASSERT(
       false,
       "Could not register statement as Fusion could not recognize its type.");
-  return UNINITIALIZED_STMTNAMETYPE;
+  return kInvalidStatementNumber;
 }
 
 bool Fusion::used(Val* val) const {
@@ -508,13 +508,13 @@ void Fusion::replaceOutput(Val* replace, Val* with) {
   std::replace(outputs_.begin(), outputs_.end(), replace, with);
 }
 
-StmtNameType Fusion::getValName(ValType vtype) {
+StatementNumber Fusion::allocValNumber(ValType vtype) {
   if (val_type_name_map_.find(vtype) != val_type_name_map_.end())
     return val_type_name_map_[vtype]++;
   return val_name_counter_++;
 }
 
-StmtNameType Fusion::getExprName() {
+StatementNumber Fusion::allocExprNumber() {
   return expr_name_counter_++;
 }
 

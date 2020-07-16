@@ -50,6 +50,8 @@ class TORCH_CUDA_API Bool : public Val {
 
   bool sameAs(const Bool* const other) const;
 
+  const char* automaticNamePrefix() const override { return "b"; }
+
  private:
   const c10::optional<bool> maybe_value_;
 };
@@ -90,6 +92,8 @@ class TORCH_CUDA_API Float : public Val {
 
   bool sameAs(const Float* const other) const;
 
+  const char* automaticNamePrefix() const override { return "f"; }
+
  private:
   const c10::optional<ScalarType> maybe_value_;
 };
@@ -128,6 +132,8 @@ class TORCH_CUDA_API Half : public Val {
 
   bool sameAs(const Half* const other) const;
 
+  const char* automaticNamePrefix() const override { return "h"; }
+
  private:
   const c10::optional<float> maybe_value_;
 };
@@ -164,6 +170,8 @@ class TORCH_CUDA_API Int : public Val {
   }
 
   bool sameAs(const Int* const other) const;
+
+  const char* automaticNamePrefix() const override { return "i"; }
 
  private:
   const c10::optional<ScalarType> maybe_value_;
@@ -349,6 +357,8 @@ class TORCH_CUDA_API TensorView : public Val {
   // Return position in compute_at_view that lines up with this->axis(pos)?
   int getComputeAtRelPos(int pos);
   void setThisComputeAtAxis();
+
+  const char* automaticNamePrefix() const override { return "T"; }
 
  private:
   TensorDomain* domain_ = nullptr;

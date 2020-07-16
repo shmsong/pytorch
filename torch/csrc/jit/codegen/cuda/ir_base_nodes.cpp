@@ -13,6 +13,7 @@
 #include <iostream>
 #include <stdexcept>
 #include <string>
+#include <sstream>
 #include <unordered_map>
 
 namespace torch {
@@ -22,6 +23,7 @@ namespace fuser {
 Statement::Statement(const Statement* src, IrCloner* ir_cloner) {
   ir_cloner->registerClone(src, this);
   name_ = src->name_;
+  statement_number_ = src->statement_number_;
   fusion_ = ir_cloner->fusion();
 }
 
@@ -41,15 +43,27 @@ void Statement::print() const {
   std::cout << std::endl;
 }
 
+std::string Statement::name() const {
+  TORCH_CHECK(statement_number_ != kInvalidStatementNumber);
+  if (!name_.empty()) {
+    return name_;
+  } else {
+    std::stringstream ss;
+    ss << automaticNamePrefix() << statement_number_;
+    return ss.str();
+  }
+}
+
 // When we create a Val we immediately register them with the active fusion.
 Val::Val(ValType _vtype, DataType _dtype, bool register_val)
     : vtype_{_vtype}, dtype_{_dtype} {
   Fusion* fusion = FusionGuard::getCurFusion();
   TORCH_CHECK(
       fusion != nullptr, "No active fusion group found when creating a Val.");
-  this->fusion_ = fusion;
-  if (register_val)
-    this->name_ = this->fusion_->registerVal(this);
+  fusion_ = fusion;
+  if (register_val) {
+    statement_number_ = fusion_->registerVal(this);
+  }
 }
 
 Val::Val(const Val* src, IrCloner* ir_cloner)
@@ -183,7 +197,7 @@ bool Scope::contains(Expr* expr) const {
 }
 
 bool Scope::sameAs(const Scope& other) const {
-  if (other.exprs().size() != this->exprs().size())
+  if (other.exprs().size() != exprs().size())
     return false;
   for (decltype(exprs().size()) i{0}; i < exprs().size(); i++)
     if (other.exprs()[i] != exprs()[i])
@@ -192,7 +206,7 @@ bool Scope::sameAs(const Scope& other) const {
 }
 
 void Scope::clear() {
-  this->exprs_ = std::vector<Expr*>();
+  exprs_ = std::vector<Expr*>();
 }
 
 // We don't register with the active fusion in Expr as this needs to be done
@@ -201,7 +215,7 @@ Expr::Expr(ExprType _type) : type_{_type} {
   Fusion* fusion = FusionGuard::getCurFusion();
   if (fusion == nullptr)
     TORCH_CHECK(false, "No active fusion group found when creating an Expr.");
-  this->fusion_ = fusion;
+  fusion_ = fusion;
 }
 
 Expr::Expr(const Expr* src, IrCloner* ir_cloner)

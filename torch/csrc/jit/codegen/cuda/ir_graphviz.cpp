@@ -5,6 +5,7 @@
 #include <torch/csrc/jit/codegen/cuda/type.h>
 
 #include <fstream>
+#include <sstream>
 
 namespace torch {
 namespace jit {
@@ -33,10 +34,10 @@ class IrNodeLabel : private OptInConstDispatch {
 
   void handle(const Bool* b) override {
     if (b->isSymbolic()) {
-      label_ << "b" << b->name();
+      label_ << b->name();
     } else {
       if (detail_level_ >= DetailLevel::Explicit) {
-        label_ << "b" << b->name() << "=";
+        label_ << b->name() << "=";
       }
       label_ << *b->value();
     }
@@ -44,10 +45,10 @@ class IrNodeLabel : private OptInConstDispatch {
 
   void handle(const Float* f) override {
     if (f->isSymbolic()) {
-      label_ << "f" << f->name();
+      label_ << f->name();
     } else {
       if (detail_level_ >= DetailLevel::Explicit) {
-        label_ << "f" << f->name() << "=";
+        label_ << f->name() << "=";
       }
       label_ << std::fixed << std::setprecision(2) << *f->value();
     }
@@ -55,10 +56,10 @@ class IrNodeLabel : private OptInConstDispatch {
 
   void handle(const Half* h) override {
     if (h->isSymbolic()) {
-      label_ << "h" << h->name();
+      label_ << h->name();
     } else {
       if (detail_level_ >= DetailLevel::Explicit) {
-        label_ << "h" << h->name() << "=";
+        label_ << h->name() << "=";
       }
       label_ << *h->value();
     }
@@ -66,10 +67,10 @@ class IrNodeLabel : private OptInConstDispatch {
 
   void handle(const Int* i) override {
     if (i->isSymbolic()) {
-      label_ << "i" << i->name();
+      label_ << i->name();
     } else {
       if (detail_level_ >= DetailLevel::Explicit) {
-        label_ << "i" << i->name() << "=";
+        label_ << i->name() << "=";
       }
       label_ << *i->value();
     }
@@ -383,7 +384,7 @@ void IrGraphGenerator::handle(const NamedScalar* i) {
 
 void IrGraphGenerator::handle(const TensorView* tv) {
   std::stringstream label;
-  label << "{T" << tv->name() << "|";
+  label << "{" << tv->name() << "|";
   label << "{";
   bool first_axis = true;
   for (auto iter_domain : tv->domain()->domain()) {

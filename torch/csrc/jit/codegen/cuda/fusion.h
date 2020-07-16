@@ -180,16 +180,16 @@ class TORCH_CUDA_API Fusion final {
   // Lower the fusion and print a kernel
   void printKernel();
   // Register the Val with this fusion
-  StmtNameType registerVal(Val* val);
+  StatementNumber registerVal(Val* val);
 
   // Register expr with this fusion.
   // When we register an expression, we want to update the dependency tracking
   // of Vals. We add expr to our general expr_set_, we add use tracking for
   // inputs and origin tracking for outputs.
-  StmtNameType registerExpr(Expr* expr);
+  StatementNumber registerExpr(Expr* expr);
 
   // Register stmt with this fusion.
-  StmtNameType registerStatement(Statement* stmt);
+  StatementNumber registerStatement(Statement* stmt);
 
   // Check if val is used in this fusion. Not equivelent to DCE
   bool used(Val* val) const;
@@ -268,8 +268,8 @@ class TORCH_CUDA_API Fusion final {
  private:
   // Return an int that monotonically increases for each val/expr, some are
   // explicitly incremented by type.
-  StmtNameType getValName(ValType vtype);
-  StmtNameType getExprName();
+  StatementNumber allocValNumber(ValType vtype);
+  StatementNumber allocExprNumber();
 
  private:
   // Sets of all Vals/Exprs registered with this fusion
@@ -279,15 +279,15 @@ class TORCH_CUDA_API Fusion final {
   std::unordered_set<Expr*> expr_set_;
 
   // map from valtype to individual name counters
-  std::unordered_map<ValType, StmtNameType, TypeHash> val_type_name_map_ = {
+  std::unordered_map<ValType, StatementNumber, TypeHash> val_type_name_map_ = {
       {ValType::TensorView, 0},
       {ValType::TensorDomain, 0},
       {ValType::IterDomain, 0},
       {ValType::Scalar, 0}};
 
   // Generic counters
-  StmtNameType val_name_counter_ = 0;
-  StmtNameType expr_name_counter_ = 0;
+  StatementNumber val_name_counter_ = 0;
+  StatementNumber expr_name_counter_ = 0;
 
   // Dependency tracking for Vals. Where did it come from? Where is it used?
   std::unordered_map<Val*, Expr*> origin_;

@@ -61,7 +61,7 @@ void IRPrinter::printHeader(Fusion* fusion, const std::string& kernel_name_) {
            << TensorDomain::noReductions(
                   static_cast<TensorView*>(val)->getRootDomain())
                   .size()
-           << "> T" << val->name();
+           << "> " << val->name();
         break;
       case (ValType::Scalar):
         os << val->getDataType().value() << " " << val;
@@ -121,12 +121,12 @@ void IRPrinter::handle(const TensorDomain* td) {
 }
 
 void IRPrinter::handle(const TensorView* tv) {
-  os << "T" << tv->name();
+  os << tv->name();
   handle(tv->domain());
 
   if (tv->getComputeAtView() != nullptr) {
     os << " compute_at( ";
-    os << "T" << tv->getComputeAtView()->name();
+    os << tv->getComputeAtView()->name();
     os << ", " << tv->getRelativeComputeAtAxis() << " )";
   }
 }
@@ -164,7 +164,7 @@ void IRPrinter::handle(const IterDomain* id) {
 }
 
 void IRPrinter::handle(const TensorIndex* ti) {
-  os << "T" << ti->view()->name();
+  os << ti->view()->name();
   if (ti->nDims() == 0) {
     os << "[ 0 ]";
     return;
@@ -190,7 +190,7 @@ void IRPrinter::handle(const Bool* b) {
   }
 
   if (b->isSymbolic()) {
-    os << "b" << b->name();
+    os << b->name();
   } else {
     os << "bool(" << *(b->value()) << ")";
   }
@@ -205,7 +205,7 @@ void IRPrinter::handle(const Float* f) {
   }
 
   if (f->isSymbolic()) {
-    os << "f" << f->name();
+    os << f->name();
   } else {
     os << "float("
        << std::setprecision(
@@ -223,7 +223,7 @@ void IRPrinter::handle(const Half* h) {
   }
 
   if (h->isSymbolic()) {
-    os << "h" << h->name();
+    os << h->name();
   } else {
     os << "__float2half(" << *(h->value()) << ")";
   }
@@ -245,7 +245,7 @@ void IRPrinter::handle(const Int* i) {
   }
 
   if (i->isSymbolic()) {
-    os << "i" << i->name();
+    os << i->name();
   } else {
     os << *(i->value());
   }
@@ -582,7 +582,7 @@ void IRPrinter::handle(const Allocate* a) {
   indent();
   os << a->buf_type();
   if (a->buffer()->getValType() == ValType::TensorView) {
-    os << " T" << a->buffer()->name() << "[";
+    os << " " << a->buffer()->name() << "[";
     print_inline(a->extent());
     os << "];\n";
   } else {
