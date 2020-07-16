@@ -3992,25 +3992,25 @@ void testGPU_FusionReductionScheduler() {
 }
 
 void testGPU_FusionReductionSchedulerMultiDimNonFastest() {
-  const std::vector<int> red_dims = {0, 2};
-  // Copy is because CodeGen requires int and Pytorch requires int64_t
-  // for a vector of reduction dimensions
-  const std::vector<int64_t> red_dims64 = {0, 2};
-  const std::vector<int64_t> tensor_dims_in = {5, 10, 15, 20};
-  const std::vector<int64_t> tensor_dims_out = {10, 20};
+  const std::vector<int> red_dims = {0,2};
+  const std::vector<int64_t> red_dims64 = {0,2};
+  const c10::IntArrayRef tensor_dims_in({5, 10, 15, 20});
+  const c10::IntArrayRef tensor_dims_out({10,20});
 
-  Fusion fusion;
-  FusionGuard fg(&fusion);
+  torch::jit::fuser::cuda::CudaKernel prog;
+  prog.setFusionPtr(std::make_unique<Fusion>());
+  Fusion* fusion = prog.fusion();
+  FusionGuard fg(fusion);
 
   // Set up your input tensor views
   TensorView* tv0 = makeDummyTensor(tensor_dims_in.size());
   fusion.addInput(tv0);
 
-  TensorView* tv1 = reductionOp(BinaryOpType::Add, red_dims, new Float(0), tv0);
-  fusion.addOutput(tv1);
+  TensorView* tv1 =
+      reductionOp(BinaryOpType::Add, red_dims, new Float(0), tv0);
+  fusion->addOutput(tv1);
 
-  const auto options =
-      at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
+  auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
   at::Tensor input = at::rand(tensor_dims_in, options);
   at::Tensor cg_output = at::empty(tensor_dims_out, options);
 
@@ -4018,12 +4018,13 @@ void testGPU_FusionReductionSchedulerMultiDimNonFastest() {
   const at::ArrayRef<c10::IValue> inputs({input});
 
   TORCH_CHECK(
-      cuda::scheduleReduction(&fusion, inputs),
+      cuda::scheduleReduction(prog.fusion(), inputs),
       "Reduction schedule was not generated!");
 
-  torch::jit::fuser::cuda::FusionExecutor fe;
-  fe.compileFusion(&fusion);
-  auto outputs = fe.runFusion({input});
+  prog.setDevice(0);
+
+  torch::jit::fuser::cuda::compileKernel(&prog);
+  torch::jit::fuser::cuda::runKernel(&prog, {input}, {cg_output}, c10::nullopt);
 
   auto aten_output = input.sum(red_dims64);
 
@@ -4035,36 +4036,37 @@ void testGPU_FusionReductionSchedulerMultiDimNonFastest() {
 
 void testGPU_FusionReductionSchedulerMultiDimFastest() {
   const std::vector<int> red_dims = {1, 3};
-  // Copy is because CodeGen requires int and Pytorch requires int64_t
-  // for a vector of reduction dimensions
   const std::vector<int64_t> red_dims64 = {1, 3};
-  const std::vector<int64_t> tensor_dims_in = {5, 10, 15, 20};
-  const std::vector<int64_t> tensor_dims_out = {5, 15};
+  const c10::IntArrayRef tensor_dims_in({5, 10, 15, 20});
+  const c10::IntArrayRef tensor_dims_out({5,15});
 
-  Fusion fusion;
-  FusionGuard fg(&fusion);
+  torch::jit::fuser::cuda::CudaKernel prog;
+  prog.setFusionPtr(std::make_unique<Fusion>());
+  Fusion* fusion = prog.fusion();
+  FusionGuard fg(fusion);
 
   // Set up your input tensor views
   TensorView* tv0 = makeDummyTensor(tensor_dims_in.size());
   fusion.addInput(tv0);
 
-  TensorView* tv1 = reductionOp(BinaryOpType::Add, red_dims, new Float(0), tv0);
-  fusion.addOutput(tv1);
+  TensorView* tv1 =
+      reductionOp(BinaryOpType::Add, red_dims, new Float(0), tv0);
+  fusion->addOutput(tv1);
 
-  const auto options =
-      at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
+  auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
   at::Tensor input = at::rand(tensor_dims_in, options);
 
   // Apply reduction heuristic
   const at::ArrayRef<c10::IValue> inputs({input});
 
   TORCH_CHECK(
-      cuda::scheduleReduction(&fusion, inputs),
+      cuda::scheduleReduction(prog.fusion(), inputs),
       "Reduction schedule was not generated!");
 
-  torch::jit::fuser::cuda::FusionExecutor fe;
-  fe.compileFusion(&fusion);
-  auto outputs = fe.runFusion(inputs);
+  prog.setDevice(0);
+
+  torch::jit::fuser::cuda::compileKernel(&prog);
+  torch::jit::fuser::cuda::runKernel(&prog, {input}, {cg_output}, c10::nullopt);
 
   auto aten_output = input.sum(red_dims64);
 

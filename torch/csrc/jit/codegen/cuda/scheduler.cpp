@@ -248,7 +248,6 @@ ReductionParams reductionHeuristic(
   constexpr int kMaxNumThreads = 512;
   int num_threads = kMaxNumThreads;
   int device_warp_size = at::cuda::warp_size();
-  std::cout << rparams.fastest_dim_ << " " << rparams.block_dim_x_ << " "<< rparams.block_dim_y_ << std::endl;
 
   if (rparams.block_dim_x_ < num_threads) {
     rparams.block_dim_x_ = lastPow2(rparams.block_dim_x_);
@@ -261,7 +260,6 @@ ReductionParams reductionHeuristic(
   } else {
     rparams.block_dim_y_ = num_threads;
   }
-  std::cout << rparams.block_dim_x_ << " "<< rparams.block_dim_y_ << std::endl;
 
   int block_dim_x_prev = rparams.block_dim_x_;
   rparams.block_dim_x_ = std::min(rparams.block_dim_x_, device_warp_size);
@@ -269,8 +267,6 @@ ReductionParams reductionHeuristic(
       std::min(rparams.block_dim_y_, num_threads / rparams.block_dim_x_);
   rparams.block_dim_x_ =
       std::min(block_dim_x_prev, num_threads / rparams.block_dim_y_);
-
-  std::cout << rparams.block_dim_x_ << " "<< rparams.block_dim_y_ << std::endl;
 
   // 4. Distributing work across a block
 
@@ -337,7 +333,6 @@ ReductionParams reductionHeuristic(
       rparams.cross_block_ = true;
     }
   }
-  std::cout << "Blocking: " << rparams.grid_dim_x_ << " " << rparams.grid_dim_y_ << " " << rparams.block_dim_x_ << " " << rparams.block_dim_y_ << std::endl;
   return rparams;
 }
 } // anonymous namespace
@@ -397,6 +392,8 @@ c10::optional<ReductionParams> scheduleReduction(
 
   // Evaluate Dimensions of Reduction TensorView
   auto red_ids = red_tv->domain()->domain();
+  TORCH_INTERNAL_ASSERT(red_ids.size() == 2,
+                        "We coalesced all dimensions into 2 previously.");
   int red_outputs = ExpressionEvaluator::evaluate(red_ids[0]->extent(), &eval_context)
                         .value();
   int red_elems = ExpressionEvaluator::evaluate(red_ids[1]->extent(), &eval_context)
