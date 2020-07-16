@@ -353,13 +353,16 @@ c10::optional<ReductionParams> scheduleReduction(
   TensorView* red_tv = nullptr;
   for (auto& expr : fusion->exprs(/*from_outputs_only*/ true)) {
     if (expr->type() == ExprType::ReductionOp) {
-      red_tv = expr->output(0)->as<TensorView>();;
+      red_tv = expr->output(0)->as<TensorView>();
+      ;
       break;
     }
   }
-  TORCH_INTERNAL_ASSERT(red_tv != nullptr, "Reduction TensorView wasn't found.");
+  TORCH_INTERNAL_ASSERT(
+      red_tv != nullptr, "Reduction TensorView wasn't found.");
 
-  bool red_on_fastest_dim = red_tv->axis(static_cast<int>(red_tv->nDims()) - 1)->isReduction();
+  bool red_on_fastest_dim =
+      red_tv->axis(static_cast<int>(red_tv->nDims()) - 1)->isReduction();
 
   // We coalesc all reduction axes to the right;
   size_t num_reduction_axes = coalescReduction(red_tv);
@@ -392,14 +395,17 @@ c10::optional<ReductionParams> scheduleReduction(
 
   // Evaluate Dimensions of Reduction TensorView
   auto red_ids = red_tv->domain()->domain();
-  TORCH_INTERNAL_ASSERT(red_ids.size() == 2,
-                        "We coalesced all dimensions into 2 previously.");
-  int red_outputs = ExpressionEvaluator::evaluate(red_ids[0]->extent(), &eval_context)
-                        .value();
-  int red_elems = ExpressionEvaluator::evaluate(red_ids[1]->extent(), &eval_context)
-                      .value();
+  TORCH_INTERNAL_ASSERT(
+      red_ids.size() == 2, "We coalesced all dimensions into 2 previously.");
+  int red_outputs =
+      ExpressionEvaluator::evaluate(red_ids[0]->extent(), &eval_context)
+          .value();
+  int red_elems =
+      ExpressionEvaluator::evaluate(red_ids[1]->extent(), &eval_context)
+          .value();
 
-  ReductionParams rparams = reductionHeuristic(red_elems, red_outputs, red_on_fastest_dim);
+  ReductionParams rparams =
+      reductionHeuristic(red_elems, red_outputs, red_on_fastest_dim);
 
   // Heuristic Definition
   // TODO: Need to factor in unrolling

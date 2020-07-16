@@ -4006,8 +4006,7 @@ void testGPU_FusionReductionSchedulerMultiDimNonFastest() {
   TensorView* tv0 = makeDummyTensor(tensor_dims_in.size());
   fusion.addInput(tv0);
 
-  TensorView* tv1 =
-      reductionOp(BinaryOpType::Add, red_dims, new Float(0), tv0);
+  TensorView* tv1 = reductionOp(BinaryOpType::Add, red_dims, new Float(0), tv0);
   fusion->addOutput(tv1);
 
   auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
@@ -4049,8 +4048,7 @@ void testGPU_FusionReductionSchedulerMultiDimFastest() {
   TensorView* tv0 = makeDummyTensor(tensor_dims_in.size());
   fusion.addInput(tv0);
 
-  TensorView* tv1 =
-      reductionOp(BinaryOpType::Add, red_dims, new Float(0), tv0);
+  TensorView* tv1 = reductionOp(BinaryOpType::Add, red_dims, new Float(0), tv0);
   fusion->addOutput(tv1);
 
   auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
