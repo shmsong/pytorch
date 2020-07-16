@@ -3992,10 +3992,10 @@ void testGPU_FusionReductionScheduler() {
 }
 
 void testGPU_FusionReductionSchedulerMultiDimNonFastest() {
-  const std::vector<int> red_dims = {0,2};
-  const std::vector<int64_t> red_dims64 = {0,2};
-  const c10::IntArrayRef tensor_dims_in({5, 10, 15, 20});
-  const c10::IntArrayRef tensor_dims_out({10,20});
+  const std::vector<int> red_dims = {0, 2};
+  const std::vector<int64_t> red_dims64 = {0, 2};
+  const std::vector<int64_t> tensor_dims_in({5, 10, 15, 20});
+  const std::vector<int64_t> tensor_dims_out = {10, 20};
 
   torch::jit::fuser::cuda::CudaKernel prog;
   prog.setFusionPtr(std::make_unique<Fusion>());
@@ -4037,8 +4037,8 @@ void testGPU_FusionReductionSchedulerMultiDimNonFastest() {
 void testGPU_FusionReductionSchedulerMultiDimFastest() {
   const std::vector<int> red_dims = {1, 3};
   const std::vector<int64_t> red_dims64 = {1, 3};
-  const c10::IntArrayRef tensor_dims_in({5, 10, 15, 20});
-  const c10::IntArrayRef tensor_dims_out({5,15});
+  const std::vector<int64_t> tensor_dims_in = {5, 10, 15, 20};
+  const std::vector<int64_t> tensor_dims_out = {5, 15};
 
   torch::jit::fuser::cuda::CudaKernel prog;
   prog.setFusionPtr(std::make_unique<Fusion>());
