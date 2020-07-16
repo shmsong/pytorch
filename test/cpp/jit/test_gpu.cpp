@@ -3968,7 +3968,8 @@ void testGPU_FusionReductionScheduler() {
       reductionOp(BinaryOpType::Add, {red_dim}, new Float(0), tv0);
   fusion.addOutput(tv1);
 
-  const auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
+  const auto options =
+      at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
   at::Tensor input = at::rand({bid_x, tid_x}, options);
 
   // Apply reduction heuristic
@@ -4008,7 +4009,8 @@ void testGPU_FusionReductionSchedulerMultiDimNonFastest() {
   TensorView* tv1 = reductionOp(BinaryOpType::Add, red_dims, new Float(0), tv0);
   fusion->addOutput(tv1);
 
-  const auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
+  const auto options =
+      at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
   at::Tensor input = at::rand(tensor_dims_in, options);
   at::Tensor cg_output = at::empty(tensor_dims_out, options);
 
@@ -4052,7 +4054,8 @@ void testGPU_FusionReductionSchedulerMultiDimFastest() {
   TensorView* tv1 = reductionOp(BinaryOpType::Add, red_dims, new Float(0), tv0);
   fusion->addOutput(tv1);
 
-  const auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
+  const auto options =
+      at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
   at::Tensor input = at::rand(tensor_dims_in, options);
 
   // Apply reduction heuristic

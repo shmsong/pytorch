@@ -338,13 +338,12 @@ ReductionParams reductionHeuristic(
   if (debug_env && atoi(debug_env)) {
     std::cout << "\n===== Reduction Parameters ========" << std::endl
               << "Inputs:" << std::endl
-              << "\tRed Elems: " << red_elems
-              << " Red Outputs: " << red_outputs
+              << "\tRed Elems: " << red_elems << " Red Outputs: " << red_outputs
               << " Red On Fastest Dim? " << red_on_fastest_dim << std::endl
               << "Reduction Characteristics:" << std::endl
               << "\tMultiple Reds Per Block? " << rparams.mul_reds_per_blk_
-              << " Cross Warp? " << rparams.cross_warp_
-              << " Cross Block? " << rparams.cross_block_ << std::endl
+              << " Cross Warp? " << rparams.cross_warp_ << " Cross Block? "
+              << rparams.cross_block_ << std::endl
               << "Recommended Blocking:" << std::endl
               << "\tGridX: " << rparams.grid_dim_x_
               << " GridY: " << rparams.grid_dim_y_
@@ -420,14 +419,15 @@ c10::optional<ReductionParams> scheduleReduction(
       ExpressionEvaluator::evaluate(red_ids[0]->extent(), &eval_context);
   const auto red_elems =
       ExpressionEvaluator::evaluate(red_ids[1]->extent(), &eval_context);
-  TORCH_INTERNAL_ASSERT(red_outputs != c10::nullopt,
-                        "The number of reduction outputs is expected.");
-  TORCH_INTERNAL_ASSERT(red_elems != c10::nullopt,
-                        "The number of reduction elements is expected.");
+  TORCH_INTERNAL_ASSERT(
+      red_outputs != c10::nullopt,
+      "The number of reduction outputs is expected.");
+  TORCH_INTERNAL_ASSERT(
+      red_elems != c10::nullopt,
+      "The number of reduction elements is expected.");
 
-  ReductionParams rparams =
-      reductionHeuristic(red_elems.value(), red_outputs.value(),
-                         red_on_fastest_dim);
+  ReductionParams rparams = reductionHeuristic(
+      red_elems.value(), red_outputs.value(), red_on_fastest_dim);
 
   // Heuristic Definition
   // TODO: Need to factor in unrolling
@@ -444,7 +444,7 @@ c10::optional<ReductionParams> scheduleReduction(
       // Split Grid dimension to get multiple reds per block
       red_tv->split(0, rparams.block_dim_y_);
 
-      auto red_tv_rf = red_tv->rFactor({-2,-3});
+      auto red_tv_rf = red_tv->rFactor({-2, -3});
       red_tv_rf->computeAt(red_tv, 1);
 
       red_tv->axis(0)->parallelize(ParallelType::BIDx);
