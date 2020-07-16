@@ -531,7 +531,55 @@ void IRPrinter::handle(const GridReduction* gr) {
 }
 
 void IRPrinter::handle(const GridReduction* gr) {
-  TORCH_INTERNAL_ASSERT(false, "Not implemented yet.");
+  // Check if we've lowered yet.
+  auto rop = gr->reduction_op();
+  TORCH_INTERNAL_ASSERT(
+      rop->out()->getValType() == ValType::TensorIndex,
+      "GridReduction node is a lowered node but did not find the output to be a TensorIndex.");
+
+  auto out = rop->out()->as<TensorIndex>();
+  TORCH_INTERNAL_ASSERT(out->view()->hasGridReduction());
+
+  auto vec_domain = out->view()->domain()->domain();
+
+  auto par_domains = rop->getParallelReductionDomains();
+  bool tidx = par_domains.find(ParallelType::TIDx) != par_domains.end();
+  bool tidy = par_domains.find(ParallelType::TIDy) != par_domains.end();
+  bool tidz = par_domains.find(ParallelType::TIDz) != par_domains.end();
+  bool bidx = par_domains.find(ParallelType::BIDx) != par_domains.end();
+  bool bidy = par_domains.find(ParallelType::BIDy) != par_domains.end();
+  bool bidz = par_domains.find(ParallelType::BIDz) != par_domains.end();
+
+  auto d_type = rop->out()->getDataType().value();
+  auto op_type = rop->getReductionOpType();
+  TORCH_INTERNAL_ASSERT(
+      gr->reduction_buffer()->buffer()->getValType().value() ==
+      ValType::TensorView);
+  TORCH_INTERNAL_ASSERT(
+      gr->sync_buffer()->buffer()->getValType().value() == ValType::TensorView);
+  TensorView* work_buffer = gr->reduction_buffer()->buffer()->as<TensorView>();
+  TensorView* sync_buffer = gr->sync_buffer()->buffer()->as<TensorView>();
+  indent();
+  // Since block-level reduction is already done, those dimensions
+  // with tidx/y/z being true do not participate in the grid reduction.
+  os << "reduction::gridReduce< " << (bidx ? "true" : "false") << ", "
+     << (bidy ? "true" : "false") << ", " << (bidz ? "true" : "false") << ", "
+     << (!tidx ? "true" : "false") << ", " << (!tidy ? "true" : "false") << ", "
+     << (!tidz ? "true" : "false") << " >"
+     << " ( ";
+  handle(rop->out());
+  os << ", ";
+  if (out->view()->hasBlockReduction()) {
+    os << "block_result";
+  } else {
+    handle(rop->in());
+  }
+  os << ", ";
+  os << "reduction_" << op_type << "_" << d_type;
+  os << ", &T" << work_buffer->name() << "[0]";
+  os << ", T" << sync_buffer->name() << "";
+  os << ", reinterpret_cast<" << d_type << "*>(shared_mem)";
+  os << ");\n";
 }
 
 void IRPrinter::handle(const BroadcastOp* bop) {

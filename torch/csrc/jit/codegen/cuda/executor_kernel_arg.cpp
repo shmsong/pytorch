@@ -14,12 +14,14 @@ std::unique_ptr<TensorArgAbstract> getTensorArg(
     c10::ScalarType dtype,
     int nDims) {
   switch (dtype) {
-    case (at::kFloat):
+    case (c10::ScalarType::Float):
       return getTensorArg<float>(nDims);
-    case (at::kHalf):
+    case (c10::ScalarType::Half):
       return getTensorArg<at::Half>(nDims);
-    case (at::kBool):
+    case (c10::ScalarType::Bool):
       return getTensorArg<bool>(nDims);
+    case (c10::ScalarType::Long):
+      return getTensorArg<int64_t>(nDims);
     default:
       TORCH_CHECK(
           false,
