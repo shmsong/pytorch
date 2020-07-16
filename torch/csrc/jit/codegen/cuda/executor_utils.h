@@ -3,6 +3,7 @@
 #include <ATen/core/ivalue.h>
 #include <ATen/cuda/nvrtc_stub/ATenNVRTC.h>
 
+#include <c10/core/DeviceType.h>
 #include <c10/util/Exception.h>
 
 #include <torch/csrc/jit/ir/ir.h>
@@ -22,7 +23,7 @@ std::string kernelPreamble();
 bool validateKernelArgTensor(
     const at::Tensor& arg,
     const Val* param,
-    int device_index,
+    c10::Device device,
     std::stringstream& msg);
 
 bool validateKernelArgScalar(
@@ -33,14 +34,14 @@ bool validateKernelArgScalar(
 bool validateKernelArg(
     const c10::IValue& arg,
     const Val* param,
-    int device_index,
+    c10::Device device,
     std::stringstream& msg);
 
 void validateKernelArgs(
     Fusion* fusion,
     const at::ArrayRef<IValue>& inputs,
     const std::vector<at::Tensor>& outputs,
-    int device);
+    c10::Device device);
 
 struct NvrtcFunction {
  public:

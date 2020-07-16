@@ -329,12 +329,12 @@ GridReduction::GridReduction(
     : Expr(ExprType::GridReduction),
       reduction_op_(_reduction_op),
       reduction_buffer_(_reduction_buffer),
-      sync_buffer_(_sync_buffer) {
-  TORCH_INTERNAL_ASSERT(false, "Not implemented yet.");
-}
+      sync_buffer_(_sync_buffer) {}
 
 bool GridReduction::sameAs(const GridReduction* other) const {
-  TORCH_INTERNAL_ASSERT(false, "Not implemented yet.");
+  return reduction_op_->sameAs(other->reduction_op()) &&
+      reduction_buffer_->sameAs(other->reduction_buffer()) &&
+      sync_buffer_->sameAs(other->sync_buffer());
 }
 
 IterDomain::IterDomain(
@@ -1058,13 +1058,13 @@ Allocate::Allocate(Val* _buffer, MemoryType _memory_type, Val* _size)
       buffer_(_buffer),
       memory_type_(_memory_type),
       size_(_size) {
-  if (size_ == nullptr) {
+  if (size_ != nullptr) {
     TORCH_INTERNAL_ASSERT(
         size_->isOneInt() ||
             buffer_->getValType().value() == ValType::TensorView,
         "Cannot allocate a non-TensorView buffer with a size != 1, received buffer: ",
         buffer_);
-
+  } else {
     if (buffer_->getValType().value() == ValType::TensorView) {
       auto tv = buffer_->as<TensorView>();
       size_ = tv->nDims() == 0 ? new Int(1) : tv->axis(0)->extent();

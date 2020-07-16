@@ -42,7 +42,10 @@ void IRPrinter::handle(const Expr* e) {
   OptInConstDispatch::handle(e);
 }
 
-void IRPrinter::printHeader(Fusion* fusion, const std::string& kernel_name_) {
+void IRPrinter::printHeader(
+    Fusion* fusion,
+    const std::string& kernel_name_,
+    const std::vector<Val*>& global_buffers) {
   os << "__global__ void " << kernel_name_ << "(";
 
   std::vector<Val*> vals;
@@ -51,6 +54,10 @@ void IRPrinter::printHeader(Fusion* fusion, const std::string& kernel_name_) {
     vals.push_back(val);
   }
   for (auto val : fusion->outputs()) {
+    vals.push_back(val);
+  }
+
+  for (auto val : global_buffers) {
     vals.push_back(val);
   }
 
@@ -78,10 +85,6 @@ void IRPrinter::printHeader(Fusion* fusion, const std::string& kernel_name_) {
 
   if (fusion->hasRNG())
     os << ", unsigned long long seed, unsigned long long offset";
-
-  if (fusion->hasGridReduction()) {
-    os << ", void* work_buf, unsigned* sync_flags";
-  }
 
   os << "){\n";
   indent_size++;
@@ -438,6 +441,7 @@ void IRPrinter::handle(const ReductionOp* rop) {
   bool has_grid_reduce = out->view()->hasGridReduction();
 
   if (!has_block_reduce && !has_grid_reduce) {
+    FusionGuard fg(rop->fusion());
     handle(new BinaryOp(rop->getReductionOpType(), out, out, rop->in()));
     return;
   }
@@ -476,33 +480,58 @@ void IRPrinter::handle(const ReductionOp* rop) {
     os << ", reinterpret_cast<" << d_type << "*>(shared_mem)";
     os << ");\n";
   }
-  if (has_grid_reduce) {
-    indent();
-    // Since block-level reduction is already done, those dimensions
-    // with tidx/y/z being true do not participate in the grid reduction.
-    os << "reduction::gridReduce< " << (bidx ? "true" : "false") << ", "
-       << (bidy ? "true" : "false") << ", " << (bidz ? "true" : "false") << ", "
-       << (!tidx ? "true" : "false") << ", " << (!tidy ? "true" : "false")
-       << ", " << (!tidz ? "true" : "false") << " >"
-       << " ( ";
-    handle(rop->out());
-    os << ", ";
-    if (has_block_reduce) {
-      os << block_result;
-    } else {
-      handle(rop->in());
-    }
-    os << ", ";
-    os << "reduction_" << op_type << "_" << d_type;
-    os << ", static_cast<" << d_type << "*>(work_buf)";
-    os << ", sync_flags";
-    os << ", reinterpret_cast<" << d_type << "*>(shared_mem)";
-    os << ");\n";
-  }
 }
 
 void IRPrinter::handle(const GridReduction* gr) {
-  TORCH_INTERNAL_ASSERT(false, "Not implemented yet.");
+  // Check if we've lowered yet.
+  auto rop = gr->reduction_op();
+  TORCH_INTERNAL_ASSERT(
+      rop->out()->getValType() == ValType::TensorIndex,
+      "GridReduction node is a lowered node but did not find the output to be a TensorIndex.");
+
+  auto out = rop->out()->as<TensorIndex>();
+  TORCH_INTERNAL_ASSERT(out->view()->hasGridReduction());
+
+  auto vec_domain = out->view()->domain()->domain();
+
+  auto par_domains = rop->getParallelReductionDomains();
+  bool tidx = par_domains.find(ParallelType::TIDx) != par_domains.end();
+  bool tidy = par_domains.find(ParallelType::TIDy) != par_domains.end();
+  bool tidz = par_domains.find(ParallelType::TIDz) != par_domains.end();
+  bool bidx = par_domains.find(ParallelType::BIDx) != par_domains.end();
+  bool bidy = par_domains.find(ParallelType::BIDy) != par_domains.end();
+  bool bidz = par_domains.find(ParallelType::BIDz) != par_domains.end();
+
+  auto d_type = rop->out()->getDataType().value();
+  auto op_type = rop->getReductionOpType();
+  TORCH_INTERNAL_ASSERT(
+      gr->reduction_buffer()->buffer()->getValType().value() ==
+      ValType::TensorView);
+  TORCH_INTERNAL_ASSERT(
+      gr->sync_buffer()->buffer()->getValType().value() == ValType::TensorView);
+  TensorView* work_buffer = gr->reduction_buffer()->buffer()->as<TensorView>();
+  TensorView* sync_buffer = gr->sync_buffer()->buffer()->as<TensorView>();
+  indent();
+  // Since block-level reduction is already done, those dimensions
+  // with tidx/y/z being true do not participate in the grid reduction.
+  os << "reduction::gridReduce< " << (bidx ? "true" : "false") << ", "
+     << (bidy ? "true" : "false") << ", " << (bidz ? "true" : "false") << ", "
+     << (!tidx ? "true" : "false") << ", " << (!tidy ? "true" : "false") << ", "
+     << (!tidz ? "true" : "false") << " >"
+     << " ( ";
+  handle(rop->out());
+  os << ", ";
+  if (out->view()->hasBlockReduction()) {
+    os << "block_result";
+  } else {
+    handle(rop->in());
+  }
+  os << ", ";
+  os << "reduction_" << op_type << "_" << d_type;
+  os << ", &T" << work_buffer->name() << "[0]";
+  os << ", T" << sync_buffer->name() << "";
+  os << ", reinterpret_cast<" << d_type << "*>(shared_mem)";
+  os << ");\n";
 }
 
 void IRPrinter::handle(const BroadcastOp* bop) {
@@ -615,13 +644,14 @@ void IRPrinter::handle(const Allocate* a) {
 
     switch (tv->getMemoryType()) {
       case (MemoryType::Global):
-        os << "// Allocate global tensor " << a->buffer_type() << " ";
+        os << "// Allocate global tensor " << a->buffer_type() << " T"
+           << tv->name() << "[";
         if (a->size() == nullptr) {
           handle(tv);
         } else {
           print_inline(a->size());
         }
-        os << ";";
+        os << "];\n";
         break;
       case (MemoryType::Shared):
         os << "__shared__ ";
@@ -690,6 +720,7 @@ class ReductionOps : OptOutDispatch {
 } // namespace
 
 void IRPrinter::printReductionOps(Fusion* fusion) {
+  FusionGuard fg(fusion);
   auto a = new NamedScalar("a", DataType::Null);
   auto b = new NamedScalar("b", DataType::Null);
   for (auto rop_pair : ReductionOps::get(fusion)) {
@@ -701,6 +732,7 @@ void IRPrinter::printReductionOps(Fusion* fusion) {
        << d_type << "& a, "
        << "const " << d_type << " b) {\n";
     indent_size++;
+
     handle(new BinaryOp(op_type, a, a, b));
     indent_size--;
     indent();
@@ -710,10 +742,18 @@ void IRPrinter::printReductionOps(Fusion* fusion) {
 
 void IRPrinter::printKernel(
     const std::vector<Expr*>& exprs,
-    const std::string& kernel_name) {
+    const std::string& kernel_name,
+    const std::vector<Val*> global_buffers) {
   Fusion* fusion = FusionGuard::getCurFusion();
+  if (exprs.empty())
+    return;
+  TORCH_INTERNAL_ASSERT(
+      exprs[0]->fusion() == FusionGuard::getCurFusion(),
+      "Incorrect fusion set during printKernel.");
+
   printReductionOps(fusion);
-  printHeader(fusion, kernel_name);
+  printHeader(fusion, kernel_name, global_buffers);
+
   for (auto* expr : exprs) {
     handle(expr);
   }

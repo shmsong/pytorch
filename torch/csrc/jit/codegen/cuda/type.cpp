@@ -40,7 +40,7 @@ static const char* data_type2string(DataType t) {
     case DataType::Half:
       return "__half";
     case DataType::Int:
-      return "size_t";
+      return "int64_t";
     case DataType::Null:
       return "nullptr";
     default:
@@ -333,23 +333,6 @@ static const char* memory_type2string(MemoryType t) {
   return nullptr;
 }
 
-static DataType at_type2data_type(at::ScalarType t) {
-  switch (t) {
-    case at::ScalarType::Bool:
-      return DataType::Bool;
-    case at::ScalarType::Float:
-      return DataType::Float;
-    case at::ScalarType::Half:
-      return DataType::Half;
-    case at::ScalarType::Int:
-      return DataType::Int;
-    default:
-      break;
-  }
-  TORCH_INTERNAL_ASSERT(false, "No data type found for scalar type.");
-  return DataType::Null;
-}
-
 static const char* thread_size2string(ParallelType t) {
   switch (t) {
     case ParallelType::BIDz:
@@ -404,7 +387,37 @@ bool is_logical_op(const BinaryOpType& bot) {
 }
 
 DataType aten_to_data_type(const at::ScalarType& scalar_type) {
-  return at_type2data_type(scalar_type);
+  switch (scalar_type) {
+    case at::ScalarType::Bool:
+      return DataType::Bool;
+    case at::ScalarType::Float:
+      return DataType::Float;
+    case at::ScalarType::Half:
+      return DataType::Half;
+    case at::ScalarType::Long:
+      return DataType::Int;
+    default:
+      break;
+  }
+  TORCH_INTERNAL_ASSERT(false, "No data type found for scalar type.");
+  return DataType::Null;
+}
+
+at::ScalarType data_type_to_aten(const DataType& data_type) {
+  switch (data_type) {
+    case DataType::Bool:
+      return at::ScalarType::Bool;
+    case DataType::Float:
+      return at::ScalarType::Float;
+    case DataType::Half:
+      return at::ScalarType::Half;
+    case DataType::Int:
+      return at::ScalarType::Long;
+    default:
+      break;
+  }
+  TORCH_INTERNAL_ASSERT(false, "No data type found for scalar type.");
+  return at::ScalarType::Undefined;
 }
 
 TORCH_CUDA_API std::ostream& operator<<(

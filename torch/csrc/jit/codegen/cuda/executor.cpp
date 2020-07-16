@@ -1,10 +1,11 @@
 #include <torch/csrc/jit/codegen/cuda/executor_kernel_arg.h>
-#include <torch/csrc/jit/codegen/cuda/expr_evaluator.h>
 #include <torch/csrc/jit/codegen/cuda/ir_all_nodes.h>
 #include <torch/csrc/jit/codegen/cuda/iter_visitor.h>
 #include <torch/csrc/jit/codegen/cuda/kernel.h>
 
 #include <torch/csrc/jit/codegen/cuda/executor.h>
+
+#include <c10/core/DeviceGuard.h>
 
 namespace torch {
 namespace jit {
@@ -13,18 +14,17 @@ namespace cuda {
 
 int FusionExecutor::fusion_id_counter = 0;
 
-std::string FusionExecutor::getKernel() {
+std::string FusionExecutor::getStructuredCode(std::string kernel) {
   // generating cuda code;
   std::string code = std::string("namespace ") + FusionExecutor::Namespace() +
-      " {\n" + executor_utils::kernelPreamble() +
-      GPULower(&fusion_).getKernel(KernelName()) + "}\n";
+      " {\n" + executor_utils::kernelPreamble() + kernel + "}\n";
 
   const char* debug_env = getenv("PYTORCH_CUDA_FUSER_DEBUG");
   if (debug_env && atoi(debug_env)) {
     std::cout << "\n==== codegen output for kernel: " << KernelName()
               << " ====" << std::endl
               << code << std::endl
-              << "====================================" << std::endl;
+              << "=====*===============================" << std::endl;
   }
 
   return code;
@@ -34,31 +34,40 @@ void FusionExecutor::compileFusion(Fusion* fusion) {
   TORCH_INTERNAL_ASSERT(
       !fusion->outputs().empty(), "No output found for this kernel, aborting.");
 
+  for (auto out : fusion->outputs())
+    TORCH_INTERNAL_ASSERT(
+        out->getValType() == ValType::TensorView,
+        "Output types from fusions that are not tensors are not supported at this point.");
+
   fusion_ = *fusion;
   FusionGuard fg(&fusion_);
 
   fusion_id = ++fusion_id_counter;
   has_random = fusion->hasRNG();
+  lowered = GPULower(&fusion_);
+
+  auto code = getStructuredCode(lowered.getKernel(KernelName()));
 
   compiled_kernel = executor_utils::nvrtcCompile(
-      getKernel(), (Namespace() + "::" + KernelName()).c_str(), fusion_id);
+      code, (Namespace() + "::" + KernelName()).c_str(), fusion_id);
 }
 
-LaunchParams FusionExecutor::computeLaunchParams(
+namespace {
+EvaluationContext bindInputs(
     const at::ArrayRef<IValue>& aten_inputs,
-    const LaunchParams& launch_constraints) {
+    Fusion* fusion) {
   TORCH_INTERNAL_ASSERT(
-      fusion_.inputs().size() == aten_inputs.size(),
+      fusion->inputs().size() == aten_inputs.size(),
       "Something went wrong configuring launch. Inputs no longer match.");
 
-  auto fusion_inputs = fusion_.inputs();
-  EvaluationContext ec(&fusion_);
+  auto fusion_inputs = fusion->inputs();
+  EvaluationContext ec(fusion);
 
   // This should probably move to EvaluationContext as we may want to bind input
   // values frequently. Bind fusion input values to runtime values.
-  for (size_t i = 0; i < fusion_.inputs().size(); i++) {
-    if (fusion_.inputs()[i]->getValType() == ValType::TensorView) {
-      TensorView* cg_tensor = fusion_.inputs()[i]->as<TensorView>();
+  for (size_t i = 0; i < fusion->inputs().size(); i++) {
+    if (fusion->inputs()[i]->getValType() == ValType::TensorView) {
+      TensorView* cg_tensor = fusion->inputs()[i]->as<TensorView>();
 
       TORCH_INTERNAL_ASSERT(
           aten_inputs[i].isTensor(),
@@ -77,12 +86,49 @@ LaunchParams FusionExecutor::computeLaunchParams(
       }
     }
   }
+  return std::move(ec);
+}
 
+at::Tensor inferAndAlloc(
+    TensorView* tv,
+    EvaluationContext& ec,
+    const CompileOptions& options,
+    bool zero_init = false) {
+  std::vector<int64_t> sizes;
+  for (auto id : tv->getRootDomain()) {
+    auto infered_val = ExpressionEvaluator::evaluate(id->rawExtent(), &ec);
+    TORCH_INTERNAL_ASSERT(
+        infered_val.has_value(),
+        "Could not launch kernel as program could not infer ",
+        id->rawExtent(),
+        " for the buffer ",
+        tv);
+    sizes.push_back(infered_val.value());
+  }
+
+  auto at_type = data_type_to_aten(tv->getDataType().value());
+  auto tensor_options =
+      at::TensorOptions().dtype(at_type).device(options.device);
+
+  if (zero_init) {
+    c10::IntArrayRef isizes(sizes);
+    return at::zeros(isizes, tensor_options);
+  } else {
+    c10::IntArrayRef isizes(sizes);
+    return at::empty(isizes, tensor_options);
+  }
+}
+} // namespace
+
+LaunchParams FusionExecutor::computeLaunchParams(
+    const at::ArrayRef<IValue>& aten_inputs,
+    const LaunchParams& launch_constraints,
+    EvaluationContext& ec) {
   LaunchParams launch_params;
 
   // Grab all values that are actually used in the fusion
   auto unordered_vals = DependencyCheck::getAllValsBetween(
-      {fusion_inputs.begin(), fusion_inputs.end()}, fusion_.outputs());
+      {fusion_.inputs().begin(), fusion_.inputs().end()}, fusion_.outputs());
 
   // Lets collect all IterDomains that are bound to a thread binding
   std::unordered_map<ParallelType, std::vector<IterDomain*>, TypeHash>
@@ -157,6 +203,29 @@ LaunchParams FusionExecutor::computeLaunchParams(
   return launch_params;
 }
 
+std::vector<at::Tensor> FusionExecutor::allocGlobalVals(
+    const at::ArrayRef<IValue>& aten_inputs,
+    EvaluationContext& ec) {
+  std::vector<at::Tensor> global_buffers;
+  for (auto alloc : lowered.global_allocations()) {
+    TORCH_INTERNAL_ASSERT(
+        alloc->buffer()->getValType() == ValType::TensorView,
+        "Cannot global buffers that are not tensors.");
+    global_buffers.push_back(
+        inferAndAlloc(alloc->buffer()->as<TensorView>(), ec, options_, false));
+  }
+
+  for (auto alloc : lowered.sync_allocations()) {
+    TORCH_INTERNAL_ASSERT(
+        alloc->buffer()->getValType() == ValType::TensorView,
+        "Cannot global buffers that are not tensors.");
+    global_buffers.push_back(
+        inferAndAlloc(alloc->buffer()->as<TensorView>(), ec, options_, true));
+  }
+
+  return global_buffers;
+}
+
 std::vector<at::Tensor> FusionExecutor::runFusion(
     const at::ArrayRef<IValue> inputs,
     const std::vector<at::Tensor>& outputs,
@@ -170,16 +239,21 @@ std::vector<at::Tensor> FusionExecutor::runFusion(
       &fusion_, inputs, outputs, options_.device);
 
   const auto prior_device = at::cuda::current_device();
-  at::cuda::set_device(options_.device);
+  c10::DeviceGuard dg(options_.device);
   auto stream = at::cuda::getCurrentCUDAStream();
 
   TORCH_INTERNAL_ASSERT(!outputs.empty(), "No outputs set for test kernel.");
 
+  EvaluationContext evaluation_context = bindInputs(inputs, &fusion_);
+
+  LaunchParams launch_params =
+      computeLaunchParams(inputs, launch_constraints, evaluation_context);
+
   KernelArgumentHolder kernel_arguments;
   kernel_arguments.appendArgs(inputs);
   kernel_arguments.appendArgs(outputs);
-
-  LaunchParams launch_params = computeLaunchParams(inputs, launch_constraints);
+  auto buffers = allocGlobalVals(inputs, evaluation_context);
+  kernel_arguments.appendArgs(buffers);
 
   if (has_random) {
     const auto rand_offset = 4 *
@@ -188,26 +262,6 @@ std::vector<at::Tensor> FusionExecutor::runFusion(
     kernel_arguments.appendPhilox(rand_offset);
   }
 
-  // TODO SUPPORT GRID REDUCTIONS:
-  // // When the kernel has global reductions, the kernel needs two
-  // // additional temporary buffers, one for intermediate results and
-  // // another for synchronization among thread blocks.
-  // if (fusion_.hasGridReduction()) {
-  //   auto temp_buf_type = at::kFloat;
-  //   auto temp_buf_sizes = gridReductionTempBufferSizes(entry);
-  //   auto options =
-  //       at::TensorOptions().dtype(temp_buf_type).device(at::kCUDA, 0);
-  //   at::Tensor reduction_work_buffer = at::empty(
-  //       {(long)(temp_buf_sizes[0] / c10::elementSize(temp_buf_type))},
-  //       options);
-  //   kernel_args.push(reduction_work_buffer);
-  //   at::Tensor sync_flags = at::zeros(
-  //       {(long)(temp_buf_sizes[1] / c10::elementSize(temp_buf_type))},
-  //       options);
-  //   kernel_args.push(sync_flags);
-  // }
-
-  // launch kernel;
   AT_CUDA_DRIVER_CHECK(at::globalContext().getNVRTC().cuLaunchKernel(
       compiled_kernel.function,
       launch_params.gdimx(),
@@ -220,9 +274,7 @@ std::vector<at::Tensor> FusionExecutor::runFusion(
       stream,
       kernel_arguments.getBuffer(),
       nullptr));
-
-  // // Resets device (see at::DeviceGuard notes above)
-  // at::cuda::set_device(prior_device);
+  AT_CUDA_CHECK(cudaStreamSynchronize(stream));
 
   return std::vector<at::Tensor>(outputs);
 }

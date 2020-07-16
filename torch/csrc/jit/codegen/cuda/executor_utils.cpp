@@ -5,6 +5,7 @@
 
 #include <torch/csrc/jit/resource_guard.h>
 
+#include <torch/csrc/jit/codegen/cuda/ir_all_nodes.h>
 #include <torch/csrc/jit/codegen/cuda/kernel_resource_strings.h>
 
 #include <torch/csrc/jit/codegen/cuda/executor_utils.h>
@@ -30,7 +31,7 @@ std::string kernelPreamble() {
 bool validateKernelArgTensor(
     const at::Tensor& arg,
     const Val* param,
-    int device_index,
+    c10::Device device,
     std::stringstream& msg) {
   // Arg is a tensor. Param must be a tensor too.
   if (*param->getValType() != ValType::TensorView) {
@@ -53,7 +54,7 @@ bool validateKernelArgTensor(
     return false;
   }
 
-  if (arg.device().index() != device_index) {
+  if (arg.device() != device) {
     msg << "Argument is on device that is not compiled for";
     return false;
   }
@@ -115,12 +116,12 @@ bool validateKernelArgScalar(
 bool validateKernelArg(
     const c10::IValue& arg,
     const Val* param,
-    int device_index,
+    c10::Device device,
     std::stringstream& msg) {
   if (arg.type()->kind() != c10::TypeKind::TensorType) {
     return validateKernelArgScalar(arg.type(), param, msg);
   } else {
-    return validateKernelArgTensor(arg.toTensor(), param, device_index, msg);
+    return validateKernelArgTensor(arg.toTensor(), param, device, msg);
   }
 }
 
@@ -128,7 +129,7 @@ void validateKernelArgs(
     Fusion* fusion,
     const at::ArrayRef<IValue>& inputs,
     const std::vector<at::Tensor>& outputs,
-    int device) {
+    c10::Device device) {
   // This is necessary as we were traversing the fusion graph later in the check
   FusionGuard fg(fusion);
   // Check inputs

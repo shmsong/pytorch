@@ -128,6 +128,7 @@ DataType promote_type(const DataType& t1, const DataType& t2);
 bool is_logical_op(const BinaryOpType& bot);
 
 DataType aten_to_data_type(const at::ScalarType& scalar_type);
+at::ScalarType data_type_to_aten(const DataType& data_type);
 
 TORCH_CUDA_API std::ostream& operator<<(std::ostream&, const ValType);
 TORCH_CUDA_API std::ostream& operator<<(std::ostream&, const DataType);

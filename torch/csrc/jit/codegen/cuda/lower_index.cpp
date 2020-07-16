@@ -1,3 +1,4 @@
+#include <torch/csrc/jit/codegen/cuda/arith.h>
 #include <torch/csrc/jit/codegen/cuda/index_compute.h>
 #include <torch/csrc/jit/codegen/cuda/ir_iostream.h>
 #include <torch/csrc/jit/codegen/cuda/lower_utils.h>
@@ -138,26 +139,94 @@ void IndexLowering::handle(ReductionOp* rop) {
       ir_utils::isTVOp(rop),
       "Cannot have a reduction operation on something other than a tensor view, but received ",
       rop);
+
+  auto out_tv = ir_utils::asTV(rop->out());
+
+  bool is_block_reduce = out_tv->hasBlockReduction();
+
+  bool is_grid_reduce = out_tv->hasGridReduction();
+
+  // If we do a grid reduction we can't have a reduction axis that is not bound
+  // to a grid or block dim ()
+  if (is_grid_reduce) {
+    TORCH_INTERNAL_ASSERT(
+        std::none_of(
+            out_tv->domain()->domain().begin(),
+            out_tv->domain()->domain().end(),
+            [](IterDomain* id) {
+              return !id->isThread() && id->isReduction();
+            }),
+        "Found a reduction stage that has both a non-parallelized reduction and a grid reduction.",
+        " This is not supported, please use rfactor to do the serialized reduction first, then the grid reduction.");
+  }
   auto loops = scope_utils::getLoops(active_scope_expr);
 
-  bool is_private_reduce =
-      std::none_of(loops.begin(), loops.end(), [](ForLoop* fl) {
-        return fl->iter_domain()->isThread() &&
-            fl->iter_domain()->isReduction();
-      });
-
-  TensorIndex* out = Index::getConsumerIndex(ir_utils::asTV(rop->out()), loops);
-
+  TensorIndex* out = Index::getConsumerIndex(out_tv, loops);
   Val* in = rop->in();
-  if (ir_utils::isTV(in))
-    in = Index::getProducerIndex(
-        ir_utils::asTV(in),
-        ir_utils::asTV(rop->out()),
-        scope_utils::getLoops(active_scope_expr));
+  in = Index::getProducerIndex(
+      ir_utils::asTV(in), ir_utils::asTV(rop->out()), loops);
 
-  if (!is_private_reduce) {
-    pushBack(new ReductionOp(rop->getReductionOpType(), rop->init(), out, in));
-  } else {
+  ReductionOp* block_reduction = nullptr;
+  if (is_block_reduce) {
+    block_reduction =
+        new ReductionOp(rop->getReductionOpType(), rop->init(), out, in);
+    pushBack(block_reduction);
+  }
+
+  if (is_grid_reduce) {
+    std::vector<IterDomain*> buffer_ids(out_tv->domain()->domain());
+    buffer_ids.erase(
+        std::remove_if(
+            buffer_ids.begin(),
+            buffer_ids.end(),
+            [](IterDomain* id) {
+              return id->isReduction() & !id->isBlockDim();
+            }),
+        buffer_ids.end());
+
+    Val* buffer_size =
+        buffer_ids.empty() ? new Int(1) : buffer_ids[0]->rawExtent();
+    for (size_t i = 1; i < buffer_ids.size(); i++) {
+      buffer_size = mul(buffer_size, buffer_ids[i]->rawExtent());
+    }
+
+    std::vector<IterDomain*> sync_ids(out_tv->domain()->domain());
+    sync_ids.erase(
+        std::remove_if(
+            sync_ids.begin(),
+            sync_ids.end(),
+            [](IterDomain* id) {
+              return id->isReduction() || !id->isBlockDim();
+            }),
+        sync_ids.end());
+
+    Val* sync_size = sync_ids.empty() ? new Int(1) : sync_ids[0]->rawExtent();
+    for (size_t i = 1; i < sync_ids.size(); i++) {
+      sync_size = mul(sync_size, sync_ids[i]->rawExtent());
+    }
+
+    IterDomain* buffer_id = new IterDomain(new Int(0), buffer_size);
+    TensorView* reduce_buffer_tv = new TensorView(
+        new TensorDomain({buffer_id}), out->getDataType().value());
+
+    IterDomain* sync_id = new IterDomain(new Int(0), sync_size);
+    TensorView* reduce_sync_tv =
+        new TensorView(new TensorDomain({sync_id}), DataType::Int);
+
+    auto reduce_buffer = new Allocate(reduce_buffer_tv, MemoryType::Global);
+    auto sync_buffer = new Allocate(reduce_sync_tv, MemoryType::Global);
+
+    pushBack(reduce_buffer);
+    pushBack(sync_buffer);
+    pushBack(new GridReduction(
+        block_reduction == nullptr
+            ? new ReductionOp(rop->getReductionOpType(), rop->init(), out, in)
+            : block_reduction,
+        reduce_buffer,
+        sync_buffer));
+  }
+
+  if (!is_block_reduce && !is_grid_reduce) {
     pushBack(new BinaryOp(rop->getReductionOpType(), out, out, in));
   }
 }
