@@ -470,6 +470,12 @@ TORCH_CUDA_API std::ostream& operator<<(
   return out << broadcast_type2string(bt);
 }
 
+TORCH_CUDA_API std::ostream& operator<<(
+    std::ostream& out,
+    const BroadcastType bt) {
+  return out << broadcast_type2string(bt);
+}
+
 TORCH_CUDA_API c10::optional<std::string> inline_op_str(
     const UnaryOpType uotype) {
   const char* str = unary_op_type_inline_op2string(uotype);
