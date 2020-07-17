@@ -285,13 +285,14 @@ class TORCH_CUDA_API IterDomain : public Val {
       ParallelType _parallel_method = ParallelType::Serial,
       bool _reduction_domain = false,
       bool _rfactor_domain = false,
-      bool _broadcast_domain = false);
+      BroadcastType _broadcast_domain = BroadcastType::Null);
 
   IterDomain(const IterDomain* src, IrCloner* ir_cloner);
 
   bool sameAs(const IterDomain* const other) const;
 
   // Returns a new IterDomain matching properties of this
+  // TODO: parallel_method->getParallelType
   IterDomain* clone() const {
     return new IterDomain(
         start(),
@@ -299,7 +300,7 @@ class TORCH_CUDA_API IterDomain : public Val {
         parallel_method(),
         isReduction(),
         isRFactorProduct(),
-        isBroadcast());
+        getBroadcastType());
   }
 
   static IterDomain* merge(IterDomain* outer, IterDomain* inner);
@@ -317,7 +318,7 @@ class TORCH_CUDA_API IterDomain : public Val {
   }
 
   bool isBroadcast() const {
-    return is_broadcast_domain_;
+    return getBroadcastType() != BroadcastType::Null;
   }
 
   bool isParallelized() const {
@@ -366,6 +367,10 @@ class TORCH_CUDA_API IterDomain : public Val {
     return parallel_method_;
   }
 
+  BroadcastType getBroadcastType() const {
+    return broadcast_type_;
+  }
+
   Val* start() const {
     return start_;
   }
@@ -386,7 +391,7 @@ class TORCH_CUDA_API IterDomain : public Val {
   ParallelType parallel_method_ = ParallelType::Serial;
   bool is_reduction_domain_ = false;
   bool is_rfactor_domain_ = false;
-  bool is_broadcast_domain_ = false;
+  BroadcastType broadcast_type_ = BroadcastType::Null;
 };
 
 /*

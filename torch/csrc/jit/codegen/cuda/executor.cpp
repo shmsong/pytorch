@@ -45,11 +45,11 @@ void FusionExecutor::compileFusion(Fusion* fusion) {
   fusion_id = ++fusion_id_counter;
   has_random = fusion->hasRNG();
   lowered = GPULower(&fusion_);
-
-  auto code = getStructuredCode(lowered.getKernel(KernelName()));
+  auto kernel = lowered.getKernel(KernelName());
+  auto structured_code = getStructuredCode(lowered.getKernel(KernelName()));
 
   compiled_kernel = executor_utils::nvrtcCompile(
-      code, (Namespace() + "::" + KernelName()).c_str(), fusion_id);
+      structured_code, (Namespace() + "::" + KernelName()).c_str(), fusion_id);
 }
 
 namespace {

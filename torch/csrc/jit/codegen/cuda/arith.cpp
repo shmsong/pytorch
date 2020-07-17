@@ -48,10 +48,10 @@ TensorView* newOutputTV(const std::vector<Val*>& vals, DataType dtype) {
       "Tried to create new output TensorView but received empty list.");
 
   std::vector<IterDomain*> out_domain(
-      tvs[0]->domain()->noReductions().size(), nullptr);
+      TensorDomain::noReductions(tvs[0]->getRootDomain()).size(), nullptr);
 
   for (auto tv : tvs) {
-    auto dom = tv->domain()->noReductions();
+    auto dom = TensorDomain::noReductions(tv->getRootDomain());
     TORCH_INTERNAL_ASSERT(
         dom.size() == out_domain.size(),
         "Invalid tensor view found while producing and output, it has ",
@@ -66,17 +66,28 @@ TensorView* newOutputTV(const std::vector<Val*>& vals, DataType dtype) {
       out_domain[i] = new IterDomain(dom[i]->start(), dom[i]->extent());
     }
   }
-
-  std::transform(
-      out_domain.begin(),
-      out_domain.end(),
-      out_domain.begin(),
-      [](IterDomain* dom) {
-        if (dom == nullptr)
-          return new IterDomain(
-              new Int(0), new Int(1), ParallelType::Serial, false, false, true);
-        return dom;
-      });
+  for (size_t dim_i = 0; dim_i < out_domain.size(); dim_i++) {
+    if (out_domain[dim_i] == nullptr) {
+      BroadcastType bcast_type = BroadcastType::WithoutStride;
+      for (size_t inp_i = 0; inp_i < tvs.size(); inp_i++) {
+        auto dim =
+            TensorDomain::noReductions(tvs[inp_i]->getRootDomain())[dim_i];
+        // If there's an unresolved bcast dim and it came from a strided dim,
+        // assume output of it should be strided too
+        if (dim->getBroadcastType() == BroadcastType::WithStride) {
+          bcast_type = BroadcastType::WithStride;
+          break;
+        }
+      }
+      out_domain[dim_i] = new IterDomain(
+          new Int(0),
+          new Int(1),
+          ParallelType::Serial,
+          false,
+          false,
+          bcast_type);
+    }
+  }
 
   return new TensorView(new TensorDomain(out_domain), dtype);
 }
@@ -433,7 +444,7 @@ static TensorView* newForReduction(
         ParallelType::Serial,
         isReduction,
         false,
-        id->isBroadcast()));
+        id->getBroadcastType()));
   }
 
   TensorDomain* td = new TensorDomain(new_domain);
@@ -528,7 +539,12 @@ TORCH_CUDA_API TensorView* broadcast(
   while (ibdim < is_broadcast_dim.size()) {
     if (is_broadcast_dim[ibdim]) {
       out_domain.push_back(new IterDomain(
-          new Int(0), new Int(1), ParallelType::Serial, false, false, true));
+          new Int(0),
+          new Int(1),
+          ParallelType::Serial,
+          false,
+          false,
+          BroadcastType::WithoutStride));
     } else {
       // Don't propagate reduction IDs through arith ops.
       out_domain.push_back(inp_domain[iinp]);

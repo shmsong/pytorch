@@ -333,6 +333,20 @@ static const char* memory_type2string(MemoryType t) {
   return nullptr;
 }
 
+static const char* broadcast_type2string(BroadcastType t) {
+  switch (t) {
+    case BroadcastType::Null:
+      return "";
+    case BroadcastType::WithStride:
+      return "sb";
+    case BroadcastType::WithoutStride:
+      return "b";
+    default:
+      TORCH_INTERNAL_ASSERT(false, "No string found for Broadcast type.");
+      return nullptr;
+  }
+}
+
 static const char* thread_size2string(ParallelType t) {
   switch (t) {
     case ParallelType::BIDz:
@@ -465,6 +479,12 @@ TORCH_CUDA_API std::ostream& operator<<(
     std::ostream& out,
     const MemoryType mtype) {
   return out << memory_type2string(mtype);
+}
+
+TORCH_CUDA_API std::ostream& operator<<(
+    std::ostream& out,
+    const BroadcastType bt) {
+  return out << broadcast_type2string(bt);
 }
 
 TORCH_CUDA_API c10::optional<std::string> inline_op_str(

@@ -76,8 +76,7 @@ class CudaFusionManager {
     TORCH_CHECK(
         kernel_cache_.count(kernel_id) != 0, "kernel id not recognized");
 
-    if (auto cuda_kernel_opt =
-            kernel_cache_[kernel_id].getKernelPtr(inputs)) {
+    if (auto cuda_kernel_opt = kernel_cache_[kernel_id].getKernelPtr(inputs)) {
       // TODO: update launch config for specific sizes;
       //       maybe we should store it in CudaKernel and compute it later
       runKernel(*cuda_kernel_opt, inputs, outputs);

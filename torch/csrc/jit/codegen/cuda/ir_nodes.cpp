@@ -349,19 +349,19 @@ IterDomain::IterDomain(
     ParallelType _parallel_method,
     bool _reduction_domain,
     bool _rfactor_domain,
-    bool _broadcast_domain)
+    BroadcastType _broadcast_type)
     : Val(ValType::IterDomain, DataType::Int, false),
       start_(_start),
       extent_(_extent),
       parallel_method_(_parallel_method),
       is_reduction_domain_(_reduction_domain),
       is_rfactor_domain_(_rfactor_domain),
-      is_broadcast_domain_(_broadcast_domain) {
+      broadcast_type_(_broadcast_type) {
   TORCH_CHECK(
-      !(is_reduction_domain_ && is_broadcast_domain_),
+      !(isReduction() && isBroadcast()),
       "IterDomain cannot be both a broadcast and reduction domain.");
   TORCH_CHECK(
-      !(is_rfactor_domain_ && is_broadcast_domain_),
+      !(isRFactorProduct() && isBroadcast()),
       "IterDomain cannot be both a broadcast and rfactor domain.");
 
   TORCH_INTERNAL_ASSERT(
@@ -384,7 +384,7 @@ IterDomain::IterDomain(const IterDomain* src, IrCloner* ir_cloner)
       parallel_method_(src->parallel_method_),
       is_reduction_domain_(src->is_reduction_domain_),
       is_rfactor_domain_(src->is_rfactor_domain_),
-      is_broadcast_domain_(src->is_broadcast_domain_) {}
+      broadcast_type_(src->broadcast_type_) {}
 
 bool IterDomain::sameAs(const IterDomain* const other) const {
   if (other == this)
@@ -410,13 +410,22 @@ IterDomain* IterDomain::merge(IterDomain* outer, IterDomain* inner) {
       "Merging IterDomains requires that their parallel types match.");
 
   Val* merged_id_size = mul(outer->extent(), inner->extent());
+  BroadcastType bcast_type = BroadcastType::Null;
+  if (outer->isBroadcast() && inner->isBroadcast()) {
+    if (outer->getBroadcastType() == BroadcastType::WithStride ||
+        inner->getBroadcastType() == BroadcastType::WithStride) {
+      bcast_type = BroadcastType::WithStride;
+    } else {
+      bcast_type = BroadcastType::WithoutStride;
+    }
+  }
   IterDomain* merged_id = new IterDomain(
       new Int(0),
       static_cast<Int*>(merged_id_size),
       outer->parallel_method(),
       outer->isReduction(),
       outer->isRFactorProduct() || inner->isRFactorProduct(),
-      outer->isBroadcast() && inner->isBroadcast());
+      bcast_type);
 
   new Merge(merged_id, outer, inner);
 
@@ -462,7 +471,7 @@ std::pair<IterDomain*, IterDomain*> IterDomain::split(
       in->parallel_method(),
       in->isReduction(),
       in->isRFactorProduct(),
-      in->isBroadcast());
+      in->getBroadcastType());
 
   // inner loop IterDomain
   IterDomain* idi = new IterDomain(
@@ -471,7 +480,7 @@ std::pair<IterDomain*, IterDomain*> IterDomain::split(
       in->parallel_method(),
       in->isReduction(),
       in->isRFactorProduct(),
-      in->isBroadcast());
+      in->getBroadcastType());
   new Split(ido, idi, in, factor);
   return {ido, idi};
 }

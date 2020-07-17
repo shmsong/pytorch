@@ -42,7 +42,12 @@ TensorView::TensorView(const std::shared_ptr<c10::TensorType>& tensor_type)
         tensor_type->sizes()[i].value() == 1) {
       // If size is known to be 1, assuem it needs to be broadcasted.
       sizes.push_back(new IterDomain(
-          new Int(0), new Int(1), ParallelType::Serial, false, false, true));
+          new Int(0),
+          new Int(1),
+          ParallelType::Serial,
+          false,
+          false,
+          BroadcastType::WithStride));
     } else {
       sizes.push_back(new IterDomain(new Int(0), new Int()));
     }

@@ -56,7 +56,7 @@ class ReplayRFactor : public ReplayTransformations {
         mapped->parallel_method(),
         rfactor_outer,
         true,
-        mapped->isBroadcast());
+        mapped->getBroadcastType());
 
     // inner IterDomain
     IterDomain* idi = new IterDomain(
@@ -65,7 +65,7 @@ class ReplayRFactor : public ReplayTransformations {
         mapped->parallel_method(),
         rfactor_inner,
         true,
-        mapped->isBroadcast());
+        mapped->getBroadcastType());
 
     // Generate the split node
     new Split(ido, idi, mapped, s->factor());
@@ -114,13 +114,24 @@ class ReplayRFactor : public ReplayTransformations {
 
     Val* merged_id_size =
         mul(id_outer_mapped->extent(), id_inner_mapped->extent());
+
+    BroadcastType bcast_type = BroadcastType::Null;
+    if (id_outer_mapped->isBroadcast() && id_inner_mapped->isBroadcast()) {
+      if (id_outer_mapped->getBroadcastType() == BroadcastType::WithStride ||
+          id_inner_mapped->getBroadcastType() == BroadcastType::WithStride) {
+        bcast_type = BroadcastType::WithStride;
+      } else {
+        bcast_type = BroadcastType::WithoutStride;
+      }
+    }
+
     IterDomain* merged_id = new IterDomain(
         new Int(0),
         static_cast<Int*>(merged_id_size),
         id_outer_mapped->parallel_method(),
         rfactor_output,
         true,
-        id_outer_mapped->isBroadcast() && id_inner_mapped->isBroadcast());
+        bcast_type);
 
     new Merge(merged_id, id_outer_mapped, id_inner_mapped);
 
@@ -246,7 +257,7 @@ TensorDomain* TransformRFactor::runReplay(
             id->parallel_method(),
             true,
             true,
-            false);
+            BroadcastType::Null);
         // If this is not an rfactor root, but a reduction root, it should be
         // turned into an iteration domain
       } else if (id->isReduction()) {
@@ -256,7 +267,7 @@ TensorDomain* TransformRFactor::runReplay(
             id->parallel_method(),
             false,
             false,
-            false);
+            BroadcastType::Null);
       } else {
         new_root[i] = id->clone();
       }
