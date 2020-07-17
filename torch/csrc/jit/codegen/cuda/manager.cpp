@@ -10,6 +10,7 @@
 #include <torch/csrc/jit/passes/shape_analysis.h>
 #include <torch/csrc/jit/runtime/interpreter.h>
 
+#include <torch/csrc/jit/codegen/cuda/executor.h>
 #include <unordered_map>
 
 namespace torch {
@@ -162,12 +163,12 @@ void runCudaFusionGroup(const Node* fusion_node, Stack& stack) {
 
   // Currently we just construct I/O tensors for static graph;
   std::shared_ptr<Graph> graph = fusion_node->g(attr::Subgraph)->copy();
-  std::shared_ptr<Graph> shape_inf_graph = fusion_node->g(attr::Subgraph)->copy();
 
   auto execute_lambda = [&]() {
     const auto nInputs = graph->inputs().size();
     at::ArrayRef<IValue> inputs = last(stack, nInputs);
 
+    /*
     // TODO: Delete the shape inference here once we switch to
     //       ExpressionEvaluator to allocate outputs
     // shape inference in graph to allocate outputs
@@ -196,7 +197,7 @@ void runCudaFusionGroup(const Node* fusion_node, Stack& stack) {
                          .layout(at::kStrided)
                          .device(device)
                          .requires_grad(type->requires_grad());
-
+    
       // TODO: We should infer output shape from `inputs`
       const auto sizes = extractSizes(type);
       const auto strides = extractStrides(type);
@@ -204,9 +205,13 @@ void runCudaFusionGroup(const Node* fusion_node, Stack& stack) {
       const auto tensor = at::empty_strided(sizes, strides, options);
       outputs.push_back(tensor);
     }
-
     CudaFusionManager::getManager().runFusionNode(
         kernel_id, graph, inputs, outputs);
+    */
+    FusionExecutor executor;
+    executor.compileFusion(parseJitIR(graph).get());
+    auto outputs = executor.runFusion(inputs);
+
     drop(stack, inputs.size());
     stack.insert(
         stack.end(),
