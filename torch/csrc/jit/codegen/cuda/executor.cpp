@@ -53,6 +53,28 @@ void FusionExecutor::compileFusion(Fusion* fusion) {
 }
 
 namespace {
+
+// Check if a value is already bound, if so validate we're trying to bind to the
+// same value
+void safeBind(
+    EvaluationContext& ec,
+    const Val* value,
+    Int::ScalarType concrete_value) {
+  auto already_concrete_val = ec.concreteValue(value);
+
+  if (already_concrete_val.has_value()) {
+    TORCH_INTERNAL_ASSERT(
+        concrete_value == already_concrete_val.value(),
+        "Tried to bind ",
+        value,
+        " to ",
+        " concrete value, but it's already set to ",
+        already_concrete_val.value());
+  } else {
+    ec.bind(value, concrete_value);
+  }
+}
+
 EvaluationContext bindInputs(
     const at::ArrayRef<IValue>& aten_inputs,
     Fusion* fusion) {
@@ -63,8 +85,8 @@ EvaluationContext bindInputs(
   auto fusion_inputs = fusion->inputs();
   EvaluationContext ec(fusion);
 
-  // This should probably move to EvaluationContext as we may want to bind input
-  // values frequently. Bind fusion input values to runtime values.
+  // This should probably move to EvaluationContext as we may want to bind
+  // input values frequently. Bind fusion input values to runtime values.
   for (size_t i = 0; i < fusion->inputs().size(); i++) {
     if (fusion->inputs()[i]->getValType() == ValType::TensorView) {
       TensorView* cg_tensor = fusion->inputs()[i]->as<TensorView>();
@@ -80,7 +102,7 @@ EvaluationContext bindInputs(
           "Something went wrong configuring launch. Inputs no longer match.");
 
       for (size_t dim = 0; dim < root_dom.size(); dim++) {
-        ec.bind(root_dom[dim]->extent(), aten_tensor.sizes()[dim]);
+        safeBind(ec, root_dom[dim]->extent(), aten_tensor.sizes()[dim]);
       }
     }
   }
@@ -173,7 +195,8 @@ LaunchParams FusionExecutor::computeLaunchParams(
                 launch_constraints.getDim(p_type));
           } else {
             // Bind the launch constraint into our evaluation context
-            ec.bind(
+            safeBind(
+                ec,
                 parallel_id->rawExtent(),
                 launch_constraints.getDim(entry.first));
             launch_params.bind(launch_constraints.getDim(p_type), p_type);

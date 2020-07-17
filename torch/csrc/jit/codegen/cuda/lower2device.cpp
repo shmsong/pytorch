@@ -65,6 +65,7 @@ class GridReductionBuffers : OptOutDispatch {
     sync_allocations_.push_back(gr->sync_buffer());
   }
 };
+
 } // namespace
 
 void GPULower::lower() {
