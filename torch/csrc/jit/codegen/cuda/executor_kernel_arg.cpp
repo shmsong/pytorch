@@ -14,13 +14,13 @@ std::unique_ptr<TensorArgAbstract> getTensorArg(
     c10::ScalarType dtype,
     int nDims) {
   switch (dtype) {
-    case (c10::ScalarType::Float):
+    case c10::ScalarType::Float:
       return getTensorArg<float>(nDims);
-    case (c10::ScalarType::Half):
+    case c10::ScalarType::Half:
       return getTensorArg<at::Half>(nDims);
-    case (c10::ScalarType::Bool):
+    case c10::ScalarType::Bool:
       return getTensorArg<bool>(nDims);
-    case (c10::ScalarType::Long):
+    case c10::ScalarType::Long:
       return getTensorArg<int64_t>(nDims);
     default:
       TORCH_CHECK(
@@ -33,7 +33,7 @@ std::unique_ptr<TensorArgAbstract> getTensorArg(
 
 // Push a tensor to the arguments
 void KernelArgumentHolder::push(const at::Tensor& tensor) {
-  changed = true;
+  changed_ = true;
   int nDims = tensor.ndimension();
 
   c10::ScalarType dtype = tensor.scalar_type();
@@ -43,14 +43,14 @@ void KernelArgumentHolder::push(const at::Tensor& tensor) {
     tensor_arg->setSize(i, tensor.sizes()[i]);
     tensor_arg->setStride(i, tensor.strides()[i]);
   }
-  arguments.push_back(std::move(tensor_arg));
+  arguments_.push_back(std::move(tensor_arg));
 }
 
 // Push a tensor to the arguments
 void KernelArgumentHolder::push(
     const at::Tensor& val,
     c10::optional<at::IntArrayRef> broadcasted_size) {
-  changed = true;
+  changed_ = true;
   ExtractSizeStride ess(val, std::move(broadcasted_size));
   int nDims = ess.sizes.size();
 
@@ -61,22 +61,22 @@ void KernelArgumentHolder::push(
     tensor_arg->setSize(i, ess.sizes[i]);
     tensor_arg->setStride(i, ess.strides[i]);
   }
-  arguments.push_back(std::move(tensor_arg));
+  arguments_.push_back(std::move(tensor_arg));
 }
 
 // Push a scalar or integer to the arguments
 void KernelArgumentHolder::push(const IValue& val) {
-  changed = true;
+  changed_ = true;
   TORCH_INTERNAL_ASSERT(
       val.isScalar(),
       "Tried to push an arg to run in a fused kernel, expected a scalar but got, ",
       val);
   switch (val.toScalar().type()) {
-    case (c10::ScalarType::Double):
-      arguments.push_back(std::make_unique<FloatArg>((float)val.toDouble()));
+    case c10::ScalarType::Double:
+      arguments_.push_back(std::make_unique<FloatArg>((float)val.toDouble()));
       return;
-    case (c10::ScalarType::Long):
-      arguments.push_back(std::make_unique<IntArg>((int)val.toInt()));
+    case c10::ScalarType::Long:
+      arguments_.push_back(std::make_unique<IntArg>((int)val.toInt()));
       return;
     default:
       TORCH_INTERNAL_ASSERT(
@@ -89,19 +89,20 @@ void KernelArgumentHolder::push(const IValue& val) {
 }
 
 void KernelArgumentHolder::push(const uint64_t& val) {
-  arguments.push_back(std::make_unique<ULongArg>(val));
+  arguments_.push_back(std::make_unique<ULongArg>(val));
 }
 
 // Create buffer, flatten arguments into it, align by 8 Bytes, return pointers
 // in the buffer
 void** KernelArgumentHolder::getBuffer() {
-  if (changed) {
-    void_ptrs = std::vector<void*>(arguments.size(), nullptr);
-    for (decltype(arguments.size()) i{0}; i < arguments.size(); i++)
-      void_ptrs[i] = static_cast<void*>(arguments[i]->arg());
-    changed = false;
+  if (changed_) {
+    void_ptrs_ = std::vector<void*>(arguments_.size(), nullptr);
+    for (size_t i = 0; i < arguments_.size(); i++) {
+      void_ptrs_[i] = static_cast<void*>(arguments_[i]->arg());
+    }
+    changed_ = false;
   }
-  return void_ptrs.data();
+  return void_ptrs_.data();
 }
 
 void KernelArgumentHolder::appendArgs(const c10::ArrayRef<c10::IValue>& args) {

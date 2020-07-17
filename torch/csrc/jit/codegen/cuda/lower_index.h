@@ -11,18 +11,17 @@ namespace jit {
 namespace fuser {
 
 class TORCH_CUDA_API IndexLowering : public OptInDispatch {
+ public:
+  static std::vector<Expr*> getIndexedExprs(
+      Fusion* fusion,
+      std::vector<Expr*> incoming_exprs) {
+    FusionGuard fg(fusion);
+    IndexLowering il;
+    il.generate(incoming_exprs);
+    return il.lowered_exprs;
+  }
+
  private:
-  std::vector<Expr*> lowered_exprs;
-
-  // This is a slight work around as scope has a couple definitions, we have the
-  // Scope that's in ForLoop/IfThenElse which is really just a wrapper around
-  // std::vector<Expr*> and then we have the actual ForLoop/IfThenElse. We want
-  // to be able to carry both around because when we push back to a scope it
-  // could be either the body or else body of the IfThenElse. However, we want
-  // to understand the nesting of IfThenElse/ForLoop nodes.
-  Scope* active_scope = nullptr;
-  Expr* active_scope_expr = nullptr;
-
   // Wrap pushBack, if active_scope is null we want it to go
   // straight to lower_exprs
   void pushBack(Expr*);
@@ -45,15 +44,16 @@ class TORCH_CUDA_API IndexLowering : public OptInDispatch {
 
   void generate(const std::vector<Expr*>& exprs);
 
- public:
-  static std::vector<Expr*> getIndexedExprs(
-      Fusion* fusion,
-      std::vector<Expr*> incoming_exprs) {
-    FusionGuard fg(fusion);
-    IndexLowering il;
-    il.generate(incoming_exprs);
-    return il.lowered_exprs;
-  }
+  std::vector<Expr*> lowered_exprs;
+
+  // This is a slight work around as scope has a couple definitions, we have the
+  // Scope that's in ForLoop/IfThenElse which is really just a wrapper around
+  // std::vector<Expr*> and then we have the actual ForLoop/IfThenElse. We want
+  // to be able to carry both around because when we push back to a scope it
+  // could be either the body or else body of the IfThenElse. However, we want
+  // to understand the nesting of IfThenElse/ForLoop nodes.
+  Scope* active_scope = nullptr;
+  Expr* active_scope_expr = nullptr;
 };
 
 } // namespace fuser

@@ -34,18 +34,7 @@ void EvaluationContext::bind(const Val* value, Int::ScalarType concrete_value) {
       "Tried to bind to a value that is computed in the fusion IR. ",
       "Can only bind to symbolic values to the fusion that do not have an origin expr.");
 
-  if (bindings_.find(value) != bindings_.end()) {
-    TORCH_INTERNAL_ASSERT(
-        concrete_value == bindings_[value],
-        "Tried to bind ",
-        value,
-        " to ",
-        " concrete value, but it's already set to ",
-        bindings_[value]);
-
-  } else {
-    bindings_[value] = concrete_value;
-  }
+  bindings_[value] = concrete_value;
 }
 
 c10::optional<Int::ScalarType> EvaluationContext::concreteValue(

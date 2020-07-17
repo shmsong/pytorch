@@ -140,7 +140,7 @@ class TORCH_CUDA_API BroadcastOp : public Expr {
 };
 
 /*
- * Reduction operatoin. Out is first initialized to _init. Then
+ * Reduction operation. Out is first initialized to _init. Then
  * _reduction_op_type is used to update out as out = reductionOp(out, in).
  * Output's axes marked as reduction will be reduced to produce an output
  * tensor. The output tensors size will be the size of all
@@ -187,13 +187,10 @@ class TORCH_CUDA_API ReductionOp : public Expr {
   Val* const in_ = nullptr;
 };
 
-/*
- * Reduction operatoin. Out is first initialized to _init. Then
- * _reduction_op_type is used to update out as out = reductionOp(out, in).
- * Output's axes marked as reduction will be reduced to produce an output
- * tensor. The output tensors size will be the size of all
- * non-reduction/non-broadcast dimensions.
- */
+// Grid reduction operation, this node is used only after lowering a fusion to
+// explicitly mark a grid reduction and the buffer allocation needed to do it.
+// This node provides FusionExecutor the information it needs to allocate the
+// reduction and sync buffers.
 class TORCH_CUDA_API GridReduction : public Expr {
  public:
   ~GridReduction() = default;
@@ -202,6 +199,8 @@ class TORCH_CUDA_API GridReduction : public Expr {
       ReductionOp* _reduction_op,
       Allocate* _reduction_buffer,
       Allocate* _sync_buffer);
+
+  GridReduction(const GridReduction* src, IrCloner* ir_cloner);
 
   GridReduction(const GridReduction& other) = delete;
   GridReduction& operator=(const GridReduction& other) = delete;
@@ -759,15 +758,13 @@ class TORCH_CUDA_API TensorIndex : public Val {
   std::vector<Val*> indices_;
 };
 
-/*
- * Allocate is a lower level Node that describes a buffer of memory that
- * is required as an intermediate within a kernel.  The extent is the expression
- * of the size of the buffer that is generated from the TensorView that
- * describes the output of an operation.
- *
- * TODO: The components of Allocate like Type and Name could be separated from
- * the the assocated TensorView.  Perhaps that is more appropriate?
- */
+// Allocate is a lower level Node that describes a buffer of memory that
+// is required as an intermediate within a kernel.  The extent is the expression
+// of the size of the buffer that is generated from the TensorView that
+// describes the output of an operation.
+//
+// TODO: The components of Allocate like Type and Name could be separated from
+// the the assocated TensorView.  Perhaps that is more appropriate?
 class TORCH_CUDA_API Allocate : public Expr {
  public:
   ~Allocate() = default;
@@ -778,7 +775,7 @@ class TORCH_CUDA_API Allocate : public Expr {
   Allocate(Allocate&& other) = delete;
   Allocate& operator=(Allocate&& other) = delete;
 
-  Allocate(
+  explicit Allocate(
       Val* _buffer,
       MemoryType _memory_type = MemoryType::Local,
       Val* _size = nullptr);

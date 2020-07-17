@@ -132,7 +132,7 @@ class TORCH_CUDA_API IRPrinter : public OptInConstDispatch {
   void printKernel(
       const std::vector<Expr*>& exprs,
       const std::string& kernel_name,
-      const std::vector<Val*> global_buffers);
+      const std::vector<Val*>& global_buffers);
 
  private:
   std::unique_ptr<ThreadPredicateMap> thread_predicates_;

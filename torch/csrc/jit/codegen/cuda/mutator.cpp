@@ -144,10 +144,10 @@ Statement* OptOutMutator::mutate(Allocate* a) {
 }
 
 Statement* OptOutMutator::mutate(Split* s) {
-  IterDomain* ot = static_cast<IterDomain*>(mutateAsVal(s->outer()));
-  IterDomain* inr = static_cast<IterDomain*>(mutateAsVal(s->inner()));
-  IterDomain* in = static_cast<IterDomain*>(mutateAsVal(s->in()));
-  Val* fact = static_cast<Val*>(mutateAsVal(s->factor()));
+  IterDomain* ot = mutateAsVal(s->outer())->as<IterDomain>();
+  IterDomain* inr = mutateAsVal(s->inner())->as<IterDomain>();
+  IterDomain* in = mutateAsVal(s->in())->as<IterDomain>();
+  Val* fact = mutateAsVal(s->factor())->as<Val>();
 
   if (ot->sameAs(s->outer()) && inr->sameAs(s->inner()) &&
       in->sameAs(s->in()) && areEqualScalars(fact, s->factor())) {

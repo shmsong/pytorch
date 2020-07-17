@@ -331,6 +331,12 @@ GridReduction::GridReduction(
       reduction_buffer_(_reduction_buffer),
       sync_buffer_(_sync_buffer) {}
 
+GridReduction::GridReduction(const GridReduction* src, IrCloner* ir_cloner)
+    : Expr(src, ir_cloner),
+      reduction_op_(ir_cloner->clone(src->reduction_op_)),
+      reduction_buffer_(ir_cloner->clone(src->reduction_buffer_)),
+      sync_buffer_(ir_cloner->clone(src->sync_buffer_)) {}
+
 bool GridReduction::sameAs(const GridReduction* other) const {
   return reduction_op_->sameAs(other->reduction_op()) &&
       reduction_buffer_->sameAs(other->reduction_buffer()) &&

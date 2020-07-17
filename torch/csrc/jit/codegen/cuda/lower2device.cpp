@@ -14,6 +14,7 @@ namespace jit {
 namespace fuser {
 
 namespace {
+
 class GridReductionBuffers : OptOutDispatch {
  public:
   static std::vector<Allocate*> getGlobalAllocs(std::vector<Expr*> exprs) {
@@ -63,6 +64,7 @@ class GridReductionBuffers : OptOutDispatch {
     sync_allocations_.push_back(gr->sync_buffer());
   }
 };
+
 } // namespace
 
 void GPULower::lower() {
@@ -99,17 +101,16 @@ std::ostream& GPULower::printKernel(
   FusionGuard fg(fusion_);
   std::vector<Allocate*> allocs;
   allocs.insert(
-      allocs.begin(), sync_allocations_.begin(), sync_allocations_.end());
+      allocs.end(), global_allocations_.begin(), global_allocations_.end());
   allocs.insert(
-      allocs.begin(), global_allocations_.begin(), global_allocations_.end());
+      allocs.end(), sync_allocations_.begin(), sync_allocations_.end());
 
   std::vector<Val*> global_tensors(allocs.size(), nullptr);
   std::transform(
-      global_tensors.begin(),
-      global_tensors.end(),
       allocs.begin(),
+      allocs.end(),
       global_tensors.begin(),
-      [](Val* v, Allocate* alloc) { return alloc->buffer(); });
+      [](Allocate* alloc) { return alloc->buffer(); });
 
   IRPrinter irp(os);
   irp.printKernel(lowered_exprs_, kernel_name, global_tensors);

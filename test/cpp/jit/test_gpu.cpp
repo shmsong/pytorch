@@ -104,6 +104,7 @@ void testGPU_IrGraphGenerator() {
 
   fusion.addOutput(tv6);
 
+  tv4->axis(2)->parallelize(ParallelType::BIDy);
   tv6->merge(0);
   tv6->split(0, 4);
   tv6->axis(0)->parallelize(ParallelType::BIDx);

@@ -165,9 +165,9 @@ class KernelArgumentHolder {
   void appendPhilox(uint64_t rand_offset);
 
  private:
-  std::vector<std::unique_ptr<ArgAbstract>> arguments;
-  std::vector<void*> void_ptrs;
-  bool changed = true;
+  std::vector<std::unique_ptr<ArgAbstract>> arguments_;
+  std::vector<void*> void_ptrs_;
+  bool changed_ = true;
 };
 
 } // namespace cuda

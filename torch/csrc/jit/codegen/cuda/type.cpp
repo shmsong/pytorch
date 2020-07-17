@@ -397,10 +397,9 @@ DataType aten_to_data_type(const at::ScalarType& scalar_type) {
     case at::ScalarType::Long:
       return DataType::Int;
     default:
-      break;
+      TORCH_INTERNAL_ASSERT(false, "No data type found for scalar type.");
+      return DataType::Null;
   }
-  TORCH_INTERNAL_ASSERT(false, "No data type found for scalar type.");
-  return DataType::Null;
 }
 
 at::ScalarType data_type_to_aten(const DataType& data_type) {

@@ -63,14 +63,14 @@ void IRPrinter::printHeader(
 
   for (Val* val : vals) {
     switch (val->getValType().value()) {
-      case (ValType::TensorView):
+      case ValType::TensorView:
         os << "Tensor<" << val->getDataType().value() << ", "
            << TensorDomain::noReductions(
                   static_cast<TensorView*>(val)->getRootDomain())
                   .size()
            << "> T" << val->name();
         break;
-      case (ValType::Scalar):
+      case ValType::Scalar:
         os << val->getDataType().value() << " " << val;
         break;
       default:
@@ -126,16 +126,16 @@ void IRPrinter::handle(const TensorDomain* td) {
 void IRPrinter::handle(const TensorView* tv) {
   if (tv->nDims() == 0) {
     switch (tv->getDataType().value()) {
-      case (DataType::Bool):
+      case DataType::Bool:
         os << "b";
         break;
-      case (DataType::Float):
+      case DataType::Float:
         os << "f";
         break;
-      case (DataType::Half):
+      case DataType::Half:
         os << "h";
         break;
-      case (DataType::Int):
+      case DataType::Int:
         os << "i";
         break;
       default:
@@ -164,13 +164,13 @@ void IRPrinter::handle(const IterDomain* id) {
   else
     os << "i";
   switch (id->parallel_method()) {
-    case (ParallelType::Vectorize):
+    case ParallelType::Vectorize:
       os << "V";
       break;
-    case (ParallelType::Unroll):
+    case ParallelType::Unroll:
       os << "U";
       break;
-    case (ParallelType::Serial):
+    case ParallelType::Serial:
       os << "S";
       break;
     default:
@@ -484,26 +484,26 @@ void IRPrinter::handle(const ReductionOp* rop) {
 
 void IRPrinter::handle(const GridReduction* gr) {
   // Check if we've lowered yet.
-  auto rop = gr->reduction_op();
+  const auto rop = gr->reduction_op();
   TORCH_INTERNAL_ASSERT(
       rop->out()->getValType() == ValType::TensorIndex,
       "GridReduction node is a lowered node but did not find the output to be a TensorIndex.");
 
-  auto out = rop->out()->as<TensorIndex>();
+  const auto out = rop->out()->as<TensorIndex>();
   TORCH_INTERNAL_ASSERT(out->view()->hasGridReduction());
 
-  auto vec_domain = out->view()->domain()->domain();
+  const auto vec_domain = out->view()->domain()->domain();
 
-  auto par_domains = rop->getParallelReductionDomains();
-  bool tidx = par_domains.find(ParallelType::TIDx) != par_domains.end();
-  bool tidy = par_domains.find(ParallelType::TIDy) != par_domains.end();
-  bool tidz = par_domains.find(ParallelType::TIDz) != par_domains.end();
-  bool bidx = par_domains.find(ParallelType::BIDx) != par_domains.end();
-  bool bidy = par_domains.find(ParallelType::BIDy) != par_domains.end();
-  bool bidz = par_domains.find(ParallelType::BIDz) != par_domains.end();
+  const auto par_domains = rop->getParallelReductionDomains();
+  const bool tidx = par_domains.find(ParallelType::TIDx) != par_domains.end();
+  const bool tidy = par_domains.find(ParallelType::TIDy) != par_domains.end();
+  const bool tidz = par_domains.find(ParallelType::TIDz) != par_domains.end();
+  const bool bidx = par_domains.find(ParallelType::BIDx) != par_domains.end();
+  const bool bidy = par_domains.find(ParallelType::BIDy) != par_domains.end();
+  const bool bidz = par_domains.find(ParallelType::BIDz) != par_domains.end();
 
-  auto d_type = rop->out()->getDataType().value();
-  auto op_type = rop->getReductionOpType();
+  const auto d_type = rop->out()->getDataType().value();
+  const auto op_type = rop->getReductionOpType();
   TORCH_INTERNAL_ASSERT(
       gr->reduction_buffer()->buffer()->getValType().value() ==
       ValType::TensorView);
@@ -643,7 +643,7 @@ void IRPrinter::handle(const Allocate* a) {
     auto tv = a->buffer()->as<TensorView>();
 
     switch (tv->getMemoryType()) {
-      case (MemoryType::Global):
+      case MemoryType::Global:
         os << "// Allocate global tensor " << a->buffer_type() << " T"
            << tv->name() << "[";
         if (a->size() == nullptr) {
@@ -653,10 +653,10 @@ void IRPrinter::handle(const Allocate* a) {
         }
         os << "];\n";
         break;
-      case (MemoryType::Shared):
+      case MemoryType::Shared:
         os << "__shared__ ";
         __attribute__((fallthrough));
-      case (MemoryType::Local):
+      case MemoryType::Local:
         os << a->buffer_type();
         if (tv->nDims() == 0) {
           os << tv;
@@ -743,7 +743,7 @@ void IRPrinter::printReductionOps(Fusion* fusion) {
 void IRPrinter::printKernel(
     const std::vector<Expr*>& exprs,
     const std::string& kernel_name,
-    const std::vector<Val*> global_buffers) {
+    const std::vector<Val*>& global_buffers) {
   Fusion* fusion = FusionGuard::getCurFusion();
   if (exprs.empty())
     return;
