@@ -104,8 +104,7 @@ class CudaKernelCache {
   CudaKernelCache() = default;
 
   at::optional<CudaKernel*> getKernelPtr(
-      const at::ArrayRef<c10::IValue> inputs,
-      const std::vector<int64_t>& broadcasted_shape);
+      const at::ArrayRef<c10::IValue> inputs);
   CudaKernel* allocateKernelInCache(const at::ArrayRef<c10::IValue> inputs);
 
  private:
