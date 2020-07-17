@@ -9,6 +9,7 @@
 #include <torch/csrc/jit/passes/canonicalize.h>
 #include <torch/csrc/jit/passes/shape_analysis.h>
 #include <torch/csrc/jit/runtime/interpreter.h>
+#include <torch/csrc/jit/runtime/graph_executor.h>
 
 #include <torch/csrc/jit/codegen/cuda/executor.h>
 #include <unordered_map>
@@ -167,6 +168,15 @@ void runCudaFusionGroup(const Node* fusion_node, Stack& stack) {
     const auto nInputs = graph->inputs().size();
     at::ArrayRef<IValue> inputs = last(stack, nInputs);
 
+    // Only needed if we are doing codegen
+    // if no shape information available, we feed current shape into the kernel;
+    if (!IsNewExecutorEnabled()) {
+      EraseShapeInformation(graph);
+      for (size_t i = 0; i < nInputs; i++) {
+        graph->inputs()[i]->setType(inputs[i].type());
+      }
+      ShapeTypePropagate(graph);
+    }
     /*
     // TODO: Delete the shape inference here once we switch to
     //       ExpressionEvaluator to allocate outputs
@@ -210,7 +220,6 @@ void runCudaFusionGroup(const Node* fusion_node, Stack& stack) {
     FusionExecutor executor;
     auto fusion = parseJitIR(graph);
     scheduleFusion(fusion.get(), inputs);
-
     executor.compileFusion(fusion.get());
     auto outputs = executor.runFusion(inputs);
 
