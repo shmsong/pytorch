@@ -163,7 +163,6 @@ void runCudaFusionGroup(const Node* fusion_node, Stack& stack) {
 
   // Currently we just construct I/O tensors for static graph;
   std::shared_ptr<Graph> graph = fusion_node->g(attr::Subgraph)->copy();
-  std::shared_ptr<Graph> shape_inf_graph = fusion_node->g(attr::Subgraph)->copy();
 
   auto execute_lambda = [&]() {
     const auto nInputs = graph->inputs().size();
@@ -207,7 +206,7 @@ void runCudaFusionGroup(const Node* fusion_node, Stack& stack) {
                          .layout(at::kStrided)
                          .device(device)
                          .requires_grad(type->requires_grad());
-
+    
       // TODO: We should infer output shape from `inputs`
       const auto sizes = extractSizes(type);
       const auto strides = extractStrides(type);
@@ -221,6 +220,7 @@ void runCudaFusionGroup(const Node* fusion_node, Stack& stack) {
     FusionExecutor executor;
     auto fusion = parseJitIR(graph);
     scheduleFusion(fusion.get(), inputs);
+    
     executor.compileFusion(fusion.get());
     auto outputs = executor.runFusion(inputs);
 
