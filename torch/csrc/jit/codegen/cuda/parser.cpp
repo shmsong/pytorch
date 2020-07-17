@@ -146,7 +146,6 @@ class IrParser {
       }
       fusion->addOutput(out);
     }
-    fusion->printMath();
     return fusion;
   }
 

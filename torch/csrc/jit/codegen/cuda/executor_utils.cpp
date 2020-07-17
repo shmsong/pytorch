@@ -125,10 +125,9 @@ bool validateKernelArg(
   }
 }
 
-void validateKernelArgs(
+void validateKernelInputs(
     Fusion* fusion,
     const at::ArrayRef<IValue>& inputs,
-    const std::vector<at::Tensor>& outputs,
     c10::Device device) {
   // This is necessary as we were traversing the fusion graph later in the check
   FusionGuard fg(fusion);
@@ -147,7 +146,12 @@ void validateKernelArgs(
         " is invalid; ",
         msg.str());
   }
+}
 
+void validateKernelOutputs(
+    Fusion* fusion,
+    const std::vector<at::Tensor>& outputs,
+    c10::Device device) {
   TORCH_INTERNAL_ASSERT(
       fusion->outputs().size() != 0,
       "Kernel should have at least one output tensor.");

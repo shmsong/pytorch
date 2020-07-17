@@ -74,15 +74,13 @@ EvaluationContext bindInputs(
           "Something went wrong configuring launch. Inputs no longer match.");
 
       auto aten_tensor = aten_inputs[i].toTensor();
-
+      auto root_dom = TensorDomain::noReductions(cg_tensor->getRootDomain());
       TORCH_INTERNAL_ASSERT(
-          aten_tensor.ndimension() == cg_tensor->getRootDomain().size(),
+          aten_tensor.ndimension() == root_dom.size(),
           "Something went wrong configuring launch. Inputs no longer match.");
 
-      for (size_t dim = 0; dim < cg_tensor->getRootDomain().size(); dim++) {
-        ec.bind(
-            cg_tensor->getRootDomain()[dim]->extent(),
-            aten_tensor.sizes()[dim]);
+      for (size_t dim = 0; dim < root_dom.size(); dim++) {
+        ec.bind(root_dom[dim]->extent(), aten_tensor.sizes()[dim]);
       }
     }
   }
@@ -95,7 +93,7 @@ at::Tensor inferAndAlloc(
     const CompileOptions& options,
     bool zero_init = false) {
   std::vector<int64_t> sizes;
-  for (auto id : tv->getRootDomain()) {
+  for (auto id : TensorDomain::noReductions(tv->getRootDomain())) {
     auto infered_val = ExpressionEvaluator::evaluate(id->rawExtent(), &ec);
     TORCH_INTERNAL_ASSERT(
         infered_val.has_value(),
@@ -203,14 +201,12 @@ LaunchParams FusionExecutor::computeLaunchParams(
   return launch_params;
 }
 
-std::vector<at::Tensor> FusionExecutor::allocGlobalVals(
-    const at::ArrayRef<IValue>& aten_inputs,
-    EvaluationContext& ec) {
+std::vector<at::Tensor> FusionExecutor::allocGlobalVals(EvaluationContext& ec) {
   std::vector<at::Tensor> global_buffers;
   for (auto alloc : lowered.global_allocations()) {
     TORCH_INTERNAL_ASSERT(
         alloc->buffer()->getValType() == ValType::TensorView,
-        "Cannot global buffers that are not tensors.");
+        "Cannot allocate global buffers that are not tensors.");
     global_buffers.push_back(
         inferAndAlloc(alloc->buffer()->as<TensorView>(), ec, options_, false));
   }
@@ -218,7 +214,7 @@ std::vector<at::Tensor> FusionExecutor::allocGlobalVals(
   for (auto alloc : lowered.sync_allocations()) {
     TORCH_INTERNAL_ASSERT(
         alloc->buffer()->getValType() == ValType::TensorView,
-        "Cannot global buffers that are not tensors.");
+        "Cannot allocate global buffers that are not tensors.");
     global_buffers.push_back(
         inferAndAlloc(alloc->buffer()->as<TensorView>(), ec, options_, true));
   }
@@ -226,8 +222,20 @@ std::vector<at::Tensor> FusionExecutor::allocGlobalVals(
   return global_buffers;
 }
 
+std::vector<at::Tensor> FusionExecutor::allocOutputs(EvaluationContext& ec) {
+  std::vector<at::Tensor> outputs;
+  for (auto output : fusion_.outputs()) {
+    TORCH_INTERNAL_ASSERT(
+        output->getValType() == ValType::TensorView,
+        "Cannot allocate outputs that are not tensors.");
+    outputs.push_back(
+        inferAndAlloc(output->as<TensorView>(), ec, options_, false));
+  }
+  return outputs;
+}
+
 std::vector<at::Tensor> FusionExecutor::runFusion(
-    const at::ArrayRef<IValue> inputs,
+    const at::ArrayRef<IValue>& inputs,
     const std::vector<at::Tensor>& outputs,
     const LaunchParams& launch_constraints) {
   TORCH_INTERNAL_ASSERT(
@@ -235,29 +243,35 @@ std::vector<at::Tensor> FusionExecutor::runFusion(
 
   FusionGuard fg(&fusion_);
 
-  executor_utils::validateKernelArgs(
-      &fusion_, inputs, outputs, options_.device);
+  executor_utils::validateKernelInputs(&fusion_, inputs, options_.device);
 
   const auto prior_device = at::cuda::current_device();
   c10::DeviceGuard dg(options_.device);
   auto stream = at::cuda::getCurrentCUDAStream();
-
-  TORCH_INTERNAL_ASSERT(!outputs.empty(), "No outputs set for test kernel.");
 
   EvaluationContext evaluation_context = bindInputs(inputs, &fusion_);
 
   LaunchParams launch_params =
       computeLaunchParams(inputs, launch_constraints, evaluation_context);
 
+  std::vector<at::Tensor> alloced_outputs = outputs;
+  if (outputs.empty() || outputs.size() != fusion_.outputs().size()) {
+    alloced_outputs = allocOutputs(evaluation_context);
+  }
+
+  executor_utils::validateKernelOutputs(
+      &fusion_, alloced_outputs, options_.device);
+
   KernelArgumentHolder kernel_arguments;
   kernel_arguments.appendArgs(inputs);
-  kernel_arguments.appendArgs(outputs);
-  auto buffers = allocGlobalVals(inputs, evaluation_context);
+  kernel_arguments.appendArgs(alloced_outputs);
+  auto buffers = allocGlobalVals(evaluation_context);
   kernel_arguments.appendArgs(buffers);
 
   if (has_random) {
     const auto rand_offset = 4 *
-        (std::ceil(outputs[0].numel() / (4.0 * 128 * launch_params.gdimx())) +
+        (std::ceil(
+             alloced_outputs[0].numel() / (4.0 * 128 * launch_params.gdimx())) +
          1);
     kernel_arguments.appendPhilox(rand_offset);
   }
@@ -276,7 +290,7 @@ std::vector<at::Tensor> FusionExecutor::runFusion(
       nullptr));
   AT_CUDA_CHECK(cudaStreamSynchronize(stream));
 
-  return std::vector<at::Tensor>(outputs);
+  return alloced_outputs;
 }
 
 } // namespace cuda

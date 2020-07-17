@@ -446,16 +446,15 @@ void testGPU_FusionClear() {
 
   at::Tensor input1 = at::randn({16, 8, 8}, options);
   at::Tensor input2 = at::randn_like(input1);
-  at::Tensor output = at::empty_like(input1);
 
   torch::jit::fuser::cuda::FusionExecutor fe;
   fe.compileFusion(&fusion);
-  fe.runFusion({input1, input2}, {output});
+  auto outputs = fe.runFusion({input1, input2});
 
   at::Tensor tv2_ref = input2 + 2.0;
   at::Tensor output_ref = input1 + tv2_ref;
 
-  TORCH_CHECK(output_ref.equal(output));
+  TORCH_CHECK(output_ref.equal(outputs[0]));
 }
 
 void testGPU_FusionCopy() {
@@ -1211,17 +1210,15 @@ void testGPU_FusionCodeGen2() {
 
   at::Tensor input1 = at::randn({16, 8, 8}, options);
   at::Tensor input2 = at::randn_like(input1);
-  ;
-  at::Tensor output = at::empty_like(input1);
 
   torch::jit::fuser::cuda::FusionExecutor fe;
   fe.compileFusion(&fusion);
-  fe.runFusion({input1, input2}, {output});
+  auto outputs = fe.runFusion({input1, input2});
 
   at::Tensor tv2_ref = input2 + 2.0;
   at::Tensor output_ref = input1 + tv2_ref;
 
-  TORCH_CHECK(output_ref.equal(output));
+  TORCH_CHECK(output_ref.equal(outputs[0]));
 }
 
 void testGPU_FusionSimplePWise() {
@@ -1322,15 +1319,13 @@ void testGPU_FusionExecKernel() {
   at::Tensor input1 = at::ones({1, 128}, options);
   at::Tensor input2 = at::ones_like(input1);
 
-  at::Tensor output = at::empty_like(input1);
-
   torch::jit::fuser::cuda::FusionExecutor fe;
   fe.compileFusion(&fusion);
-  fe.runFusion({input1, input2}, {output});
+  auto outputs = fe.runFusion({input1, input2});
 
   at::Tensor check = at::full({1, 128}, 4, options);
   ;
-  TORCH_CHECK(output.equal(check));
+  TORCH_CHECK(outputs[0].equal(check));
 }
 
 int ceilDiv_(int a, int b) {
@@ -1472,19 +1467,16 @@ void testGPU_FusionAdvancedComputeAt() {
     auto t5 = t4.add(t3);
     auto t6 = t5.add(t3);
 
-    at::Tensor kernel_tv5 = at::empty_like(t0, options);
-    at::Tensor kernel_tv6 = at::empty_like(t0, options);
-
     torch::jit::fuser::cuda::FusionExecutor fe;
     fe.compileFusion(&fusion);
-    fe.runFusion({t0}, {kernel_tv5, kernel_tv6});
+    auto outputs = fe.runFusion({t0});
 
     GPULower gpulw(&fusion);
     std::stringstream actual_kernel;
     gpulw.printKernel(actual_kernel);
 
-    TORCH_CHECK(at::allclose(kernel_tv5, t5), actual_kernel.str());
-    TORCH_CHECK(at::allclose(kernel_tv6, t6));
+    TORCH_CHECK(at::allclose(outputs[0], t5), actual_kernel.str());
+    TORCH_CHECK(at::allclose(outputs[1], t6));
   }
 
   // Case 3
@@ -1605,17 +1597,15 @@ void testGPU_FusionAdvancedComputeAt() {
     auto t5 = t1.add(t4);
     auto t6 = t5.sub(t0);
 
-    at::Tensor kernel_tv6 = at::empty_like(t0, options);
-
     torch::jit::fuser::cuda::FusionExecutor fe;
     fe.compileFusion(&fusion);
-    fe.runFusion({t0, t1, t2, t3}, {kernel_tv6});
+    auto outputs = fe.runFusion({t0, t1, t2, t3});
 
     GPULower gpulw(&fusion);
     std::stringstream actual_kernel;
     gpulw.printKernel(actual_kernel);
 
-    TORCH_CHECK(at::allclose(kernel_tv6, t6), actual_kernel.str());
+    TORCH_CHECK(at::allclose(outputs[0], t6), actual_kernel.str());
   }
 }
 
@@ -1757,13 +1747,11 @@ void testGPU_FusionLoopUnroll() {
   at::Tensor input0 = at::rand({129, 13, 3}, options);
   at::Tensor input1 = at::rand({129, 13, 3}, options);
 
-  at::Tensor output = at::empty_like(input1);
-
   torch::jit::fuser::cuda::FusionExecutor fe;
   fe.compileFusion(&fusion);
-  fe.runFusion({input0, input1}, {output});
+  auto outputs = fe.runFusion({input0, input1});
 
-  TORCH_CHECK(output.equal(input0.add(input1.add(2.0))));
+  TORCH_CHECK(outputs[0].equal(input0.add(input1.add(2.0))));
 }
 
 /*
@@ -2240,21 +2228,19 @@ void testGPU_FusionCastOps() {
   auto options = at::TensorOptions().dtype(at::kHalf).device(at::kCUDA, 0);
 
   at::Tensor input1 = at::rand({1, 4}, options);
-  at::Tensor output = at::empty_like(input1);
   at::Tensor ref_output = at::empty_like(input1);
 
   std::array<IValue, 1> inputs = {input1};
   const at::ArrayRef<IValue> input_ivalues(inputs);
-  std::vector<at::Tensor> outputs{{output}};
 
   torch::jit::fuser::cuda::FusionExecutor fe;
   fe.compileFusion(&fusion);
-  fe.runFusion(input_ivalues, outputs);
+  auto outputs = fe.runFusion(input_ivalues);
 
   ref_output = at::_cast_Half(at::_cast_Float(input1));
 
   TORCH_CHECK(
-      output.equal(ref_output),
+      outputs[0].equal(ref_output),
       "\nOp Type: -- ",
       "cast FP16->FP32->FP16",
       " -- had a mismatch.\n",
@@ -2262,7 +2248,7 @@ void testGPU_FusionCastOps() {
       input1,
       "\n",
       "JIT: ",
-      output,
+      outputs[0],
       "\n",
       "REF: ",
       ref_output,
@@ -2485,17 +2471,16 @@ void testGPU_FusionReduction2() {
 
     auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
     at::Tensor input = at::rand({numel_x, numel_y}, options);
-    at::Tensor cg_output = at::empty({numel_x}, options);
 
     torch::jit::fuser::cuda::FusionExecutor fe;
     fe.compileFusion(&fusion);
-    fe.runFusion({input}, {cg_output});
+    auto outputs = fe.runFusion({input});
 
     c10::cuda::CUDAStream stream = c10::cuda::getCurrentCUDAStream();
     AT_CUDA_CHECK(cudaStreamSynchronize(stream));
 
     auto aten_output = input.sum({1});
-    TORCH_CHECK(aten_output.allclose(cg_output));
+    TORCH_CHECK(aten_output.allclose(outputs[0]));
   }
 
   {
@@ -2613,17 +2598,15 @@ void testGPU_FusionReduction3() {
     at::Tensor t4 = at::rand({numel_x}, options);
     auto t5 = t3.mul(t4);
 
-    at::Tensor cg_output = at::empty({numel_x}, options);
-
     torch::jit::fuser::cuda::FusionExecutor fe;
     fe.compileFusion(&fusion);
-    fe.runFusion({t0, t1, t4}, {cg_output});
+    auto outputs = fe.runFusion({t0, t1, t4});
 
     c10::cuda::CUDAStream stream = c10::cuda::getCurrentCUDAStream();
     AT_CUDA_CHECK(cudaStreamSynchronize(stream));
 
     TORCH_CHECK(
-        t5.allclose(cg_output), "Error of: ", t5.sub(cg_output).abs().max());
+        t5.allclose(outputs[0]), "Error of: ", t5.sub(outputs[0]).abs().max());
   }
 }
 
@@ -2729,14 +2712,13 @@ void testGPU_FusionReduction5() {
 
   auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
   at::Tensor input = at::rand({numel_x, numel_y, numel_z}, options);
-  at::Tensor cg_output = at::empty({numel_x}, options);
 
   torch::jit::fuser::cuda::FusionExecutor fe;
   fe.compileFusion(&fusion);
-  fe.runFusion({input}, {cg_output});
+  auto outputs = fe.runFusion({input});
 
   auto aten_output = input.sum({1, 2});
-  TORCH_CHECK(aten_output.allclose(cg_output));
+  TORCH_CHECK(aten_output.allclose(outputs[0]));
 }
 
 void testGPU_FusionReductionTFT() {
@@ -2828,17 +2810,15 @@ void testGPU_FusionSimpleBCast() {
     at::Tensor t0 = at::randn({x, y}, options);
     at::Tensor t1 = at::randn({y, z}, options);
 
-    at::Tensor cg_output = at::empty({x, y, z}, options);
-
     torch::jit::fuser::cuda::FusionExecutor fe;
     fe.compileFusion(&fusion);
-    fe.runFusion({t0, t1}, {cg_output});
+    auto outputs = fe.runFusion({t0, t1});
 
     auto t2 = t0.unsqueeze(-1).expand({x, y, z});
     auto t3 = t1.expand({x, y, z});
     auto t4 = t2.add(t3);
 
-    TORCH_CHECK(t4.allclose(cg_output));
+    TORCH_CHECK(t4.allclose(outputs[0]));
   }
 
   {
@@ -2955,30 +2935,24 @@ void testGPU_FusionSimpleGemm() {
   at::Tensor t0 = at::randn({M, K}, options);
   at::Tensor t1 = at::randn({K, N}, options);
 
-  at::Tensor cg_output = at::empty({M, N}, options);
-
   torch::jit::fuser::cuda::FusionExecutor fe;
   fe.compileFusion(&fusion);
   // Lets specify a few bounds in launch params to make sure it works
   fe.runFusion(
-      {t0, t1},
-      {cg_output},
-      torch::jit::fuser::cuda::LaunchParams(1, -1, -1, 32, 4, 4));
+      {t0, t1}, torch::jit::fuser::cuda::LaunchParams(1, -1, -1, 32, 4, 4));
 
   // Make sure bad launch params throws
   ASSERT_ANY_THROW(fe.runFusion(
-      {t0, t1},
-      {cg_output},
-      torch::jit::fuser::cuda::LaunchParams(1, 2, 3, 4, 5, 6)));
+      {t0, t1}, torch::jit::fuser::cuda::LaunchParams(1, 2, 3, 4, 5, 6)));
 
   // Don't specify any launch params
-  fe.runFusion({t0, t1}, {cg_output});
+  auto outputs = fe.runFusion({t0, t1});
 
   auto t2 = t0.matmul(t1);
   TORCH_CHECK(
-      t2.allclose(cg_output, 1e-5, 1e-5),
+      t2.allclose(outputs[0], 1e-5, 1e-5),
       "Error of: ",
-      t2.sub(cg_output).abs().max());
+      t2.sub(outputs[0]).abs().max());
 }
 
 // Softmax with a 1D tensor. Parallelized only with a single thread block.
@@ -3091,18 +3065,17 @@ void testGPU_FusionSoftmax1DNormalized() {
 
   auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
   at::Tensor t0 = at::randn({dimx}, options);
-  at::Tensor cg_output = at::empty({dimx}, options);
-  at::Tensor t3_output = at::empty_like(cg_output, options);
+  at::Tensor t3_output = at::empty({dimx}, options);
 
   torch::jit::fuser::cuda::FusionExecutor fe;
   fe.compileFusion(&fusion);
-  fe.runFusion({t0}, {cg_output});
+  auto outputs = fe.runFusion({t0});
 
   auto t2 = at::_softmax(t0, -1, false);
   TORCH_CHECK(
-      t2.allclose(cg_output, 1e-5, 1e-5),
+      t2.allclose(outputs[0], 1e-5, 1e-5),
       "Error of: ",
-      t2.sub(cg_output).abs().max());
+      t2.sub(outputs[0]).abs().max());
 }
 
 // Softmax with a 3D tensor, where the inner-most 3rd dimension is
@@ -3223,18 +3196,17 @@ void testGPU_FusionSoftmax3DNormalized() {
 
   auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
   at::Tensor t0 = at::randn({dimx, dimy, dimz}, options);
-  at::Tensor cg_output = at::empty({dimx, dimy, dimz}, options);
-  at::Tensor t3_output = at::empty_like(cg_output, options);
+  at::Tensor t3_output = at::empty({dimx, dimy, dimz}, options);
 
   torch::jit::fuser::cuda::FusionExecutor fe;
   fe.compileFusion(&fusion);
-  fe.runFusion({t0}, {cg_output});
+  auto outputs = fe.runFusion({t0});
 
   auto t2 = at::_softmax(t0, -1, false);
   TORCH_CHECK(
-      t2.allclose(cg_output, 1e-5, 1e-5),
+      t2.allclose(outputs[0], 1e-5, 1e-5),
       "Error of: ",
-      t2.sub(cg_output).abs().max());
+      t2.sub(outputs[0]).abs().max());
 }
 
 void testGPU_FusionSoftmaxComputeAt() {
@@ -3366,14 +3338,13 @@ void testGPU_FusionGridReduction2() {
 
   auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
   at::Tensor input = at::rand({numel_x, numel_y}, options);
-  at::Tensor cg_output = at::empty({numel_x}, options);
 
   torch::jit::fuser::cuda::FusionExecutor fe;
   fe.compileFusion(&fusion);
-  fe.runFusion({input}, {cg_output});
+  auto outputs = fe.runFusion({input});
 
   auto aten_output = input.sum({1});
-  TORCH_CHECK(aten_output.allclose(cg_output));
+  TORCH_CHECK(aten_output.allclose(outputs[0]));
 }
 
 // Same test but uses BIDy and BIDz for reduction. No TID used.
@@ -3476,14 +3447,13 @@ void testGPU_FusionGridReduction3dim0() {
 
   auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
   at::Tensor input = at::rand({numel_x, numel_y}, options);
-  at::Tensor cg_output = at::empty({numel_y}, options);
 
   torch::jit::fuser::cuda::FusionExecutor fe;
   fe.compileFusion(&fusion);
-  fe.runFusion({input}, {cg_output});
+  auto outputs = fe.runFusion({input});
 
   auto aten_output = input.sum({0});
-  TORCH_CHECK(aten_output.allclose(cg_output));
+  TORCH_CHECK(aten_output.allclose(outputs[0]));
 }
 
 // This is similar to the FusionReduction, but swaps BIDx and TIDx
@@ -3592,14 +3562,13 @@ void testGPU_FusionGridReduction5() {
 
   auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
   at::Tensor input = at::rand({numel_x, numel_y}, options);
-  at::Tensor cg_output = at::empty({numel_x}, options);
 
   torch::jit::fuser::cuda::FusionExecutor fe;
   fe.compileFusion(&fusion);
-  fe.runFusion({input}, {cg_output});
+  auto outputs = fe.runFusion({input});
 
   auto aten_output = input.sum({1});
-  TORCH_CHECK(aten_output.allclose(cg_output));
+  TORCH_CHECK(aten_output.allclose(outputs[0]));
 }
 
 // Similar to FusionGridReduction1 but with 3D tensors
@@ -3686,18 +3655,17 @@ void testGPU_FusionNonRedAxisBind() {
 
   auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
   at::Tensor input = at::rand({16, bid_x * tid_x}, options);
-  at::Tensor cg_output = at::empty({bid_x * tid_x}, options);
 
   torch::jit::fuser::cuda::FusionExecutor fe;
   fe.compileFusion(&fusion);
-  fe.runFusion({input}, {cg_output});
+  auto outputs = fe.runFusion({input});
 
   auto aten_output = input.sum({red_dim});
 
   TORCH_CHECK(
-      aten_output.allclose(cg_output),
+      aten_output.allclose(outputs[0]),
       "Error of: ",
-      aten_output.sub(cg_output).abs().max());
+      aten_output.sub(outputs[0]).abs().max());
 }
 
 void testGPU_FusionSplitBCast() {
@@ -3819,18 +3787,16 @@ void testGPU_FusionComputeAtExprOrder() {
 
       auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
       at::Tensor input = at::rand({100}, options);
-      at::Tensor output2 = at::empty_like(input, options);
-      at::Tensor output3 = at::empty_like(input, options);
 
       torch::jit::fuser::cuda::FusionExecutor fe;
       fe.compileFusion(&fusion);
-      fe.runFusion({input}, {output2, output3});
+      auto outputs = fe.runFusion({input});
 
       auto aten_output = (input + 1) * 2;
       TORCH_CHECK(
-          aten_output.allclose(output3),
+          aten_output.allclose(outputs[1]),
           "Error of: ",
-          aten_output.sub(output3).abs().max());
+          aten_output.sub(outputs[1]).abs().max());
     }
   }
   {
@@ -3882,17 +3848,16 @@ void testGPU_FusionZeroDimComputeAt() {
 
   auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
   at::Tensor input = at::rand({100}, options);
-  at::Tensor output = at::empty({}, options);
 
   torch::jit::fuser::cuda::FusionExecutor fe;
   fe.compileFusion(&fusion);
-  fe.runFusion({input}, {output});
+  auto outputs = fe.runFusion({input});
 
   auto aten_output = input.sum() + 1;
   TORCH_CHECK(
-      aten_output.allclose(output),
+      aten_output.allclose(outputs[0]),
       "Error of: ",
-      aten_output.sub(output).abs().max());
+      aten_output.sub(outputs[0]).abs().max());
 }
 
 void testGPU_FusionZeroDimBroadcast() {
@@ -4006,17 +3971,15 @@ void testGPU_FusionBCastAfterReduce() {
   at::Tensor t0 = at::randn({x, y}, options);
   at::Tensor t4 = at::randn({x, y}, options);
 
-  at::Tensor cg_output = at::empty({x, y}, options);
-
   torch::jit::fuser::cuda::FusionExecutor fe;
   fe.compileFusion(&fusion);
-  fe.runFusion({t0, t4}, {cg_output});
+  auto outputs = fe.runFusion({t0, t4});
 
   auto t3 = t0.sum({1}).unsqueeze(-1).expand({x, y});
   auto t5 = t3.add(t4);
 
   // Error is larger than the default threshold
-  TORCH_CHECK(t5.allclose(cg_output, 1e-5, 1e-5));
+  TORCH_CHECK(t5.allclose(outputs[0], 1e-5, 1e-5));
 }
 
 void testGPU_FusionReductionScheduler() {
@@ -4097,21 +4060,19 @@ void testGPU_FusionSymbolicReduction() {
 
   auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
   at::Tensor input = at::rand({numel_x, numel_y}, options);
-  at::Tensor cg_output = at::empty({numel_x}, options);
 
   // How many threads to use for the block reduction
   int runtime_threadIdx_dim = 128;
 
   torch::jit::fuser::cuda::FusionExecutor executor;
   executor.compileFusion(&fusion);
-  executor.runFusion(
+  auto outputs = executor.runFusion(
       {input},
-      {cg_output},
       torch::jit::fuser::cuda::LaunchParams(
           -1, -1, -1, runtime_threadIdx_dim, -1, -1));
 
   auto aten_output = input.sum({1});
-  TORCH_CHECK(aten_output.allclose(cg_output));
+  TORCH_CHECK(aten_output.allclose(outputs[0]));
 }
 
 } // namespace jit

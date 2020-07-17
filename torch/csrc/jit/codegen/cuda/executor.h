@@ -28,12 +28,14 @@ class TORCH_CUDA_API FusionExecutor {
   void compileFusion(Fusion* fusion);
 
   std::vector<at::Tensor> runFusion(
-      const at::ArrayRef<IValue> inputs,
+      const at::ArrayRef<IValue>& inputs,
       const std::vector<at::Tensor>& outputs,
       const LaunchParams& launch_constraints = LaunchParams());
 
-  std::vector<at::Tensor> runFusion(const at::ArrayRef<IValue> inputs) {
-    TORCH_INTERNAL_ASSERT(false, "Not implemented yet.");
+  std::vector<at::Tensor> runFusion(
+      const at::ArrayRef<IValue>& inputs,
+      const LaunchParams& launch_constraints = LaunchParams()) {
+    return runFusion(inputs, {}, launch_constraints);
   }
 
  private:
@@ -55,9 +57,9 @@ class TORCH_CUDA_API FusionExecutor {
       const LaunchParams& launch_constraints,
       EvaluationContext& ec);
 
-  std::vector<at::Tensor> allocGlobalVals(
-      const at::ArrayRef<IValue>& aten_inputs,
-      EvaluationContext& ec);
+  std::vector<at::Tensor> allocGlobalVals(EvaluationContext& ec);
+
+  std::vector<at::Tensor> allocOutputs(EvaluationContext& ec);
 
   Fusion fusion_;
 
