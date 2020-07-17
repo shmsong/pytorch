@@ -118,7 +118,7 @@ void UnrollPass::handle(ForLoop* fl) {
 
   bool has_TV_op = out != nullptr;
 
-  if (within_unroll && has_TV_op) {
+  if (within_unroll && has_TV_op) { //&& has_global) {
     // Setup unrolled loop information:
 
     // Indices used to detect when we can unroll a loop safely
