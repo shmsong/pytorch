@@ -163,6 +163,7 @@ void runCudaFusionGroup(const Node* fusion_node, Stack& stack) {
 
   // Currently we just construct I/O tensors for static graph;
   std::shared_ptr<Graph> graph = fusion_node->g(attr::Subgraph)->copy();
+  std::shared_ptr<Graph> shape_inf_graph = fusion_node->g(attr::Subgraph)->copy();
 
   auto execute_lambda = [&]() {
     const auto nInputs = graph->inputs().size();
