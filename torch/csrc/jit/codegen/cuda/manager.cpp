@@ -196,7 +196,7 @@ void runCudaFusionGroup(const Node* fusion_node, Stack& stack) {
                          .layout(at::kStrided)
                          .device(device)
                          .requires_grad(type->requires_grad());
-    
+
       // TODO: We should infer output shape from `inputs`
       const auto sizes = extractSizes(type);
       const auto strides = extractStrides(type);
