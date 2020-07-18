@@ -1,4 +1,4 @@
-#if defined(USE_CUDA)
+// #if defined(USE_CUDA)
 
 #include <test/cpp/jit/test_base.h>
 
@@ -10,7 +10,6 @@
 #include <torch/csrc/jit/codegen/cuda/ir_all_nodes.h>
 #include <torch/csrc/jit/codegen/cuda/ir_graphviz.h>
 #include <torch/csrc/jit/codegen/cuda/ir_iostream.h>
-#include <torch/csrc/jit/codegen/cuda/kernel.h>
 #include <torch/csrc/jit/codegen/cuda/lower2device.h>
 #include <torch/csrc/jit/codegen/cuda/mutator.h>
 #include <torch/csrc/jit/codegen/cuda/scheduler.h>
@@ -20,6 +19,9 @@
 // fuser and IR parser
 #include <torch/csrc/jit/codegen/cuda/parser.h>
 #include "torch/csrc/jit/ir/irparser.h"
+
+#include <ATen/cuda/Exceptions.h>
+#include <c10/cuda/CUDAStream.h>
 
 #include <iostream>
 
@@ -47,26 +49,6 @@ void checkIntValue(
   const auto actual_value = ExpressionEvaluator::evaluate(val, eval_context);
   TORCH_CHECK(actual_value.has_value());
   TORCH_CHECK(actual_value.value() == expected_value);
-}
-
-void setupLaunchConfig(
-    Fusion* fusion,
-    int tid_x = 1,
-    int tid_y = 1,
-    int tid_z = 1,
-    int gid_x = 1,
-    int gid_y = 1,
-    int gid_z = 1,
-    int sm_size = 0) {
-  fusion->setLaunchConfig(LaunchConfigType::TIDx, new Int(tid_x));
-  fusion->setLaunchConfig(LaunchConfigType::TIDy, new Int(tid_y));
-  fusion->setLaunchConfig(LaunchConfigType::TIDz, new Int(tid_z));
-  fusion->setLaunchConfig(LaunchConfigType::BIDx, new Int(gid_x));
-  fusion->setLaunchConfig(LaunchConfigType::BIDy, new Int(gid_y));
-  fusion->setLaunchConfig(LaunchConfigType::BIDz, new Int(gid_z));
-  fusion->setLaunchConfig(LaunchConfigType::SharedMemory, new Int(sm_size));
-  // no need to set LaunchConfigType::Compatible, as we are not trigger via
-  // kernel selection in cache
 }
 
 } // namespace
@@ -399,8 +381,6 @@ void testGPU_FusionClear() {
     tv3->axis(0)->parallelize(ParallelType::BIDx);
     tv2->axis(1)->parallelize(ParallelType::Unroll);
     tv3->axis(-1)->parallelize(ParallelType::TIDx);
-
-    fusion.setLaunchConfig(LaunchConfigType::Compatible, new Int(1));
   }
 
   // 2. Clear the IR
@@ -412,8 +392,6 @@ void testGPU_FusionClear() {
 
   TORCH_CHECK(fusion.inputs().empty());
   TORCH_CHECK(fusion.outputs().empty());
-
-  TORCH_CHECK(fusion.launch_configs().empty());
 
   TORCH_CHECK(!fusion.hasReduction());
   TORCH_CHECK(!fusion.hasBlockReduction());
@@ -553,9 +531,6 @@ void testGPU_FusionMove() {
 
     tv3->axis(0)->parallelize(ParallelType::BIDx);
     tv3->axis(-1)->parallelize(ParallelType::TIDx);
-
-    fusion.setLaunchConfig(LaunchConfigType::Compatible, new Int(1));
-    fusion.setLaunchConfig(LaunchConfigType::BIDx, tv3->axis(0)->rawExtent());
   }
 
   std::stringstream original_ir;
@@ -1038,15 +1013,12 @@ void testGPU_FusionParser() {
     }
   }
 
-  torch::jit::fuser::cuda::CudaKernel prog;
-  prog.setFusionPtr(fuser::cuda::parseJitIR(g));
-  Fusion* fusion = prog.fusion();
-  FusionGuard fg(fusion);
-  prog.setDevice(0);
+  auto fusion = fuser::cuda::parseJitIR(g);
+  FusionGuard fg(fusion.get());
   auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
   at::Tensor input1 = at::randn({16}, options);
   at::Tensor input2 = at::randn({16}, options);
-  fuser::cuda::scheduleFusion(prog.fusion(), {input1, input2});
+  fuser::cuda::scheduleFusion(fusion.get(), {input1, input2});
 
   // CONSIDER:
   // 1. this can be moved to a dedicated "golden" file
@@ -1055,57 +1027,55 @@ void testGPU_FusionParser() {
 __global__ void CUDAGeneratedKernel(Tensor<float, 1> T0, Tensor<float, 1> T1, Tensor<float, 1> T3){
   float T2[4];
   if ( ( ( ( ( ( blockIdx.x * 4 ) + ( 4 - 1 ) ) * 128 ) + threadIdx.x ) < T3.size[0] ) ) {
-    for(size_t i27 = 0; i27 < 4; ++i27 ) {
-      T2[ i27 ]
-         = T0[ ( ( ( ( ( blockIdx.x * 4 ) + i27 ) * 128 ) + threadIdx.x ) * T0.stride[0] ) ]
-         * T1[ ( ( ( ( ( blockIdx.x * 4 ) + i27 ) * 128 ) + threadIdx.x ) * T1.stride[0] ) ];
+    for(size_t i20 = 0; i20 < 4; ++i20 ) {
+      T2[ i20 ]
+         = T0[ ( ( ( ( ( blockIdx.x * 4 ) + i20 ) * 128 ) + threadIdx.x ) * T0.stride[0] ) ]
+         * T1[ ( ( ( ( ( blockIdx.x * 4 ) + i20 ) * 128 ) + threadIdx.x ) * T1.stride[0] ) ];
     }
   } else {
-    for(size_t i27 = 0; i27 < 4; ++i27 ) {
-      if ( ( ( ( ( ( blockIdx.x * 4 ) + i27 ) * 128 ) + threadIdx.x ) < T3.size[0] ) ) {
-        T2[ i27 ]
-           = T0[ ( ( ( ( ( blockIdx.x * 4 ) + i27 ) * 128 ) + threadIdx.x ) * T0.stride[0] ) ]
-           * T1[ ( ( ( ( ( blockIdx.x * 4 ) + i27 ) * 128 ) + threadIdx.x ) * T1.stride[0] ) ];
+    for(size_t i20 = 0; i20 < 4; ++i20 ) {
+      if ( ( ( ( ( ( blockIdx.x * 4 ) + i20 ) * 128 ) + threadIdx.x ) < T3.size[0] ) ) {
+        T2[ i20 ]
+           = T0[ ( ( ( ( ( blockIdx.x * 4 ) + i20 ) * 128 ) + threadIdx.x ) * T0.stride[0] ) ]
+           * T1[ ( ( ( ( ( blockIdx.x * 4 ) + i20 ) * 128 ) + threadIdx.x ) * T1.stride[0] ) ];
       }
     }
   }
   if ( ( ( ( ( ( blockIdx.x * 4 ) + ( 4 - 1 ) ) * 128 ) + threadIdx.x ) < T3.size[0] ) ) {
-    for(size_t i28 = 0; i28 < 4; ++i28 ) {
-      T3[ ( ( ( ( ( blockIdx.x * 4 ) + i28 ) * 128 ) + threadIdx.x ) * T3.stride[0] ) ]
-         = T2[ i28 ]
-         * T0[ ( ( ( ( ( blockIdx.x * 4 ) + i28 ) * 128 ) + threadIdx.x ) * T0.stride[0] ) ];
+    for(size_t i21 = 0; i21 < 4; ++i21 ) {
+      T3[ ( ( ( ( ( blockIdx.x * 4 ) + i21 ) * 128 ) + threadIdx.x ) * T3.stride[0] ) ]
+         = T2[ i21 ]
+         * T0[ ( ( ( ( ( blockIdx.x * 4 ) + i21 ) * 128 ) + threadIdx.x ) * T0.stride[0] ) ];
     }
   } else {
-    for(size_t i28 = 0; i28 < 4; ++i28 ) {
-      if ( ( ( ( ( ( blockIdx.x * 4 ) + i28 ) * 128 ) + threadIdx.x ) < T3.size[0] ) ) {
-        T3[ ( ( ( ( ( blockIdx.x * 4 ) + i28 ) * 128 ) + threadIdx.x ) * T3.stride[0] ) ]
-           = T2[ i28 ]
-           * T0[ ( ( ( ( ( blockIdx.x * 4 ) + i28 ) * 128 ) + threadIdx.x ) * T0.stride[0] ) ];
+    for(size_t i21 = 0; i21 < 4; ++i21 ) {
+      if ( ( ( ( ( ( blockIdx.x * 4 ) + i21 ) * 128 ) + threadIdx.x ) < T3.size[0] ) ) {
+        T3[ ( ( ( ( ( blockIdx.x * 4 ) + i21 ) * 128 ) + threadIdx.x ) * T3.stride[0] ) ]
+           = T2[ i21 ]
+           * T0[ ( ( ( ( ( blockIdx.x * 4 ) + i21 ) * 128 ) + threadIdx.x ) * T0.stride[0] ) ];
       }
     }
   }
 }
 )";
 
-  GPULower gpulw(fusion);
-  std::stringstream actual_kernel;
-  actual_kernel << "\n";
-  gpulw.printKernel(actual_kernel);
-  if (expected_kernel.size() != actual_kernel.str().size() ||
-      expected_kernel.compare(actual_kernel.str()) != 0) {
+  std::string actual_kernel = GPULower(fusion.get()).getKernel();
+  actual_kernel = "\n" + actual_kernel;
+  if (expected_kernel.size() != actual_kernel.size() ||
+      expected_kernel.compare(actual_kernel) != 0) {
     std::cerr
         << " Codegen mismatch, codegen possibly changed, or is incorrect. "
         << " \n ========= EXPECTED ========= \n"
         << expected_kernel << "\n========= ACTUAL ========== \n"
-        << actual_kernel.str() << "\n=================" << std::endl;
+        << actual_kernel << "\n=================" << std::endl;
     TORCH_CHECK(false);
   }
-  fuser::cuda::compileKernel(&prog);
-  at::Tensor output = at::empty_like(input1);
+  cuda::FusionExecutor fe;
+  fe.compileFusion(fusion.get());
   // no broadcasting needed, omitting the last optional argument;
-  torch::jit::fuser::cuda::runKernel(&prog, {input1, input2}, {output});
+  auto outputs = fe.runFusion({input1, input2});
   at::Tensor output_ref = input1 * input2 * input1;
-  TORCH_CHECK(output_ref.equal(output));
+  TORCH_CHECK(output_ref.equal(outputs[0]));
 }
 
 void testGPU_FusionForLoop() {
@@ -3988,18 +3958,16 @@ void testGPU_FusionReductionScheduler() {
   constexpr int tid_x = 4096;
   constexpr int red_dim = 1;
 
-  torch::jit::fuser::cuda::CudaKernel prog;
-  prog.setFusionPtr(std::make_unique<Fusion>());
-  Fusion* fusion = prog.fusion();
-  FusionGuard fg(fusion);
+  Fusion fusion;
+  FusionGuard fg(&fusion);
 
   // Set up your input tensor views
   TensorView* tv0 = makeDummyTensor(2);
-  fusion->addInput(tv0);
+  fusion.addInput(tv0);
 
   TensorView* tv1 =
       reductionOp(BinaryOpType::Add, {red_dim}, new Float(0), tv0);
-  fusion->addOutput(tv1);
+  fusion.addOutput(tv1);
 
   auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
   at::Tensor input = at::rand({bid_x, tid_x}, options);
@@ -4009,20 +3977,19 @@ void testGPU_FusionReductionScheduler() {
   const at::ArrayRef<c10::IValue> inputs({input});
 
   TORCH_CHECK(
-      cuda::scheduleReduction(prog.fusion(), inputs),
+      cuda::scheduleReduction(&fusion, inputs),
       "Reduction schedule was not generated!");
 
-  prog.setDevice(0);
-
-  torch::jit::fuser::cuda::compileKernel(&prog);
-  torch::jit::fuser::cuda::runKernel(&prog, {input}, {cg_output}, c10::nullopt);
-
+  cuda::FusionExecutor fe;
+  fe.compileFusion(&fusion);
+  // no broadcasting needed, omitting the last optional argument;
+  auto outputs = fe.runFusion({input});
   auto aten_output = input.sum({red_dim});
 
   TORCH_CHECK(
-      aten_output.allclose(cg_output),
+      aten_output.allclose(outputs[0]),
       "Error of: ",
-      aten_output.sub(cg_output).abs().max());
+      aten_output.sub(outputs[0]).abs().max());
 }
 
 // Simple reduction parallelized on a symbolic size.
@@ -4079,4 +4046,4 @@ void testGPU_FusionSymbolicReduction() {
 } // namespace jit
 } // namespace torch
 
-#endif // #if defined(USE_CUDA)
+// #endif // #if defined(USE_CUDA)
