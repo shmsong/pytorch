@@ -16,7 +16,7 @@ namespace cuda {
 
 int FusionExecutor::fusion_id_counter = 0;
 
-std::string FusionExecutor::getStructuredCode(std::string kernel) {
+std::string FusionExecutor::getStructuredCode(const std::string& kernel) {
   // generating cuda code;
   std::string code = std::string("namespace ") + FusionExecutor::Namespace() +
       " {\n" + executor_utils::kernelPreamble() + kernel + "}\n";
