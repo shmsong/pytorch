@@ -17,7 +17,8 @@ namespace {
 
 class GridReductionBuffers : OptOutDispatch {
  public:
-  static std::vector<Allocate*> getGlobalAllocs(std::vector<Expr*> exprs) {
+  static std::vector<Allocate*> getGlobalAllocs(
+      const std::vector<Expr*>& exprs) {
     GridReductionBuffers fgr;
     for (auto expr : exprs) {
       fgr.handle(expr);

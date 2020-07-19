@@ -69,9 +69,8 @@ TensorView* newOutputTV(const std::vector<Val*>& vals, DataType dtype) {
   for (size_t dim_i = 0; dim_i < out_domain.size(); dim_i++) {
     if (out_domain[dim_i] == nullptr) {
       BroadcastType bcast_type = BroadcastType::WithoutStride;
-      for (size_t inp_i = 0; inp_i < tvs.size(); inp_i++) {
-        auto dim =
-            TensorDomain::noReductions(tvs[inp_i]->getRootDomain())[dim_i];
+      for (const auto tv : tvs) {
+        auto dim = TensorDomain::noReductions(tv->getRootDomain())[dim_i];
         // If there's an unresolved bcast dim and it came from a strided dim,
         // assume output of it should be strided too
         if (dim->getBroadcastType() == BroadcastType::WithStride) {
