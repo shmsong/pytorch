@@ -16,7 +16,7 @@ namespace cuda {
 
 int FusionExecutor::fusion_id_counter = 0;
 
-std::string FusionExecutor::getStructuredCode(std::string kernel) {
+std::string FusionExecutor::getStructuredCode(const std::string& kernel) {
   // generating cuda code;
   std::string code = std::string("namespace ") + FusionExecutor::Namespace() +
       " {\n" + executor_utils::kernelPreamble() + kernel + "}\n";
@@ -161,7 +161,7 @@ LaunchParams FusionExecutor::computeLaunchParams(
     if (val->getValType().value() == ValType::TensorView) {
       TensorView* tv = val->as<TensorView>();
       for (auto id : tv->domain()->domain()) {
-        if (id->isThread()) {
+        if (id->isThread() && !id->isBroadcast()) {
           if (parallel_iter_domains.find(id->parallel_method()) !=
               parallel_iter_domains.end()) {
             parallel_iter_domains.at(id->parallel_method()).push_back(id);
@@ -289,17 +289,17 @@ std::vector<at::Tensor> FusionExecutor::runFusion(
       &fusion_, alloced_outputs, options_.device);
 
   KernelArgumentHolder kernel_arguments;
-  kernel_arguments.appendArgs(inputs);
-  kernel_arguments.appendArgs(alloced_outputs);
+  kernel_arguments.push(inputs);
+  kernel_arguments.push(alloced_outputs);
   auto buffers = allocGlobalVals(evaluation_context);
-  kernel_arguments.appendArgs(buffers);
+  kernel_arguments.push(buffers);
 
   if (has_random) {
     const auto rand_offset = 4 *
         (std::ceil(
              alloced_outputs[0].numel() / (4.0 * 128 * launch_params.gdimx())) +
          1);
-    kernel_arguments.appendPhilox(rand_offset);
+    kernel_arguments.appendPhiloxRNGSeed(rand_offset);
   }
 
   AT_CUDA_DRIVER_CHECK(at::globalContext().getNVRTC().cuLaunchKernel(

@@ -49,7 +49,7 @@ class TORCH_CUDA_API FusionExecutor {
   }
 
   // Add preamble and wrap in namespace
-  std::string getStructuredCode(std::string kernel);
+  std::string getStructuredCode(const std::string& kernel);
 
   LaunchParams computeLaunchParams(
       const at::ArrayRef<IValue>& aten_inputs,

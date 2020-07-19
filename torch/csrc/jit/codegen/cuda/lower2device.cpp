@@ -17,7 +17,8 @@ namespace {
 
 class GridReductionBuffers : OptOutDispatch {
  public:
-  static std::vector<Allocate*> getGlobalAllocs(std::vector<Expr*> exprs) {
+  static std::vector<Allocate*> getGlobalAllocs(
+      const std::vector<Expr*>& exprs) {
     GridReductionBuffers fgr;
     for (auto expr : exprs) {
       fgr.handle(expr);
@@ -80,9 +81,7 @@ void GPULower::lower() {
       fusion_, fusion_->exprs(true, false, true), preds);
 
   auto unrolled_loops = UnrollPass::runPass(fusion_, loop_nests, preds);
-
   auto indexed_loops = IndexLowering::getIndexedExprs(fusion_, unrolled_loops);
-
   lowered_exprs_ = indexed_loops;
 
   // Get allocations:

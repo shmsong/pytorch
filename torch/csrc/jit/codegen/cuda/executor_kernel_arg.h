@@ -152,11 +152,11 @@ class KernelArgumentHolder {
   // in the buffer
   void** getBuffer();
 
-  void appendArgs(const c10::ArrayRef<c10::IValue>& args);
+  void push(const c10::ArrayRef<c10::IValue>& args);
 
-  void appendArgs(const std::vector<at::Tensor>& tensors);
+  void push(const std::vector<at::Tensor>& tensors);
 
-  void appendPhilox(uint64_t rand_offset);
+  void appendPhiloxRNGSeed(uint64_t rand_offset);
 
  private:
   std::vector<std::unique_ptr<ArgAbstract>> arguments_;
