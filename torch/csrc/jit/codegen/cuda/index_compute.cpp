@@ -300,8 +300,9 @@ TensorIndex* Index::getGlobalConsumerIndex(
 
   std::vector<Val*> strided_inds;
   for (size_t i = 0; i < computed_inds.size(); i++) {
-    if (computed_inds[i]->isZeroInt())
+    if (computed_inds[i]->isZeroInt()) {
       continue;
+    }
     std::stringstream ss;
     ss << "T" << consumer->name() << ".stride[" << i << "]";
     strided_inds.push_back(

@@ -49,7 +49,6 @@ void validateKernelOutputs(
 
 struct NvrtcFunction {
  public:
-  NvrtcFunction() = default;
   CUmodule module;
   CUfunction function;
 };

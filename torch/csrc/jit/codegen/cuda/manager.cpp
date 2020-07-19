@@ -8,8 +8,8 @@
 #include <torch/csrc/jit/codegen/cuda/utils.h>
 #include <torch/csrc/jit/passes/canonicalize.h>
 #include <torch/csrc/jit/passes/shape_analysis.h>
-#include <torch/csrc/jit/runtime/interpreter.h>
 #include <torch/csrc/jit/runtime/graph_executor.h>
+#include <torch/csrc/jit/runtime/interpreter.h>
 
 #include <torch/csrc/jit/codegen/cuda/executor.h>
 #include <unordered_map>

@@ -56,7 +56,7 @@ int64_t LaunchParams::getDim(ParallelType p_type) const {
 }
 
 bool LaunchParams::hasDim(ParallelType p_type) const {
-  return getRawVal(p_type) != -1;
+  return getRawVal(p_type) != UNINITIALIZED_VAL;
 }
 
 const int64_t& LaunchParams::getRawVal(ParallelType p_type) const {

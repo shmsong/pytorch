@@ -655,7 +655,17 @@ void IRPrinter::handle(const Allocate* a) {
         break;
       case MemoryType::Shared:
         os << "__shared__ ";
-        __attribute__((fallthrough));
+        os << a->buffer_type();
+        if (tv->nDims() == 0) {
+          os << tv;
+        } else {
+          os << " T" << tv->name();
+          os << "[";
+          print_inline(a->size());
+          os << "]";
+        }
+        os << ";\n";
+        break;
       case MemoryType::Local:
         os << a->buffer_type();
         if (tv->nDims() == 0) {
