@@ -4538,7 +4538,37 @@ void testGPU_FusionCacheMultiConsumer() {
 
   prog.setDevice(0);
   torch::jit::fuser::cuda::compileKernel(&prog);
-  return;
+  constexpr int N = 800;
+  prog.setDevice(0);
+  setupLaunchConfig(
+      prog.fusion(),
+      32, // tid_x
+      1, // tid_y
+      1, // tid_z
+      1, // gid_x
+      1, // gid_y
+      1, // gid_z
+      0 // shared_memory size
+  );
+
+  auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
+  at::Tensor input0 = at::rand({N}, options);
+  at::Tensor cg_output1 = at::empty({N}, options);
+  at::Tensor cg_output2 = at::empty({N}, options);
+
+  torch::jit::fuser::cuda::compileKernel(&prog);
+  torch::jit::fuser::cuda::runKernel(
+      &prog, {input0}, {cg_output1, cg_output2}, c10::nullopt);
+
+  auto aten_output = (input0 + 1) + 2;
+  TORCH_CHECK(
+      aten_output.allclose(cg_output1, 1e-5, 1e-5),
+      "Error of: ",
+      aten_output.sub(cg_output1).abs().sum());
+  TORCH_CHECK(
+      aten_output.allclose(cg_output2, 1e-5, 1e-5),
+      "Error of: ",
+      aten_output.sub(cg_output2).abs().sum());
 }
 
 void testGPU_FusionConstCheck() {
