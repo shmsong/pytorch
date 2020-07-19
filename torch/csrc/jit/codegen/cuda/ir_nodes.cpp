@@ -1106,8 +1106,6 @@ Allocate::Allocate(Val* _buffer, MemoryType _memory_type, Val* _size)
       }
     }
   }
-
-  addInput(buffer_);
   addInput(size_);
   this->name_ = FusionGuard::getCurFusion()->registerExpr(this);
 }

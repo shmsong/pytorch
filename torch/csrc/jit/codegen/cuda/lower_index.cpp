@@ -250,8 +250,9 @@ void IndexLowering::handle(BroadcastOp* bop) {
 
 void IndexLowering::generate(const std::vector<Expr*>& exprs) {
   // Run through loop nests and further lower the expressions
-  for (auto* expr : exprs)
+  for (auto* expr : exprs) {
     OptInDispatch::handle(expr);
+  }
 }
 
 } // namespace fuser
