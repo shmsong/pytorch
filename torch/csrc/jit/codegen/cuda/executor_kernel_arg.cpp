@@ -87,7 +87,7 @@ void** KernelArgumentHolder::getBuffer() {
   return void_ptrs_.data();
 }
 
-void KernelArgumentHolder::appendArgs(const c10::ArrayRef<c10::IValue>& args) {
+void KernelArgumentHolder::push(const c10::ArrayRef<c10::IValue>& args) {
   // Naive I/O setup, I'm ignoring all the potential transformation (i.e. I/O
   // allocated here from the subgraph could be, and very likely are, different
   // from I/O expected by the generated CUDA kernel.
@@ -100,13 +100,13 @@ void KernelArgumentHolder::appendArgs(const c10::ArrayRef<c10::IValue>& args) {
   }
 }
 
-void KernelArgumentHolder::appendArgs(const std::vector<at::Tensor>& tensors) {
+void KernelArgumentHolder::push(const std::vector<at::Tensor>& tensors) {
   for (const auto& tensor : tensors) {
     push(tensor);
   }
 }
 
-void KernelArgumentHolder::appendPhilox(uint64_t rand_offset) {
+void KernelArgumentHolder::appendPhiloxRNGSeed(uint64_t rand_offset) {
   std::pair<uint64_t, uint64_t> philox_engine_inputs;
   auto gen = at::cuda::detail::getDefaultCUDAGenerator();
   {
