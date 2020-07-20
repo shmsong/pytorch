@@ -4387,49 +4387,30 @@ void testGPU_FusionCacheMultiConsumer() {
   tv1->computeAt(tv2, -1);
   tv3->computeAt(tv4, -1);
 
-  // Passes
   auto tv5 = tv1->cache_before();
   auto tv6 = tv3->cache_before();
 
   // Fails because tensor must be recomputed twice
   // auto tv7 = tv0->cache_after();
 
-  // std::cout << "After caching\n";
-  // fusion->printKernel();
-
-  prog.setDevice(0);
-  torch::jit::fuser::cuda::compileKernel(&prog);
   constexpr int N = 800;
-  prog.setDevice(0);
-  setupLaunchConfig(
-      prog.fusion(),
-      32, // tid_x
-      1, // tid_y
-      1, // tid_z
-      1, // gid_x
-      1, // gid_y
-      1, // gid_z
-      0 // shared_memory size
-  );
 
   auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
-  at::Tensor input0 = at::rand({N}, options);
-  at::Tensor cg_output1 = at::empty({N}, options);
-  at::Tensor cg_output2 = at::empty({N}, options);
+  at::Tensor input = at::rand({N}, options);
 
-  torch::jit::fuser::cuda::compileKernel(&prog);
-  torch::jit::fuser::cuda::runKernel(
-      &prog, {input0}, {cg_output1, cg_output2}, c10::nullopt);
+  torch::jit::fuser::cuda::FusionExecutor fe;
+  fe.compileFusion(&fusion);
+  auto outputs = fe.runFusion({input});
 
-  auto aten_output = (input0 + 1) + 2;
+  auto aten_output = (input + 1) + 2;
   TORCH_CHECK(
-      aten_output.allclose(cg_output1, 1e-5, 1e-5),
+      aten_output.allclose(outputs[0], 1e-5, 1e-5),
       "Error of: ",
-      aten_output.sub(cg_output1).abs().sum());
+      aten_output.sub(outputs[0]).abs().sum());
   TORCH_CHECK(
-      aten_output.allclose(cg_output2, 1e-5, 1e-5),
+      aten_output.allclose(outputs[1], 1e-5, 1e-5),
       "Error of: ",
-      aten_output.sub(cg_output2).abs().sum());
+      aten_output.sub(outputs[1]).abs().sum());
 }
 
 void testGPU_FusionConstCheck() {
