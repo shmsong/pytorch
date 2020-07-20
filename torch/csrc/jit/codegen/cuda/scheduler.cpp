@@ -402,7 +402,7 @@ c10::optional<ReductionParams> scheduleReduction(
   // about the start?
   for (size_t i = 0; i < inputs.size(); ++i) {
     if (inputs[i].type()->kind() == c10::TypeKind::TensorType) {
-      const TensorView* tv = static_cast<TensorView*>(fusion->inputs()[i]);
+      const TensorView* tv = fusion->inputs()[i]->as<TensorView>();
       size_t dims = tv->getRootDomain().size();
       for (size_t j = 0; j < dims; ++j) {
         const IterDomain* id = tv->getRootDomain()[j];
@@ -531,21 +531,6 @@ c10::optional<ReductionParams> scheduleReduction(
       red_tv->axis(1)->parallelize(ParallelType::BIDx);
     }
   }
-
-  // Communicate Blocking for Kernel Launch
-  // TODO: This will be replaced in favor of passing blocking
-  // args in the future
-  fusion->setLaunchConfig(
-      LaunchConfigType::TIDx, new Int(rparams.block_dim_x_));
-  fusion->setLaunchConfig(
-      LaunchConfigType::TIDy, new Int(rparams.block_dim_y_));
-  fusion->setLaunchConfig(LaunchConfigType::TIDz, new Int(1));
-  fusion->setLaunchConfig(LaunchConfigType::BIDx, new Int(rparams.grid_dim_x_));
-  fusion->setLaunchConfig(LaunchConfigType::BIDy, new Int(rparams.grid_dim_y_));
-  fusion->setLaunchConfig(LaunchConfigType::BIDz, new Int(1));
-  fusion->setLaunchConfig(LaunchConfigType::SharedMemory, new Int(0));
-  fusion->setLaunchConfig(LaunchConfigType::Compatible, new Int(1));
-
   return rparams;
 }
 
