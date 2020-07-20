@@ -3972,7 +3972,6 @@ void testGPU_FusionReductionScheduler() {
   const auto options =
       at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
   at::Tensor input = at::rand({bid_x, tid_x}, options);
-  at::Tensor cg_output = at::empty({bid_x}, options);
 
   // Apply reduction heuristic
   const at::ArrayRef<c10::IValue> inputs({input});
@@ -4052,15 +4051,15 @@ void testGPU_FusionReductionSchedulerMultiDimNonFastest() {
   const std::vector<int64_t> tensor_dims_in = {5, 10, 15, 20};
   const std::vector<int64_t> tensor_dims_out = {10, 20};
 
-  auto fusion = std::make_unique<Fusion>();
-  FusionGuard fg(fusion.get());
+  Fusion fusion;
+  FusionGuard fg(&fusion);
 
   // Set up your input tensor views
   TensorView* tv0 = makeDummyTensor(tensor_dims_in.size());
-  fusion->addInput(tv0);
+  fusion.addInput(tv0);
 
   TensorView* tv1 = reductionOp(BinaryOpType::Add, red_dims, new Float(0), tv0);
-  fusion->addOutput(tv1);
+  fusion.addOutput(tv1);
 
   const auto options =
       at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
@@ -4071,22 +4070,19 @@ void testGPU_FusionReductionSchedulerMultiDimNonFastest() {
   const at::ArrayRef<c10::IValue> inputs({input});
 
   TORCH_CHECK(
-      cuda::scheduleReduction(fusion.get(), inputs),
+      cuda::scheduleReduction(&fusion, inputs),
       "Reduction schedule was not generated!");
 
-  torch::jit::fuser::cuda::CudaKernel prog;
-  prog.setFusionPtr(std::move(fusion));
-  prog.setDevice(0);
-
-  torch::jit::fuser::cuda::compileKernel(&prog);
-  torch::jit::fuser::cuda::runKernel(&prog, {input}, {cg_output}, c10::nullopt);
+  torch::jit::fuser::cuda::FusionExecutor fe;
+  fe.compileFusion(&fusion);
+  auto outputs = fe.runFusion({input});
 
   auto aten_output = input.sum(red_dims64);
 
   TORCH_CHECK(
-      aten_output.allclose(cg_output),
+      aten_output.allclose(outputs[0]),
       "Error of: ",
-      aten_output.sub(cg_output).abs().max());
+      aten_output.sub(outputs[0]).abs().max());
 }
 
 void testGPU_FusionReductionSchedulerMultiDimFastest() {
@@ -4097,55 +4093,49 @@ void testGPU_FusionReductionSchedulerMultiDimFastest() {
   const std::vector<int64_t> tensor_dims_in = {5, 10, 15, 20};
   const std::vector<int64_t> tensor_dims_out = {5, 15};
 
-  auto fusion = std::make_unique<Fusion>();
-  FusionGuard fg(fusion.get());
+  Fusion fusion;
+  FusionGuard fg(&fusion);
 
   // Set up your input tensor views
   TensorView* tv0 = makeDummyTensor(tensor_dims_in.size());
-  fusion->addInput(tv0);
+  fusion.addInput(tv0);
 
   TensorView* tv1 = reductionOp(BinaryOpType::Add, red_dims, new Float(0), tv0);
-  fusion->addOutput(tv1);
+  fusion.addOutput(tv1);
 
   const auto options =
       at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
   at::Tensor input = at::rand(tensor_dims_in, options);
-  at::Tensor cg_output = at::empty(tensor_dims_out, options);
 
   // Apply reduction heuristic
   const at::ArrayRef<c10::IValue> inputs({input});
 
   TORCH_CHECK(
-      cuda::scheduleReduction(fusion.get(), inputs),
+      cuda::scheduleReduction(&fusion, inputs),
       "Reduction schedule was not generated!");
 
-  torch::jit::fuser::cuda::CudaKernel prog;
-  prog.setFusionPtr(std::move(fusion));
-  prog.setDevice(0);
-
-  torch::jit::fuser::cuda::compileKernel(&prog);
-  torch::jit::fuser::cuda::runKernel(&prog, {input}, {cg_output}, c10::nullopt);
+  torch::jit::fuser::cuda::FusionExecutor fe;
+  fe.compileFusion(&fusion);
+  auto outputs = fe.runFusion(inputs);
 
   auto aten_output = input.sum(red_dims64);
 
   TORCH_CHECK(
-      aten_output.allclose(cg_output),
+      aten_output.allclose(outputs[0]),
       "Error of: ",
-      aten_output.sub(cg_output).abs().max());
+      aten_output.sub(outputs[0]).abs().max());
 }
 
 void testGPU_FusionCacheBefore() {
   // TVM Cache Write
-  torch::jit::fuser::cuda::CudaKernel prog;
-  prog.setFusionPtr(std::make_unique<Fusion>());
-  Fusion* fusion = prog.fusion();
-  FusionGuard fg(fusion);
+  Fusion fusion;
+  FusionGuard fg(&fusion);
 
   TensorView* tv0 = makeDummyTensor(2);
   TensorView* tv1 = add(tv0, new Float(1.0));
   TensorView* tv2 = mul(tv1, new Float(3.0));
-  fusion->addInput(tv0);
-  fusion->addOutput(tv2);
+  fusion.addInput(tv0);
+  fusion.addOutput(tv2);
   // Before: TV2 = TV1 * 3
   // After:  TV3 = TV1 * 3;
   //         TV2 = TV3;
@@ -4158,52 +4148,39 @@ void testGPU_FusionCacheBefore() {
   // cache_before automatically applies ComputeAt to the cache TensorView
   TensorView* tv3 = tv2->cache_before();
   // Schedule
-  // fusion->printMath();
+  // fusion.printMath();
 
   tv2->axis(0)->parallelize(ParallelType::BIDx);
   tv2->axis(-1)->parallelize(ParallelType::TIDx);
   // Thread and Block binding
-  // fusion->printKernel();
+  // fusion.printKernel();
 
   constexpr int M = 32, N = 750;
-  prog.setDevice(0);
-  setupLaunchConfig(
-      prog.fusion(),
-      BSX, // tid_x
-      1, // tid_y
-      1, // tid_z
-      M, // gid_x
-      1, // gid_y
-      1, // gid_z
-      0 // shared_memory size
-  );
 
   auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
   at::Tensor input = at::rand({M, N}, options);
-  at::Tensor cg_output = at::empty({M, N}, options);
 
-  torch::jit::fuser::cuda::compileKernel(&prog);
-  torch::jit::fuser::cuda::runKernel(&prog, {input}, {cg_output}, c10::nullopt);
+  torch::jit::fuser::cuda::FusionExecutor fe;
+  fe.compileFusion(&fusion);
+  auto outputs = fe.runFusion({input});
 
   at::Tensor aten_output = (input + 1.0) * 3.0;
   TORCH_CHECK(
-      aten_output.allclose(cg_output, 1e-5, 1e-5),
+      aten_output.allclose(outputs[0], 1e-5, 1e-5),
       "Error of: ",
-      aten_output.sub(cg_output).abs().sum());
+      aten_output.sub(outputs[0]).abs().sum());
 }
 
 void testGPU_FusionCacheAfter() {
   // TVM Cache Read
-  torch::jit::fuser::cuda::CudaKernel prog;
-  prog.setFusionPtr(std::make_unique<Fusion>());
-  Fusion* fusion = prog.fusion();
-  FusionGuard fg(fusion);
+  Fusion fusion;
+  FusionGuard fg(&fusion);
 
   TensorView* tv0 = makeDummyTensor(2);
   TensorView* tv1 = add(tv0, new Float(1.0));
   TensorView* tv2 = mul(tv1, new Float(3.0));
-  fusion->addInput(tv0);
-  fusion->addOutput(tv2);
+  fusion.addInput(tv0);
+  fusion.addOutput(tv2);
   // Before: TV1 = TV0 + 1
   // After:  TV3 = TV0;
   //         TV1 = TV3 + 1
@@ -4216,45 +4193,32 @@ void testGPU_FusionCacheAfter() {
   // cache_after automatically applies ComputeAt to the cache TensorView
   TensorView* tv3 = tv0->cache_after();
   // Schedule
-  // fusion->printMath();
+  // fusion.printMath();
 
   tv2->axis(0)->parallelize(ParallelType::BIDx);
   tv2->axis(-1)->parallelize(ParallelType::TIDx);
   // Thread and Block binding
-  // fusion->printKernel();
+  // fusion.printKernel();
 
   constexpr int M = 32, N = 457;
-  prog.setDevice(0);
-  setupLaunchConfig(
-      prog.fusion(),
-      BSX, // tid_x
-      1, // tid_y
-      1, // tid_z
-      M, // gid_x
-      1, // gid_y
-      1, // gid_z
-      0 // shared_memory size
-  );
 
   auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
   at::Tensor input = at::rand({M, N}, options);
-  at::Tensor cg_output = at::empty({M, N}, options);
 
-  torch::jit::fuser::cuda::compileKernel(&prog);
-  torch::jit::fuser::cuda::runKernel(&prog, {input}, {cg_output}, c10::nullopt);
+  torch::jit::fuser::cuda::FusionExecutor fe;
+  fe.compileFusion(&fusion);
+  auto outputs = fe.runFusion({input});
 
   at::Tensor aten_output = (input + 1.0) * 3.0;
   TORCH_CHECK(
-      aten_output.allclose(cg_output, 1e-5, 1e-5),
+      aten_output.allclose(outputs[0], 1e-5, 1e-5),
       "Error of: ",
-      aten_output.sub(cg_output).abs().sum());
+      aten_output.sub(outputs[0]).abs().sum());
 }
 
 void testGPU_FusionCacheIndirect() {
-  torch::jit::fuser::cuda::CudaKernel prog;
-  prog.setFusionPtr(std::make_unique<Fusion>());
-  Fusion* fusion = prog.fusion();
-  FusionGuard fg(fusion);
+  Fusion fusion;
+  FusionGuard fg(&fusion);
 
   TensorView* tv0 = makeDummyTensor(2);
   TensorView* tv1 = makeDummyTensor(2);
@@ -4263,11 +4227,11 @@ void testGPU_FusionCacheIndirect() {
   TensorView* tv4 = sub(tv2, tv3);
   TensorView* tv5 = add(tv1, tv4);
   TensorView* tv6 = sub(tv5, tv0);
-  fusion->addInput(tv0);
-  fusion->addInput(tv1);
-  fusion->addInput(tv2);
-  fusion->addInput(tv3);
-  fusion->addOutput(tv6);
+  fusion.addInput(tv0);
+  fusion.addInput(tv1);
+  fusion.addInput(tv2);
+  fusion.addInput(tv3);
+  fusion.addOutput(tv6);
   // t6 = ((t1 + (t2 - t3)) - t0)
 
   // cache_after on inputs placed before schedule
@@ -4279,58 +4243,44 @@ void testGPU_FusionCacheIndirect() {
   TensorView* tv7 = tv5->cache_after();
   TensorView* tv8 = tv5->cache_before();
   // Schedule
-  // fusion->printMath();
+  // fusion.printMath();
 
   tv6->axis(0)->parallelize(ParallelType::BIDx);
   tv6->axis(-1)->parallelize(ParallelType::TIDx);
   // Thread and Block binding
-  // fusion->printKernel();
+  // fusion.printKernel();
 
   constexpr int M = 32, N = 810;
-  prog.setDevice(0);
-  setupLaunchConfig(
-      prog.fusion(),
-      BSX, // tid_x
-      1, // tid_y
-      1, // tid_z
-      M, // gid_x
-      1, // gid_y
-      1, // gid_z
-      0 // shared_memory size
-  );
 
   auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
   at::Tensor in0 = at::rand({M, N}, options);
   at::Tensor in1 = at::rand({M, N}, options);
   at::Tensor in2 = at::rand({M, N}, options);
   at::Tensor in3 = at::rand({M, N}, options);
-  at::Tensor cg_output = at::empty({M, N}, options);
 
-  torch::jit::fuser::cuda::compileKernel(&prog);
-  torch::jit::fuser::cuda::runKernel(
-      &prog, {in0, in1, in2, in3}, {cg_output}, c10::nullopt);
+  torch::jit::fuser::cuda::FusionExecutor fe;
+  fe.compileFusion(&fusion);
+  auto outputs = fe.runFusion({in0, in1, in2, in3});
 
   at::Tensor aten_output = (in1 + (in2 - in3)) - in0;
   TORCH_CHECK(
-      aten_output.allclose(cg_output, 1e-5, 1e-5),
+      aten_output.allclose(outputs[0], 1e-5, 1e-5),
       "Error of: ",
-      aten_output.sub(cg_output).abs().sum());
+      aten_output.sub(outputs[0]).abs().sum());
 }
 
 void testGPU_FusionCacheBcast() {
-  torch::jit::fuser::cuda::CudaKernel prog;
-  prog.setFusionPtr(std::make_unique<Fusion>());
-  Fusion* fusion = prog.fusion();
-  FusionGuard fg(fusion);
+  Fusion fusion;
+  FusionGuard fg(&fusion);
 
   TensorView* tv0 = makeDummyTensor(1); // (M, 1)
   TensorView* tv1 = broadcast(tv0, {false, true});
   TensorView* tv2 = makeDummyTensor(1); // (1, N)
   TensorView* tv3 = broadcast(tv2, {true, false});
   TensorView* tv4 = mul(tv1, tv3);
-  fusion->addInput(tv0);
-  fusion->addInput(tv2);
-  fusion->addOutput(tv4);
+  fusion.addInput(tv0);
+  fusion.addInput(tv2);
+  fusion.addOutput(tv4);
   // Algorithm
 
   constexpr int BSX = 128;
@@ -4354,7 +4304,7 @@ void testGPU_FusionCacheBcast() {
   // Case 4
   TensorView* tv8 = tv4->cache_before();
   // Schedule
-  // fusion->printMath();
+  // fusion.printMath();
 
   tv4->axis(0)->parallelize(ParallelType::BIDx);
   tv4->axis(1)->parallelize(ParallelType::BIDy);
@@ -4363,44 +4313,30 @@ void testGPU_FusionCacheBcast() {
   tv3->axis(-1)->parallelize(ParallelType::TIDx);
   tv8->axis(-1)->parallelize(ParallelType::TIDx);
   // Thread and Block binding
-  // fusion->printKernel();
+  // fusion.printKernel();
 
   constexpr int M = 92, N = 500;
   const int Mr = ceilDiv_(M, BSX);
   const int Nr = ceilDiv_(N, BSX);
-  prog.setDevice(0);
-  setupLaunchConfig(
-      prog.fusion(),
-      BSX, // tid_x
-      1, // tid_y
-      1, // tid_z
-      Mr, // gid_x
-      Nr, // gid_y
-      1, // gid_z
-      0 // shared_memory size
-  );
 
   auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
   at::Tensor t0 = at::randn({M}, options);
   at::Tensor t1 = at::randn({N}, options);
-  at::Tensor cg_output = at::empty({M, N}, options);
 
-  torch::jit::fuser::cuda::compileKernel(&prog);
-  torch::jit::fuser::cuda::runKernel(
-      &prog, {t0, t1}, {cg_output}, c10::nullopt);
+  torch::jit::fuser::cuda::FusionExecutor fe;
+  fe.compileFusion(&fusion);
+  auto outputs = fe.runFusion({t0, t1});
 
   at::Tensor aten_output = t0.unsqueeze(1).matmul(t1.unsqueeze(0));
   TORCH_CHECK(
-      aten_output.allclose(cg_output, 1e-5, 1e-5),
+      aten_output.allclose(outputs[0], 1e-5, 1e-5),
       "Error of: ",
-      aten_output.sub(cg_output).abs().max());
+      aten_output.sub(outputs[0]).abs().max());
 }
 
 void testGPU_FusionCacheComplex() {
-  torch::jit::fuser::cuda::CudaKernel prog;
-  prog.setFusionPtr(std::make_unique<Fusion>());
-  Fusion* fusion = prog.fusion();
-  FusionGuard fg(fusion);
+  Fusion fusion;
+  FusionGuard fg(&fusion);
 
   TensorView* tv0 = makeDummyTensor(2); // (N, N)
   TensorView* tv1 = makeDummyTensor(1); // (N)
@@ -4408,9 +4344,9 @@ void testGPU_FusionCacheComplex() {
   TensorView* tv3 = broadcast(tv2, {false, true}); // (N, 1)
   TensorView* tv4 = broadcast(tv1, {true, false}); // (1, N)
   TensorView* tv5 = mul(tv3, tv4); // (N, N)
-  fusion->addInput(tv0);
-  fusion->addInput(tv1);
-  fusion->addOutput(tv5);
+  fusion.addInput(tv0);
+  fusion.addInput(tv1);
+  fusion.addOutput(tv5);
   // Algorithm
 
   // Exception: Cache-Before on reduction Op
@@ -4429,7 +4365,7 @@ void testGPU_FusionCacheComplex() {
   TensorView* tv6 = tv2->cache_after();
   TensorView* tv7 = tv5->cache_before();
   // Schedule
-  // fusion->printMath();
+  // fusion.printMath();
 
   tv5->axis(0)->parallelize(ParallelType::BIDx);
   tv5->axis(1)->parallelize(ParallelType::BIDy);
@@ -4438,44 +4374,30 @@ void testGPU_FusionCacheComplex() {
   tv4->axis(-1)->parallelize(ParallelType::TIDx);
   tv7->axis(-1)->parallelize(ParallelType::TIDx);
   // Thread and Block binding
-  // fusion->printKernel();
+  // fusion.printKernel();
 
   constexpr int N = 800;
   const int Nr = ceilDiv_(N, BSX);
-  prog.setDevice(0);
-  setupLaunchConfig(
-      prog.fusion(),
-      BSX, // tid_x
-      1, // tid_y
-      1, // tid_z
-      Nr, // gid_x
-      Nr, // gid_y
-      1, // gid_z
-      0 // shared_memory size
-  );
 
   auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
   at::Tensor input1 = at::rand({N, N}, options);
   at::Tensor input2 = at::rand({N}, options);
-  at::Tensor cg_output = at::empty({N, N}, options);
 
-  torch::jit::fuser::cuda::compileKernel(&prog);
-  torch::jit::fuser::cuda::runKernel(
-      &prog, {input1, input2}, {cg_output}, c10::nullopt);
+  torch::jit::fuser::cuda::FusionExecutor fe;
+  fe.compileFusion(&fusion);
+  auto outputs = fe.runFusion({input1, input2});
 
   at::Tensor aten_output =
       matmul(sum(input1, 1).unsqueeze(1), input2.unsqueeze(0));
   TORCH_CHECK(
-      aten_output.allclose(cg_output, 1e-5, 1e-5),
+      aten_output.allclose(outputs[0], 1e-5, 1e-5),
       "Error of: ",
-      aten_output.sub(cg_output).abs().sum());
+      aten_output.sub(outputs[0]).abs().sum());
 }
 
 void testGPU_FusionCacheMultiConsumer() {
-  torch::jit::fuser::cuda::CudaKernel prog;
-  prog.setFusionPtr(std::make_unique<Fusion>());
-  Fusion* fusion = prog.fusion();
-  FusionGuard fg(fusion);
+  Fusion fusion;
+  FusionGuard fg(&fusion);
 
   TensorView* tv0 = makeDummyTensor(1);
   TensorView* tv1 = add(tv0, new Float(1));
@@ -4483,15 +4405,15 @@ void testGPU_FusionCacheMultiConsumer() {
   TensorView* tv3 = add(tv0, new Float(1));
   TensorView* tv4 = add(tv3, new Float(2));
 
-  fusion->addInput(tv0);
-  fusion->addOutput(tv2);
-  fusion->addOutput(tv4);
+  fusion.addInput(tv0);
+  fusion.addOutput(tv2);
+  fusion.addOutput(tv4);
 
   tv1->computeAt(tv2, -1);
   tv3->computeAt(tv4, -1);
 
   // std::cout << "Before caching\n";
-  // fusion->printKernel();
+  // fusion.printKernel();
 
   // Passes
   auto tv5 = tv1->cache_before();
@@ -4501,18 +4423,14 @@ void testGPU_FusionCacheMultiConsumer() {
   // auto tv7 = tv0->cache_after();
 
   // std::cout << "After caching\n";
-  // fusion->printKernel();
+  // fusion.printKernel();
 
-  prog.setDevice(0);
-  torch::jit::fuser::cuda::compileKernel(&prog);
   return;
 }
 
 void testGPU_FusionConstCheck() {
-  torch::jit::fuser::cuda::CudaKernel prog;
-  prog.setFusionPtr(std::make_unique<Fusion>());
-  Fusion* fusion = prog.fusion();
-  FusionGuard fg(fusion);
+  Fusion fusion;
+  FusionGuard fg(&fusion);
 
   auto one = new Int(1);
   TORCH_CHECK(one->isConstScalar());

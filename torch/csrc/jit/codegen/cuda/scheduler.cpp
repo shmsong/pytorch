@@ -531,7 +531,7 @@ c10::optional<ReductionParams> scheduleReduction(
       red_tv->axis(1)->parallelize(ParallelType::BIDx);
     }
   }
-  return true;
+  return rparams;
 }
 
 } // namespace cuda
