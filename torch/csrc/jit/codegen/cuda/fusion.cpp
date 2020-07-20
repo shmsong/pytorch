@@ -277,8 +277,7 @@ void Fusion::addOutput(Val* const output) {
 
 bool Fusion::inFusion(const Statement* stmt) const {
   bool infusion = stmt->fusion() == this;
-  // NOLINT
-  Statement* nonconst_stmt = const_cast<Statement*>(stmt);
+  Statement* nonconst_stmt = const_cast<Statement*>(stmt); // NOLINT
 
   if (stmt->isExpr())
     infusion &=
@@ -472,8 +471,7 @@ Expr* Fusion::origin(Val* val) const {
 
 const Expr* Fusion::origin(const Val* val) const {
   assertInFusion(val, "Cannot dettect the origin of val, ");
-  // NOLINT
-  auto it = origin_.find(const_cast<Val*>(val));
+  auto it = origin_.find(const_cast<Val*>(val)); // NOLINT
   if (it == origin_.end())
     return nullptr;
   return it->second;
