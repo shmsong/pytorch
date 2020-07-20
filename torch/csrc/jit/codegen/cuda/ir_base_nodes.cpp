@@ -116,7 +116,7 @@ bool Val::isConstScalar() const {
 bool Val::isZeroInt() const {
   if (isConstScalar() && getValType().value() == ValType::Scalar &&
       getDataType().value() == DataType::Int &&
-      this->as<const Int>()->value().value() == 0)
+      this->as<Int>()->value().value() == 0)
     return true;
   return false;
 }
@@ -124,7 +124,7 @@ bool Val::isZeroInt() const {
 bool Val::isOneInt() const {
   if (isConstScalar() && getValType().value() == ValType::Scalar &&
       getDataType().value() == DataType::Int &&
-      this->as<const Int>()->value().value() == 1)
+      this->as<Int>()->value().value() == 1)
     return true;
   return false;
 }

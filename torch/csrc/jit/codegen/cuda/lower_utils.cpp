@@ -458,14 +458,14 @@ ForLoop* asForLoop(Statement* stmt) {
 
 const TensorView* asConstTV(const Val* val) {
   TORCH_INTERNAL_ASSERT(isTV(val));
-  return val->as<const TensorView>();
+  return val->as<TensorView>();
 }
 
 bool isUnrolledFor(const Expr* expr) {
   if (expr->getExprType() != ExprType::ForLoop) {
     return false;
   }
-  return expr->as<const ForLoop>()->iter_domain()->parallel_method() ==
+  return expr->as<ForLoop>()->iter_domain()->parallel_method() ==
       ParallelType::Unroll;
 }
 
@@ -578,7 +578,7 @@ ParallelTypeBitmap getParallelBroadcastDomains(
     const ThreadPredicateMap& preds) {
   const Val* bop_out = bop->out();
   if (bop_out->getValType().value() == ValType::TensorIndex) {
-    bop_out = bop_out->as<const TensorIndex>()->view();
+    bop_out = bop_out->as<TensorIndex>()->view();
   }
   TORCH_INTERNAL_ASSERT(
       bop_out->getValType().value() == ValType::TensorView,

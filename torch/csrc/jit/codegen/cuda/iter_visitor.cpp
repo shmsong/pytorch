@@ -37,7 +37,7 @@ std::vector<Statement*> IterVisitor::next(Expr* expr, bool respect_compute_at) {
         expr->outputs().size() == 1,
         "Expressions with multiple outputs are not supported");
     if (expr->output(0)->getValType().value() == ValType::TensorView) {
-      auto out = expr->output(0)->as<const TensorView>();
+      auto out = expr->output(0)->as<TensorView>();
       // Move input TVs that are computed at this expression backward
       // so that they are visited later. If multiple inputs are
       // computed at, move TVs that are computed at an inner loop nest

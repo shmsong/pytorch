@@ -120,7 +120,7 @@ UnaryOp::UnaryOp(const UnaryOp* src, IrCloner* ir_cloner)
 bool UnaryOp::sameAs(const UnaryOp* const other) const {
   if (this->type() != other->type())
     return false;
-  return this->as<const Expr>()->sameAs(other);
+  return this->as<Expr>()->sameAs(other);
 }
 
 BinaryOp::BinaryOp(BinaryOpType _type, Val* _out, Val* _lhs, Val* _rhs)
@@ -292,7 +292,7 @@ std::vector<IterDomain*> ReductionOp::getReductionDomains() const {
 
   // out is a TensorIndex after lowering
   if (out_val->getValType() == ValType::TensorIndex) {
-    out_val = out_val->as<const TensorIndex>()->view();
+    out_val = out_val->as<TensorIndex>()->view();
   }
 
   auto vec_domain = out_val->as<TensorView>()->domain()->domain();

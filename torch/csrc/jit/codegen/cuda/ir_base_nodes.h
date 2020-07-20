@@ -236,7 +236,7 @@ class TORCH_CUDA_API Val : public Statement {
 
   virtual bool sameType(const Statement* other) {
     return Statement::sameType(other) &&
-        getDataType() == other->as<const Val>()->getDataType();
+        getDataType() == other->as<Val>()->getDataType();
   }
 
   // TODO: Make this more sophisticated. A value being the same as another value
