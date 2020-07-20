@@ -1,4 +1,4 @@
-// #if defined(USE_CUDA)
+#if defined(USE_CUDA)
 
 #include <test/cpp/jit/test_base.h>
 
@@ -1072,7 +1072,6 @@ __global__ void CUDAGeneratedKernel(Tensor<float, 1> T0, Tensor<float, 1> T1, Te
   }
   cuda::FusionExecutor fe;
   fe.compileFusion(fusion.get());
-  // no broadcasting needed, omitting the last optional argument;
   auto outputs = fe.runFusion({input1, input2});
   at::Tensor output_ref = input1 * input2 * input1;
   TORCH_CHECK(output_ref.equal(outputs[0]));
@@ -4139,7 +4138,6 @@ void testGPU_FusionCacheBefore() {
   // Before: TV2 = TV1 * 3
   // After:  TV3 = TV1 * 3;
   //         TV2 = TV3;
-  // Algorithm
 
   constexpr int BSX = 32;
   tv2->split(-1, BSX);
@@ -4147,13 +4145,9 @@ void testGPU_FusionCacheBefore() {
 
   // cache_before automatically applies ComputeAt to the cache TensorView
   TensorView* tv3 = tv2->cache_before();
-  // Schedule
-  // fusion.printMath();
 
   tv2->axis(0)->parallelize(ParallelType::BIDx);
   tv2->axis(-1)->parallelize(ParallelType::TIDx);
-  // Thread and Block binding
-  // fusion.printKernel();
 
   constexpr int M = 32, N = 750;
 
@@ -4184,7 +4178,6 @@ void testGPU_FusionCacheAfter() {
   // Before: TV1 = TV0 + 1
   // After:  TV3 = TV0;
   //         TV1 = TV3 + 1
-  // Algorithm
 
   constexpr int BSX = 32;
   tv2->split(-1, BSX);
@@ -4192,13 +4185,9 @@ void testGPU_FusionCacheAfter() {
 
   // cache_after automatically applies ComputeAt to the cache TensorView
   TensorView* tv3 = tv0->cache_after();
-  // Schedule
-  // fusion.printMath();
 
   tv2->axis(0)->parallelize(ParallelType::BIDx);
   tv2->axis(-1)->parallelize(ParallelType::TIDx);
-  // Thread and Block binding
-  // fusion.printKernel();
 
   constexpr int M = 32, N = 457;
 
@@ -4235,20 +4224,15 @@ void testGPU_FusionCacheIndirect() {
   // t6 = ((t1 + (t2 - t3)) - t0)
 
   // cache_after on inputs placed before schedule
-
   constexpr int BSX = 32;
   tv6->split(-1, BSX);
   tv2->computeAt(tv6, -1);
 
   TensorView* tv7 = tv5->cache_after();
   TensorView* tv8 = tv5->cache_before();
-  // Schedule
-  // fusion.printMath();
 
   tv6->axis(0)->parallelize(ParallelType::BIDx);
   tv6->axis(-1)->parallelize(ParallelType::TIDx);
-  // Thread and Block binding
-  // fusion.printKernel();
 
   constexpr int M = 32, N = 810;
 
@@ -4303,8 +4287,6 @@ void testGPU_FusionCacheBcast() {
 
   // Case 4
   TensorView* tv8 = tv4->cache_before();
-  // Schedule
-  // fusion.printMath();
 
   tv4->axis(0)->parallelize(ParallelType::BIDx);
   tv4->axis(1)->parallelize(ParallelType::BIDy);
@@ -4312,8 +4294,6 @@ void testGPU_FusionCacheBcast() {
   // Manual Replay on TV3
   tv3->axis(-1)->parallelize(ParallelType::TIDx);
   tv8->axis(-1)->parallelize(ParallelType::TIDx);
-  // Thread and Block binding
-  // fusion.printKernel();
 
   constexpr int M = 92, N = 500;
   const int Mr = ceilDiv_(M, BSX);
@@ -4347,7 +4327,6 @@ void testGPU_FusionCacheComplex() {
   fusion.addInput(tv0);
   fusion.addInput(tv1);
   fusion.addOutput(tv5);
-  // Algorithm
 
   // Exception: Cache-Before on reduction Op
   // TensorView* tv9 = tv2->cache_before();
@@ -4364,8 +4343,6 @@ void testGPU_FusionCacheComplex() {
 
   TensorView* tv6 = tv2->cache_after();
   TensorView* tv7 = tv5->cache_before();
-  // Schedule
-  // fusion.printMath();
 
   tv5->axis(0)->parallelize(ParallelType::BIDx);
   tv5->axis(1)->parallelize(ParallelType::BIDy);
@@ -4373,8 +4350,6 @@ void testGPU_FusionCacheComplex() {
 
   tv4->axis(-1)->parallelize(ParallelType::TIDx);
   tv7->axis(-1)->parallelize(ParallelType::TIDx);
-  // Thread and Block binding
-  // fusion.printKernel();
 
   constexpr int N = 800;
   const int Nr = ceilDiv_(N, BSX);
@@ -4412,18 +4387,12 @@ void testGPU_FusionCacheMultiConsumer() {
   tv1->computeAt(tv2, -1);
   tv3->computeAt(tv4, -1);
 
-  // std::cout << "Before caching\n";
-  // fusion.printKernel();
-
   // Passes
   auto tv5 = tv1->cache_before();
   auto tv6 = tv3->cache_before();
 
   // Fails because tensor must be recomputed twice
   // auto tv7 = tv0->cache_after();
-
-  // std::cout << "After caching\n";
-  // fusion.printKernel();
 
   return;
 }
@@ -4448,4 +4417,4 @@ void testGPU_FusionConstCheck() {
 } // namespace jit
 } // namespace torch
 
-// #endif // #if defined(USE_CUDA)
+#endif // #if defined(USE_CUDA)
