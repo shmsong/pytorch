@@ -94,6 +94,8 @@ class CudaFusionManager {
       // TODO: pass contiguity infor as well as size req, so we can apply proper
       //       transform to computation
       auto fusion = parseJitIR(graph);
+      std::cout << "0" << std::endl;
+      fusion->printMath();
 
       // TODO: update the API to let `scheduleFusion` consume & return a fusion
       // magic scheduler updates fusion instance via transformation and setup
@@ -174,6 +176,7 @@ void runCudaFusionGroup(const Node* fusion_node, Stack& stack) {
 
     FusionExecutor executor;
     auto fusion = parseJitIR(graph);
+    fusion->printMath();
     scheduleFusion(fusion.get(), inputs);
     executor.compileFusion(fusion.get());
     auto outputs = executor.runFusion(inputs);
