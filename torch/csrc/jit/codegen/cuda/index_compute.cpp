@@ -108,13 +108,13 @@ std::vector<Val*> IndexCompute::get(
   return ic.indices_;
 }
 
-TensorIndex* Index::getGlobalProducerIndex(
+kir::TensorIndex* Index::getGlobalProducerIndex(
     const TensorView* producer,
     const TensorView* consumer,
-    const std::vector<ForLoop*>& loops) {
+    const std::vector<kir::ForLoop*>& loops) {
   // Grab indices from the loops
   std::vector<Val*> indices(loops.size());
-  std::transform(loops.begin(), loops.end(), indices.begin(), [](ForLoop* fl) {
+  std::transform(loops.begin(), loops.end(), indices.begin(), [](kir::ForLoop* fl) {
     return fl->index();
   });
 
@@ -166,19 +166,19 @@ TensorIndex* Index::getGlobalProducerIndex(
   if (strided_inds.size() == 0)
     strided_inds.push_back(new Int(0));
 
-  return new TensorIndex(producer, strided_inds);
+  return new kir::TensorIndex(producer, strided_inds);
 }
 
 // Producer index for either shared or local memory
-TensorIndex* Index::getProducerIndex_impl(
+kir::TensorIndex* Index::getProducerIndex_impl(
     const TensorView* producer,
     const TensorView* consumer,
-    const std::vector<ForLoop*>& loops) {
+    const std::vector<kir::ForLoop*>& loops) {
   TORCH_INTERNAL_ASSERT(
       loops.size() == consumer->nDims(),
       "Dimensionality error in code generator while computing tensor indexes.");
 
-  std::vector<ForLoop*> loops_adjusted;
+  std::vector<kir::ForLoop*> loops_adjusted;
   size_t it_c = 0, it_p = 0;
   while (it_c < consumer->nDims() && it_p < producer->nDims()) {
     if (consumer->axis(it_c)->isBroadcast() &&
@@ -203,14 +203,14 @@ TensorIndex* Index::getProducerIndex_impl(
       loops_adjusted.begin(),
       loops_adjusted.end(),
       ranges.begin(),
-      [](ForLoop* fl) { return fl->iter_domain(); });
+      [](kir::ForLoop* fl) { return fl->iter_domain(); });
 
   std::vector<Val*> indices(loops_adjusted.size());
   std::transform(
       loops_adjusted.begin(),
       loops_adjusted.end(),
       indices.begin(),
-      [](ForLoop* fl) {
+      [](kir::ForLoop* fl) {
         return fl->iter_domain()->isBroadcast() ? new Int(0) : fl->index();
       });
 
@@ -244,17 +244,17 @@ TensorIndex* Index::getProducerIndex_impl(
   if (used_inds.size() == 0)
     used_inds.push_back(new Int(0));
 
-  return new TensorIndex(producer, used_inds);
+  return new kir::TensorIndex(producer, used_inds);
 }
 
-TensorIndex* Index::getGlobalConsumerIndex(
+kir::TensorIndex* Index::getGlobalConsumerIndex(
     const TensorView* consumer,
-    const std::vector<ForLoop*>& loops) {
+    const std::vector<kir::ForLoop*>& loops) {
   // If we're initializing a reduction buffer, we won't have the reduction
   // loops. If we're actually performing the reduction, we will.
 
   std::vector<Val*> indices(loops.size());
-  std::transform(loops.begin(), loops.end(), indices.begin(), [](ForLoop* fl) {
+  std::transform(loops.begin(), loops.end(), indices.begin(), [](kir::ForLoop* fl) {
     return fl->index();
   });
 
@@ -313,13 +313,13 @@ TensorIndex* Index::getGlobalConsumerIndex(
   if (strided_inds.size() == 0)
     strided_inds.push_back(new Int(0));
 
-  return new TensorIndex(consumer, strided_inds);
+  return new kir::TensorIndex(consumer, strided_inds);
 }
 
 // Consumer index for either shared or local memory
-TensorIndex* Index::getConsumerIndex_impl(
+kir::TensorIndex* Index::getConsumerIndex_impl(
     const TensorView* consumer,
-    const std::vector<ForLoop*>& loops) {
+    const std::vector<kir::ForLoop*>& loops) {
   // If we're initializing a reduction buffer, we won't have the reduction
   // loops. If we're actually performing the reduction, we will.
 
@@ -344,12 +344,12 @@ TensorIndex* Index::getConsumerIndex_impl(
   }
 
   std::vector<IterDomain*> ranges(loops.size());
-  std::transform(loops.begin(), loops.end(), ranges.begin(), [](ForLoop* fl) {
+  std::transform(loops.begin(), loops.end(), ranges.begin(), [](kir::ForLoop* fl) {
     return fl->iter_domain();
   });
 
   std::vector<Val*> indices(loops.size());
-  std::transform(loops.begin(), loops.end(), indices.begin(), [](ForLoop* fl) {
+  std::transform(loops.begin(), loops.end(), indices.begin(), [](kir::ForLoop* fl) {
     return fl->iter_domain()->isBroadcast() ? new Int(0) : fl->index();
   });
 
@@ -397,20 +397,20 @@ TensorIndex* Index::getConsumerIndex_impl(
   if (used_inds.size() == 0)
     used_inds.push_back(new Int(0));
 
-  return new TensorIndex(consumer, used_inds);
+  return new kir::TensorIndex(consumer, used_inds);
 }
 
 // Producer is the inputs of an expression
-TensorIndex* Index::getProducerIndex(
+kir::TensorIndex* Index::getProducerIndex(
     const TensorView* producer,
     const TensorView* consumer,
-    const std::vector<ForLoop*>& loops) {
+    const std::vector<kir::ForLoop*>& loops) {
   TORCH_INTERNAL_ASSERT(
       loops.size() == consumer->nDims() ||
       loops.size() == consumer->domain()->noReductions().size());
 
   if (producer->domain()->noReductions().size() == 0) {
-    return new TensorIndex(producer, {});
+    return new kir::TensorIndex(producer, {});
   }
 
   if (producer->getMemoryType() == MemoryType::Global)
@@ -419,15 +419,15 @@ TensorIndex* Index::getProducerIndex(
 }
 
 // Consumer is the output of an expression
-TensorIndex* Index::getConsumerIndex(
+kir::TensorIndex* Index::getConsumerIndex(
     const TensorView* consumer,
-    const std::vector<ForLoop*>& loops) {
+    const std::vector<kir::ForLoop*>& loops) {
   TORCH_INTERNAL_ASSERT(
       loops.size() == consumer->nDims() ||
       loops.size() == consumer->domain()->noReductions().size());
 
   if (consumer->domain()->noReductions().size() == 0) {
-    return new TensorIndex(consumer, {});
+    return new kir::TensorIndex(consumer, {});
   }
 
   if (consumer->getMemoryType() == MemoryType::Global)

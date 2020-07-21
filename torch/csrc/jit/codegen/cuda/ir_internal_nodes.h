@@ -197,8 +197,8 @@ class TORCH_CUDA_API GridReduction : public Expr {
   GridReduction(ReductionOp* _reduction_op);
   GridReduction(
       ReductionOp* _reduction_op,
-      Allocate* _reduction_buffer,
-      Allocate* _sync_buffer);
+      kir::Allocate* _reduction_buffer,
+      kir::Allocate* _sync_buffer);
 
   GridReduction(const GridReduction* src, IrCloner* ir_cloner);
 
@@ -211,10 +211,10 @@ class TORCH_CUDA_API GridReduction : public Expr {
   ReductionOp* reduction_op() const {
     return reduction_op_;
   }
-  Allocate* reduction_buffer() const {
+  kir::Allocate* reduction_buffer() const {
     return reduction_buffer_;
   }
-  Allocate* sync_buffer() const {
+  kir::Allocate* sync_buffer() const {
     return sync_buffer_;
   }
 
@@ -222,8 +222,8 @@ class TORCH_CUDA_API GridReduction : public Expr {
 
  private:
   ReductionOp* reduction_op_ = nullptr;
-  Allocate* reduction_buffer_ = nullptr;
-  Allocate* sync_buffer_ = nullptr;
+  kir::Allocate* reduction_buffer_ = nullptr;
+  kir::Allocate* sync_buffer_ = nullptr;
 };
 
 class TORCH_CUDA_API TernaryOp : public Expr {
@@ -588,227 +588,6 @@ class TORCH_CUDA_API Merge : public Expr {
   IterDomain* const out_ = nullptr;
   IterDomain* const outer_ = nullptr;
   IterDomain* const inner_ = nullptr;
-};
-
-/*
- * ForLoop provides scoping around an int iterator from 0 to range. Exprs placed
- * in its body are considered inside the scope of the for loop. In the future
- * the implementation should look quite different so that we can do proper
- * dependency annalysis like in Fusion.
- *
- * TODO: Change implmentation of Exprs contained in the scope to be more similar
- * to Fusion where we can do proper dependency analysis.
- */
-class TORCH_CUDA_API ForLoop : public Expr {
- public:
-  ~ForLoop() = default;
-  ForLoop(
-      Val* _index,
-      IterDomain* _iter_domain,
-      const std::vector<Expr*>& _body = {},
-      Expr* parent_scope = nullptr);
-
-  ForLoop(const ForLoop* src, IrCloner* ir_cloner);
-
-  ForLoop(const ForLoop& other) = delete;
-  ForLoop& operator=(const ForLoop& other) = delete;
-
-  ForLoop(ForLoop&& other) = delete;
-  ForLoop& operator=(ForLoop&& other) = delete;
-
-  Val* index() const {
-    return index_;
-  }
-
-  IterDomain* iter_domain() const {
-    return iter_domain_;
-  }
-
-  Scope& body() {
-    return body_;
-  }
-
-  const Scope& constBody() const {
-    return body_;
-  }
-
-  bool sameAs(const ForLoop* other) const;
-  Expr* parentScope() const {
-    return parent_scope_;
-  }
-
- private:
-  Val* const index_ = nullptr;
-  IterDomain* const iter_domain_;
-  Scope body_;
-  Expr* parent_scope_ = nullptr;
-};
-
-/*
- * IfThenElse provides scoping for an boolean operator. Exprs placed in its body
- * are considered inside the scope of the if statement. In the future the
- * implementation should look quite different so that we can do proper
- * dependency annalysis like in Fusion.
- *
- * TODO: Change implmentation of Exprs contained in the scope to be more similar
- * to Fusion where we can do proper dependency analysis.
- */
-class TORCH_CUDA_API IfThenElse : public Expr {
- public:
-  ~IfThenElse() = default;
-  IfThenElse(
-      Bool* _cond,
-      const std::vector<Expr*>& _if_body = {},
-      const std::vector<Expr*>& _else_body = {},
-      Expr* _parent_scope = nullptr);
-
-  IfThenElse(const IfThenElse* src, IrCloner* ir_cloner);
-
-  IfThenElse(const IfThenElse& other) = delete;
-  IfThenElse& operator=(const IfThenElse& other) = delete;
-
-  IfThenElse(IfThenElse&& other) = delete;
-  IfThenElse& operator=(IfThenElse&& other) = delete;
-
-  Bool* cond() const {
-    return cond_;
-  }
-
-  const Scope& constBody() const {
-    return body_;
-  }
-
-  const Scope& constElseBody() const {
-    return else_body_;
-  }
-
-  Scope& body() {
-    return body_;
-  }
-
-  Scope& elseBody() {
-    return else_body_;
-  }
-
-  bool hasElse() const {
-    return !else_body_.empty();
-  }
-
-  bool sameAs(const IfThenElse* other) const;
-
-  Expr* parentScope() const {
-    return parent_scope_;
-  }
-
- private:
-  Bool* const cond_ = nullptr;
-  Scope body_;
-  Scope else_body_;
-  Expr* parent_scope_ = nullptr;
-};
-
-/*
- * TODO: Fill out TensorIndex, which is a list of Ints used to directly index a
- * TensorView. It is not the flattened index, which needs to be computed using
- * stride information.
- */
-class TORCH_CUDA_API TensorIndex : public Val {
- public:
-  ~TensorIndex() = default;
-
-  TensorIndex(const TensorIndex& other) = delete;
-  TensorIndex& operator=(const TensorIndex& other) = delete;
-
-  TensorIndex(TensorIndex&& other) = delete;
-  TensorIndex& operator=(TensorIndex&& other) = delete;
-
-  TensorIndex(const TensorView* const _view, std::vector<Val*> _indices)
-      : Val(ValType::TensorIndex, _view->getDataType().value()),
-        view_(_view),
-        indices_(_indices) {
-    TORCH_INTERNAL_ASSERT(
-        std::all_of(
-            _indices.begin(),
-            _indices.end(),
-            [](Val* v) {
-              return (v->getValType() == ValType::Scalar ||
-                      v->getValType() == ValType::NamedScalar) &&
-                  v->getDataType() == DataType::Int;
-            }),
-        "Cannot index with a value other than an int.");
-  }
-
-  TensorIndex(const TensorIndex* src, IrCloner* ir_cloner);
-
-  std::vector<Val*>::size_type nDims() const {
-    return indices_.size();
-  }
-
-  // i here is int, as we want to accept negative value and ::size_type can be a
-  // uint.
-  Val* index(int i) const;
-
-  const std::vector<Val*>& indices() const {
-    return indices_;
-  }
-
-  const TensorView* view() const {
-    return view_;
-  }
-
-  bool sameAs(const TensorIndex* const other) const;
-
- private:
-  const TensorView* view_ = nullptr;
-  std::vector<Val*> indices_;
-};
-
-// Allocate is a lower level Node that describes a buffer of memory that
-// is required as an intermediate within a kernel.  The extent is the expression
-// of the size of the buffer that is generated from the TensorView that
-// describes the output of an operation.
-//
-// TODO: The components of Allocate like Type and Name could be separated from
-// the the assocated TensorView.  Perhaps that is more appropriate?
-class TORCH_CUDA_API Allocate : public Expr {
- public:
-  ~Allocate() = default;
-
-  Allocate(const Allocate& other) = delete;
-  Allocate& operator=(const Allocate& other) = delete;
-
-  Allocate(Allocate&& other) = delete;
-  Allocate& operator=(Allocate&& other) = delete;
-
-  explicit Allocate(
-      Val* _buffer,
-      MemoryType _memory_type = MemoryType::Local,
-      Val* _size = nullptr);
-
-  Allocate(const Allocate* src, IrCloner* ir_cloner);
-
-  Val* buffer() const {
-    return buffer_;
-  }
-
-  MemoryType getMemoryType() const {
-    return memory_type_;
-  }
-
-  Val* size() const {
-    return size_;
-  }
-
-  DataType buffer_type() const {
-    return buffer_->getDataType().value();
-  }
-
-  bool sameAs(const Allocate* other) const;
-
- private:
-  Val* buffer_ = nullptr;
-  MemoryType memory_type_ = MemoryType::Local;
-  Val* size_ = nullptr;
 };
 
 /*

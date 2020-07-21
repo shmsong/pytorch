@@ -70,7 +70,7 @@ void Val::dispatch(T handler, Val* val) {
       ptr(handler)->handle(val->as<TensorView>());
       return;
     case ValType::TensorIndex:
-      ptr(handler)->handle(val->as<TensorIndex>());
+      ptr(handler)->handle(val->as<kir::TensorIndex>());
       return;
     case ValType::NamedScalar:
       ptr(handler)->handle(val->as<NamedScalar>());
@@ -109,13 +109,13 @@ void Expr::dispatch(T handler, Expr* expr) {
       ptr(handler)->handle(expr->as<BroadcastOp>());
       return;
     case ExprType::ForLoop:
-      ptr(handler)->handle(expr->as<ForLoop>());
+      ptr(handler)->handle(expr->as<kir::ForLoop>());
       return;
     case ExprType::IfThenElse:
-      ptr(handler)->handle(expr->as<IfThenElse>());
+      ptr(handler)->handle(expr->as<kir::IfThenElse>());
       return;
     case ExprType::Allocate:
-      ptr(handler)->handle(expr->as<Allocate>());
+      ptr(handler)->handle(expr->as<kir::Allocate>());
       return;
     default:
       TORCH_INTERNAL_ASSERT(false, "Unknown exprtype in dispatch!");
@@ -163,7 +163,7 @@ void Val::constDispatch(T handler, const Val* val) {
       ptr(handler)->handle(val->as<TensorView>());
       return;
     case ValType::TensorIndex:
-      ptr(handler)->handle(val->as<TensorIndex>());
+      ptr(handler)->handle(val->as<kir::TensorIndex>());
       return;
     case ValType::NamedScalar:
       ptr(handler)->handle(val->as<NamedScalar>());
@@ -202,13 +202,13 @@ void Expr::constDispatch(T handler, const Expr* expr) {
       ptr(handler)->handle(expr->as<BroadcastOp>());
       return;
     case ExprType::ForLoop:
-      ptr(handler)->handle(expr->as<ForLoop>());
+      ptr(handler)->handle(expr->as<kir::ForLoop>());
       return;
     case ExprType::IfThenElse:
-      ptr(handler)->handle(expr->as<IfThenElse>());
+      ptr(handler)->handle(expr->as<kir::IfThenElse>());
       return;
     case ExprType::Allocate:
-      ptr(handler)->handle(expr->as<Allocate>());
+      ptr(handler)->handle(expr->as<kir::Allocate>());
       return;
     default:
       TORCH_INTERNAL_ASSERT(false, "Unknown exprtype in dispatch!");
@@ -260,7 +260,7 @@ Statement* Val::mutatorDispatch(T mutator, Val* val) {
     case ValType::TensorView:
       return ptr(mutator)->mutate(val->as<TensorView>());
     case ValType::TensorIndex:
-      return ptr(mutator)->mutate(val->as<TensorIndex>());
+      return ptr(mutator)->mutate(val->as<kir::TensorIndex>());
     case ValType::NamedScalar:
       return ptr(mutator)->mutate(val->as<NamedScalar>());
     default:
@@ -289,11 +289,11 @@ Statement* Expr::mutatorDispatch(T mutator, Expr* expr) {
     case ExprType::BroadcastOp:
       return ptr(mutator)->mutate(expr->as<BroadcastOp>());
     case ExprType::ForLoop:
-      return ptr(mutator)->mutate(expr->as<ForLoop>());
+      return ptr(mutator)->mutate(expr->as<kir::ForLoop>());
     case ExprType::IfThenElse:
-      return ptr(mutator)->mutate(expr->as<IfThenElse>());
+      return ptr(mutator)->mutate(expr->as<kir::IfThenElse>());
     case ExprType::Allocate:
-      return ptr(mutator)->mutate(expr->as<Allocate>());
+      return ptr(mutator)->mutate(expr->as<kir::Allocate>());
     default:
       TORCH_INTERNAL_ASSERT(false, "Unknown exprtype in dispatch!");
   }

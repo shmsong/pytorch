@@ -1,6 +1,8 @@
+
 #include <torch/csrc/jit/codegen/cuda/executor_kernel_arg.h>
 #include <torch/csrc/jit/codegen/cuda/ir_all_nodes.h>
 #include <torch/csrc/jit/codegen/cuda/iter_visitor.h>
+#include <torch/csrc/jit/codegen/cuda/kernel_ir.h>
 
 #include <torch/csrc/jit/codegen/cuda/executor.h>
 
@@ -48,8 +50,8 @@ void FusionExecutor::compileFusion(Fusion* fusion, CompileOptions options) {
   fusion_id = ++fusion_id_counter;
   has_random = fusion->hasRNG();
   lowered = GPULower(&fusion_);
-  auto kernel = lowered.getKernel(KernelName());
-  auto structured_code = getStructuredCode(lowered.getKernel(KernelName()));
+  const auto kernel = lowered.getKernel(KernelName());
+  const auto structured_code = getStructuredCode(kernel);
 
   compiled_kernel = executor_utils::nvrtcCompile(
       structured_code, (Namespace() + "::" + KernelName()).c_str(), fusion_id);
