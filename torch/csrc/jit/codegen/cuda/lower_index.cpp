@@ -218,7 +218,7 @@ void IndexLowering::handle(ReductionOp* rop) {
 
     pushBack(reduce_buffer);
     pushBack(sync_buffer);
-    pushBack(new GridReduction(
+    pushBack(new kir::GridReduction(
         block_reduction == nullptr
             ? new ReductionOp(rop->getReductionOpType(), rop->init(), out, in)
             : block_reduction,

@@ -60,7 +60,7 @@ class GridReductionBuffers : OptOutDispatch {
     }
   }
 
-  void handle(GridReduction* gr) final {
+  void handle(kir::GridReduction* gr) final {
     global_allocations_.push_back(gr->reduction_buffer());
     sync_allocations_.push_back(gr->sync_buffer());
   }

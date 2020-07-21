@@ -103,7 +103,7 @@ void Expr::dispatch(T handler, Expr* expr) {
       ptr(handler)->handle(expr->as<ReductionOp>());
       return;
     case ExprType::GridReduction:
-      ptr(handler)->handle(expr->as<GridReduction>());
+      ptr(handler)->handle(expr->as<kir::GridReduction>());
       return;
     case ExprType::BroadcastOp:
       ptr(handler)->handle(expr->as<BroadcastOp>());
@@ -196,7 +196,7 @@ void Expr::constDispatch(T handler, const Expr* expr) {
       ptr(handler)->handle(expr->as<ReductionOp>());
       return;
     case ExprType::GridReduction:
-      ptr(handler)->handle(expr->as<GridReduction>());
+      ptr(handler)->handle(expr->as<kir::GridReduction>());
       return;
     case ExprType::BroadcastOp:
       ptr(handler)->handle(expr->as<BroadcastOp>());
@@ -285,7 +285,7 @@ Statement* Expr::mutatorDispatch(T mutator, Expr* expr) {
     case ExprType::ReductionOp:
       return ptr(mutator)->mutate(expr->as<ReductionOp>());
     case ExprType::GridReduction:
-      return ptr(mutator)->mutate(expr->as<GridReduction>());
+      return ptr(mutator)->mutate(expr->as<kir::GridReduction>());
     case ExprType::BroadcastOp:
       return ptr(mutator)->mutate(expr->as<BroadcastOp>());
     case ExprType::ForLoop:

@@ -470,7 +470,7 @@ void IrGraphGenerator::handle(const ReductionOp* op) {
   addArc(op, op->out());
 }
 
-void IrGraphGenerator::handle(const GridReduction* op) {
+void IrGraphGenerator::handle(const kir::GridReduction* op) {
   printExpr(op, "Grid Reduction");
 
   // inputs & outputs

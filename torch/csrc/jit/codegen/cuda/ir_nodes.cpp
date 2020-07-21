@@ -316,32 +316,6 @@ std::unordered_map<ParallelType, IterDomain*, TypeHash> ReductionOp::
   return parallel_domains;
 }
 
-GridReduction::GridReduction(ReductionOp* _reduction_op)
-    : Expr(ExprType::GridReduction), reduction_op_(_reduction_op) {
-  TORCH_INTERNAL_ASSERT(false, "Not implemented yet.");
-}
-
-GridReduction::GridReduction(
-    ReductionOp* _reduction_op,
-    kir::Allocate* _reduction_buffer,
-    kir::Allocate* _sync_buffer)
-    : Expr(ExprType::GridReduction),
-      reduction_op_(_reduction_op),
-      reduction_buffer_(_reduction_buffer),
-      sync_buffer_(_sync_buffer) {}
-
-GridReduction::GridReduction(const GridReduction* src, IrCloner* ir_cloner)
-    : Expr(src, ir_cloner),
-      reduction_op_(ir_cloner->clone(src->reduction_op_)),
-      reduction_buffer_(ir_cloner->clone(src->reduction_buffer_)),
-      sync_buffer_(ir_cloner->clone(src->sync_buffer_)) {}
-
-bool GridReduction::sameAs(const GridReduction* other) const {
-  return reduction_op_->sameAs(other->reduction_op()) &&
-      reduction_buffer_->sameAs(other->reduction_buffer()) &&
-      sync_buffer_->sameAs(other->sync_buffer());
-}
-
 IterDomain::IterDomain(
     Val* _start,
     Val* _extent,

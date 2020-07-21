@@ -474,6 +474,35 @@ class TORCH_CUDA_API IfThenElse : public Expr {
   Expr* parent_scope_ = nullptr;
 };
 
+// Grid reduction operation, this node is used only after lowering a fusion to
+// explicitly mark a grid reduction and the buffer allocation needed to do it.
+// This node provides FusionExecutor the information it needs to allocate the
+// reduction and sync buffers.
+class TORCH_CUDA_API GridReduction : public Expr {
+ public:
+  explicit GridReduction(ReductionOp* reduction_op);
+  GridReduction(
+      ReductionOp* reduction_op,
+      Allocate* reduction_buffer,
+      Allocate* sync_buffer);
+
+  ReductionOp* reduction_op() const {
+    return reduction_op_;
+  }
+
+  Allocate* reduction_buffer() const {
+    return reduction_buffer_;
+  }
+
+  Allocate* sync_buffer() const {
+    return sync_buffer_;
+  }
+
+ private:
+  ReductionOp* reduction_op_ = nullptr;
+  Allocate* reduction_buffer_ = nullptr;
+  Allocate* sync_buffer_ = nullptr;
+};
 
 } // namespace kir
 } // namespace fuser

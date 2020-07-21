@@ -211,7 +211,7 @@ Statement* OptOutMutator::mutate(ReductionOp* rop) {
   return new ReductionOp(rop->getReductionOpType(), init, out, in);
 }
 
-Statement* OptOutMutator::mutate(GridReduction* gr) {
+Statement* OptOutMutator::mutate(kir::GridReduction* gr) {
   ReductionOp* reduction_op = mutate(gr->reduction_op())->as<ReductionOp>();
   kir::Allocate* reduction_buffer = mutate(gr->reduction_buffer())->as<kir::Allocate>();
   kir::Allocate* sync_buffer = mutate(gr->sync_buffer())->as<kir::Allocate>();
@@ -221,7 +221,7 @@ Statement* OptOutMutator::mutate(GridReduction* gr) {
       sync_buffer->sameAs(gr->sync_buffer()))
     return gr;
 
-  return new GridReduction(reduction_op, reduction_buffer, sync_buffer);
+  return new kir::GridReduction(reduction_op, reduction_buffer, sync_buffer);
 }
 
 Statement* OptOutMutator::mutate(BroadcastOp* bop) {

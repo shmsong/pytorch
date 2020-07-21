@@ -150,6 +150,20 @@ Allocate::Allocate(Val* buffer, MemoryType memory_type, Val* size)
   name_ = FusionGuard::getCurFusion()->registerExpr(this);
 }
 
+GridReduction::GridReduction(ReductionOp* reduction_op)
+    : Expr(ExprType::GridReduction), reduction_op_(reduction_op) {
+  TORCH_INTERNAL_ASSERT(false, "Not implemented yet.");
+}
+
+GridReduction::GridReduction(
+    ReductionOp* reduction_op,
+    kir::Allocate* reduction_buffer,
+    kir::Allocate* sync_buffer)
+    : Expr(ExprType::GridReduction),
+      reduction_op_(reduction_op),
+      reduction_buffer_(reduction_buffer),
+      sync_buffer_(sync_buffer) {}
+
 } // namespace kir
 } // namespace fuser
 } // namespace jit

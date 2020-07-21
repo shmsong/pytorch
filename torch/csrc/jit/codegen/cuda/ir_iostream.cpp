@@ -477,7 +477,7 @@ void IRPrinter::handle(const ReductionOp* rop) {
   }
 }
 
-void IRPrinter::handle(const GridReduction* gr) {
+void IRPrinter::handle(const kir::GridReduction* gr) {
   // Check if we've lowered yet.
   const auto rop = gr->reduction_op();
   TORCH_INTERNAL_ASSERT(

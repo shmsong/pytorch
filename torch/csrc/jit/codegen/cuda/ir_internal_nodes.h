@@ -187,45 +187,6 @@ class TORCH_CUDA_API ReductionOp : public Expr {
   Val* const in_ = nullptr;
 };
 
-// Grid reduction operation, this node is used only after lowering a fusion to
-// explicitly mark a grid reduction and the buffer allocation needed to do it.
-// This node provides FusionExecutor the information it needs to allocate the
-// reduction and sync buffers.
-class TORCH_CUDA_API GridReduction : public Expr {
- public:
-  ~GridReduction() = default;
-  GridReduction(ReductionOp* _reduction_op);
-  GridReduction(
-      ReductionOp* _reduction_op,
-      kir::Allocate* _reduction_buffer,
-      kir::Allocate* _sync_buffer);
-
-  GridReduction(const GridReduction* src, IrCloner* ir_cloner);
-
-  GridReduction(const GridReduction& other) = delete;
-  GridReduction& operator=(const GridReduction& other) = delete;
-
-  GridReduction(GridReduction&& other) = delete;
-  GridReduction& operator=(GridReduction&& other) = delete;
-
-  ReductionOp* reduction_op() const {
-    return reduction_op_;
-  }
-  kir::Allocate* reduction_buffer() const {
-    return reduction_buffer_;
-  }
-  kir::Allocate* sync_buffer() const {
-    return sync_buffer_;
-  }
-
-  bool sameAs(const GridReduction* other) const;
-
- private:
-  ReductionOp* reduction_op_ = nullptr;
-  kir::Allocate* reduction_buffer_ = nullptr;
-  kir::Allocate* sync_buffer_ = nullptr;
-};
-
 class TORCH_CUDA_API TernaryOp : public Expr {
  public:
   ~TernaryOp() = default;
