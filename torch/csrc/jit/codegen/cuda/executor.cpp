@@ -53,7 +53,9 @@ void FusionExecutor::compileFusion(Fusion* fusion, CompileOptions options) {
   const auto structured_code = getStructuredCode(kernel);
 
   compiled_kernel = executor_utils::nvrtcCompile(
-      structured_code, (kernelNamespace() + "::" + kernelName()).c_str(), fusion_id);
+      structured_code,
+      (kernelNamespace() + "::" + kernelName()).c_str(),
+      fusion_id);
 }
 
 namespace {
