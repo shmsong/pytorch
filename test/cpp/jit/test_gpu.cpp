@@ -4430,6 +4430,146 @@ void testGPU_FusionConstCheck() {
   TORCH_CHECK(one_x4->isConstScalar());
 }
 
+void testGPU_FusionUnrollWithAlloc() {
+  const std::vector<int64_t> tensor_dims_in = {128, 128};
+  Fusion fusion;
+  FusionGuard fg(&fusion);
+
+  // Set up your input tensor views
+  TensorView* tv0 = makeDummyTensor(tensor_dims_in.size());
+  fusion.addInput(tv0);
+
+  TensorView* tv1 = add(tv0, new Float(0));
+  TensorView* tv2 = reductionOp(BinaryOpType::Add, {1}, new Float(0), tv1);
+  fusion.addOutput(tv2);
+
+  const auto options =
+      at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
+  at::Tensor input = at::rand(tensor_dims_in, options);
+  at::Tensor cg_output = at::empty({tensor_dims_in[0]}, options);
+
+  // const at::ArrayRef<c10::IValue> inputs({input});
+
+  // Schedule
+  tv2->split(1, 32);
+  tv2->split(1, 4); // unroll
+
+  auto tv2_rf = tv2->rFactor({-3, -2});
+
+  tv2->axis(0)->parallelize(ParallelType::BIDx);
+  tv2->axis(-1)->parallelize(ParallelType::TIDx);
+
+  tv2_rf->axis(0)->parallelize(ParallelType::BIDx);
+  tv2_rf->axis(-1)->parallelize(ParallelType::TIDx);
+  tv2_rf->axis(-2)->parallelize(ParallelType::Unroll);
+
+  tv1->computeAt(tv2_rf, -1);
+
+  torch::jit::fuser::cuda::FusionExecutor fe;
+  fe.compileFusion(&fusion);
+  auto outputs = fe.runFusion({input});
+
+  auto aten_output = (input + 0).sum(1);
+
+  TORCH_CHECK(
+      aten_output.allclose(outputs[0]),
+      "Error of: ",
+      aten_output.sub(outputs[0]).abs().max());
+}
+
+// Test isZeroInt
+void testGPU_FusionIsZeroInt() {
+  Fusion fusion;
+  FusionGuard fg(&fusion);
+
+  Int* x = new Int(0);
+  Int* y = new Int(1);
+  Val* z = mul(x, y);
+  TORCH_CHECK(x->isZeroInt());
+  TORCH_CHECK(!y->isZeroInt());
+  TORCH_CHECK(!z->isZeroInt());
+}
+
+// Test isOneInt
+void testGPU_FusionIsOneInt() {
+  Fusion fusion;
+  FusionGuard fg(&fusion);
+
+  Int* x = new Int(1);
+  Int* y = new Int(1);
+  Val* z = mul(x, y);
+  TORCH_CHECK(x->isOneInt());
+  TORCH_CHECK(y->isOneInt());
+  TORCH_CHECK(!z->isOneInt());
+}
+
+// This is to verify no cycle of computeAt is created. A more complex
+// variation of this pattern appears in one of the Python tests
+// (test_random_topo).
+void testGPU_FusionComputeAtNonterminatingOutput() {
+  Fusion fusion;
+  FusionGuard fg(&fusion);
+
+  TensorView* tv0 = makeDummyTensor(1);
+  fusion.addInput(tv0);
+
+  // Common intermediate tensor
+  auto tv1 = add(tv0, new Float(1));
+  // tv1 -> tv2
+  auto tv2 = add(tv1, new Float(2));
+  // tv1 -> tv3 -> tv4
+  auto tv3 = add(tv1, new Float(3));
+  auto tv4 = add(tv3, new Float(4));
+
+  // NOTE: This should no longer occur as of PR #201.
+  // The order of adding outputs matters. If tv3 is added before tv4,
+  // it should be fine. However, if tv4 is added before tv3, there
+  // will be a cycle of tv3->tv4 and tv4->tv3. tv3->tv4 is created
+  // first, and then tv4->tv3 is created at the final phase of
+  // computeAt (ComputeAt::setupOutputs).
+  fusion.addOutput(tv2);
+  fusion.addOutput(tv4);
+  fusion.addOutput(tv3);
+
+  tv0->computeAt(tv2, -1);
+
+  TORCH_CHECK(
+      !(tv3->getComputeAtView() == tv4 && tv4->getComputeAtView() == tv3),
+      "ComputeAt cycle detected between tv3 and tv4");
+
+  const auto options =
+      at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
+  at::Tensor input = at::rand(100, options);
+
+  torch::jit::fuser::cuda::FusionExecutor fe;
+  fe.compileFusion(&fusion);
+  auto outputs = fe.runFusion({input});
+
+  auto& output_tv2 = outputs[0];
+  auto& output_tv4 = outputs[1];
+  auto& output_tv3 = outputs[2];
+
+  auto aten_t1 = input + 1;
+  auto aten_t2 = aten_t1 + 2;
+  auto aten_t3 = aten_t1 + 3;
+  auto aten_t4 = aten_t3 + 4;
+
+  TORCH_CHECK(
+      aten_t2.allclose(output_tv2),
+      "Error of: ",
+      aten_t2.sub(output_tv2).abs().max());
+  TORCH_CHECK(
+      aten_t3.allclose(output_tv3),
+      "Error of: ",
+      aten_t3.sub(output_tv3).abs().max());
+  TORCH_CHECK(
+      aten_t4.allclose(output_tv4),
+      "Error of: ",
+      aten_t4.sub(output_tv4).abs().max());
+
+  return;
+}
+
 } // namespace jit
 } // namespace torch
 

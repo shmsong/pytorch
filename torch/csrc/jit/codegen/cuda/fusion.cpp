@@ -31,10 +31,17 @@ void ExprSort::handle(Expr* expr) {
 std::vector<Expr*> ExprSort::getExprs(
     Fusion* fusion,
     bool from_outputs_only,
-    bool breadth_first,
     bool respect_compute_at) {
   ExprSort es;
-  es.traverse(fusion, from_outputs_only, breadth_first, respect_compute_at);
+  es.traverse(fusion, from_outputs_only, respect_compute_at);
+  return es.exprs;
+}
+
+std::vector<Expr*> ExprSort::getExprs(
+    Fusion* fusion,
+    const std::vector<Val*>& from) {
+  ExprSort es;
+  es.traverseFrom(fusion, from, false);
   return es.exprs;
 }
 
@@ -280,11 +287,9 @@ bool Fusion::inFusion(const Statement* stmt) const {
   Statement* nonconst_stmt = const_cast<Statement*>(stmt); // NOLINT
 
   if (stmt->isExpr())
-    infusion &=
-        expr_set_.find(static_cast<Expr*>(nonconst_stmt)) != expr_set_.end();
+    infusion &= expr_set_.find(nonconst_stmt->as<Expr>()) != expr_set_.end();
   if (stmt->isVal())
-    infusion &=
-        val_set_.find(static_cast<Val*>(nonconst_stmt)) != val_set_.end();
+    infusion &= val_set_.find(nonconst_stmt->as<Val>()) != val_set_.end();
 
   return infusion;
 }
@@ -298,12 +303,8 @@ void Fusion::assertInFusion(const Statement* stmt, const std::string& msg)
 
 std::vector<Expr*> Fusion::exprs(
     bool from_outputs_only,
-    bool breadth_first,
     bool respect_compute_at) {
-  if (breadth_first)
-    TORCH_INTERNAL_ASSERT(false, "Not implemented yet.");
-  return ExprSort::getExprs(
-      this, from_outputs_only, breadth_first, respect_compute_at);
+  return ExprSort::getExprs(this, from_outputs_only, respect_compute_at);
 }
 
 std::unordered_set<Val*> Fusion::inputsOf(Val* val) {
@@ -421,9 +422,9 @@ StmtNameType Fusion::registerStatement(Statement* stmt) {
     return stmt->name();
 
   if (stmt->isVal()) {
-    return registerVal(static_cast<Val*>(stmt));
+    return registerVal(stmt->as<Val>());
   } else if (stmt->isExpr()) {
-    return registerExpr(static_cast<Expr*>(stmt));
+    return registerExpr(stmt->as<Expr>());
   }
 
   TORCH_INTERNAL_ASSERT(
@@ -507,8 +508,7 @@ StmtNameType Fusion::getExprName() {
 bool Fusion::hasRNG() {
   for (auto expr : exprs(true))
     if (expr->getExprType() == ExprType::UnaryOp)
-      if (static_cast<UnaryOp*>(expr)->getUnaryOpType() ==
-          UnaryOpType::RandLike)
+      if (expr->as<UnaryOp>()->getUnaryOpType() == UnaryOpType::RandLike)
         return true;
   return false;
 }
@@ -518,7 +518,7 @@ bool Fusion::hasReduction() {
   for (auto expr : exprs(true))
     for (auto out : expr->outputs())
       if (out->getValType() == ValType::TensorView)
-        if (static_cast<TensorView*>(out)->hasReduction())
+        if (out->as<TensorView>()->hasReduction())
           return true;
 
   return false;
@@ -528,7 +528,7 @@ bool Fusion::hasBlockReduction() {
   for (auto expr : exprs(true))
     for (auto out : expr->outputs())
       if (out->getValType() == ValType::TensorView)
-        if (static_cast<TensorView*>(out)->hasBlockReduction())
+        if (out->as<TensorView>()->hasBlockReduction())
           return true;
 
   return false;
@@ -538,10 +538,32 @@ bool Fusion::hasGridReduction() {
   for (auto expr : exprs(true))
     for (auto out : expr->outputs())
       if (out->getValType() == ValType::TensorView)
-        if (static_cast<TensorView*>(out)->hasGridReduction())
+        if (out->as<TensorView>()->hasGridReduction())
           return true;
 
   return false;
+}
+
+std::vector<Val*> Fusion::getTerminatingOutputs() {
+  FusionGuard fg(this);
+
+  std::unordered_set<Val*> used_vals;
+
+  const auto exprs = ExprSort::getExprs(
+      this, std::vector<Val*>(outputs().begin(), outputs().end()));
+
+  for (auto expr : exprs) {
+    for (auto inp : expr->inputs())
+      used_vals.emplace(inp);
+  }
+
+  std::vector<Val*> terminating_outputs;
+  for (auto out : outputs()) {
+    if (used_vals.find(out) != used_vals.end())
+      continue;
+    terminating_outputs.push_back(out);
+  }
+  return terminating_outputs;
 }
 
 } // namespace fuser

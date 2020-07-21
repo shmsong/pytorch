@@ -20,8 +20,9 @@ int FusionExecutor::fusion_id_counter = 0;
 
 std::string FusionExecutor::getStructuredCode(const std::string& kernel) {
   // generating cuda code;
-  std::string code = std::string("namespace ") + FusionExecutor::kernelNamespace() +
-      " {\n" + executor_utils::kernelPreamble() + kernel + "}\n";
+  std::string code = std::string("namespace ") +
+      FusionExecutor::kernelNamespace() + " {\n" +
+      executor_utils::kernelPreamble() + kernel + "}\n";
 
   const char* debug_env = getenv("PYTORCH_CUDA_FUSER_DEBUG");
   if (debug_env && atoi(debug_env)) {
@@ -56,7 +57,9 @@ void FusionExecutor::compileFusion(
   const auto structured_code = getStructuredCode(kernel);
 
   compiled_kernel = executor_utils::nvrtcCompile(
-      structured_code, (kernelNamespace() + "::" + kernelName()).c_str(), fusion_id);
+      structured_code,
+      (kernelNamespace() + "::" + kernelName()).c_str(),
+      fusion_id);
 }
 
 namespace {

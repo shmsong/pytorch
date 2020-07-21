@@ -181,7 +181,11 @@ namespace jit {
   _(GPU_FusionCacheComplex)                         \
   _(GPU_FusionCacheMultiConsumer)                   \
   _(GPU_FusionConstCheck)                           \
-  _(GPU_FusionSymbolicReduction)
+  _(GPU_FusionSymbolicReduction)                    \
+  _(GPU_FusionUnrollWithAlloc)                      \
+  _(GPU_FusionIsZeroInt)                            \
+  _(GPU_FusionIsOneInt)                             \
+  _(GPU_FusionComputeAtNonterminatingOutput)
 #else
 #define TH_FORALL_TESTS_CUDA(_) \
   _(ArgumentSpec)               \

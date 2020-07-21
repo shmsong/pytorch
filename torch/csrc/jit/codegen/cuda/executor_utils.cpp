@@ -28,6 +28,8 @@ std::string kernelPreamble() {
   return ss.str();
 }
 
+namespace {
+
 bool validateKernelArgTensor(
     const at::Tensor& arg,
     const Val* param,
@@ -42,9 +44,9 @@ bool validateKernelArgTensor(
   // Check the rank of the tensors.
   size_t arg_dim = arg.dim();
   // Note: This requires current Fusion to be active.
-  size_t param_dim = TensorDomain::noReductions(
-                         static_cast<const TensorView*>(param)->getRootDomain())
-                         .size();
+  size_t param_dim =
+      TensorDomain::noReductions(param->as<TensorView>()->getRootDomain())
+          .size();
   // see [Note - broadcast support in integration]
   // Because of broadcasting support handled in integration, we relax the rank
   // check as necessary.
@@ -124,6 +126,8 @@ bool validateKernelArg(
     return validateKernelArgTensor(arg.toTensor(), param, device, msg);
   }
 }
+
+} // namespace
 
 void validateKernelInputs(
     Fusion* fusion,

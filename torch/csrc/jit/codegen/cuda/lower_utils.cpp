@@ -437,12 +437,12 @@ void ASSERT_EXPR(Statement* stmt) {
 
 Expr* asExpr(Statement* stmt) {
   ASSERT_EXPR(stmt);
-  return static_cast<Expr*>(stmt);
+  return stmt->as<Expr>();
 }
 
 TensorView* asTV(Val* val) {
   TORCH_INTERNAL_ASSERT(isTV(val));
-  return static_cast<TensorView*>(val);
+  return val->as<TensorView>();
 }
 
 bool isScope(const Expr* expr) {
@@ -453,19 +453,19 @@ bool isScope(const Expr* expr) {
 kir::ForLoop* asForLoop(Statement* stmt) {
   Expr* expr = asExpr(stmt);
   TORCH_INTERNAL_ASSERT(expr->getExprType() == ExprType::ForLoop);
-  return static_cast<kir::ForLoop*>(expr);
+  return expr->as<kir::ForLoop>();
 }
 
 const TensorView* asConstTV(const Val* val) {
   TORCH_INTERNAL_ASSERT(isTV(val));
-  return static_cast<const TensorView*>(val);
+  return val->as<TensorView>();
 }
 
 bool isUnrolledFor(const Expr* expr) {
   if (expr->getExprType() != ExprType::ForLoop) {
     return false;
   }
-  return static_cast<const kir::ForLoop*>(expr)->iter_domain()->parallel_method() ==
+  return expr->as<kir::ForLoop>()->iter_domain()->parallel_method() ==
       ParallelType::Unroll;
 }
 

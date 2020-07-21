@@ -22,9 +22,7 @@ struct TORCH_CUDA_API CompileOptions {
 
 class TORCH_CUDA_API FusionExecutor {
  public:
-  void compileFusion(
-      const Fusion* fusion,
-      CompileOptions options = CompileOptions());
+  void compileFusion(Fusion* fusion, CompileOptions options = CompileOptions());
 
   std::vector<at::Tensor> runFusion(
       const at::ArrayRef<IValue>& inputs,

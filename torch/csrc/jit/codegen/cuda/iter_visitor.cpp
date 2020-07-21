@@ -13,9 +13,9 @@ std::vector<Statement*> IterVisitor::next(
     Statement* statement,
     bool respect_compute_at) {
   if (statement->isVal())
-    return next(static_cast<Val*>(statement));
+    return next(statement->as<Val>());
   else if (statement->isExpr())
-    return next(static_cast<Expr*>(statement), respect_compute_at);
+    return next(statement->as<Expr>(), respect_compute_at);
   else
     TORCH_INTERNAL_ASSERT(
         false, "IterVisitor could not detect type in next_dispatch.");
@@ -37,7 +37,7 @@ std::vector<Statement*> IterVisitor::next(Expr* expr, bool respect_compute_at) {
         expr->outputs().size() == 1,
         "Expressions with multiple outputs are not supported");
     if (expr->output(0)->getValType().value() == ValType::TensorView) {
-      auto out = expr->output(0)->as<const TensorView>();
+      auto out = expr->output(0)->as<TensorView>();
       // Move input TVs that are computed at this expression backward
       // so that they are visited later. If multiple inputs are
       // computed at, move TVs that are computed at an inner loop nest
@@ -134,16 +134,12 @@ void IterVisitor::traverseFrom(
 void IterVisitor::traverse_(
     Fusion* const fusion,
     bool from_outputs_only,
-    bool breadth_first,
     bool traverse_all_paths,
     bool respect_compute_at) {
   FusionGuard fg(fusion);
-  if (breadth_first)
-    TORCH_INTERNAL_ASSERT(false, "Not implemented yet.");
 
   if (from_outputs_only) {
-    auto term_outs = IterVisitor::getTerminatingOutputs(fusion);
-    std::vector<Val*> term_val_outs(term_outs.begin(), term_outs.end());
+    auto term_val_outs = fusion->getTerminatingOutputs();
     if (!term_val_outs.empty())
       traverseFrom(
           fusion, term_val_outs, traverse_all_paths, respect_compute_at);
@@ -163,41 +159,18 @@ void IterVisitor::traverse_(
 void IterVisitor::traverse(
     Fusion* const fusion,
     bool from_outputs_only,
-    bool breadth_first,
     bool respect_compute_at) {
-  traverse_(
-      fusion, from_outputs_only, breadth_first, false, respect_compute_at);
+  traverse_(fusion, from_outputs_only, false, respect_compute_at);
 }
 
 void IterVisitor::traverseAllPaths(
     Fusion* const fusion,
     bool from_outputs_only,
-    bool breadth_first,
     bool respect_compute_at) {
-  traverse_(fusion, from_outputs_only, breadth_first, true, respect_compute_at);
+  traverse_(fusion, from_outputs_only, true, respect_compute_at);
 }
 
 namespace {
-
-// Expr sort will take a fusion and return a topologically sorted list of
-// expressions.
-class Exprs : public IterVisitor {
- private:
-  std::vector<Expr*> exprs;
-
-  void handle(Expr* expr) override {
-    exprs.push_back(expr);
-  }
-
- public:
-  static std::vector<Expr*> getExprs(
-      Fusion* fusion,
-      const std::vector<Val*>& from) {
-    Exprs ex;
-    ex.traverseFrom(fusion, from, false);
-    return ex.exprs;
-  }
-};
 
 // Expr sort will take a fusion and return a topologically sorted list of
 // expressions.
@@ -221,29 +194,6 @@ class Inputs : public IterVisitor {
 };
 
 } // namespace
-
-std::unordered_set<Val*> IterVisitor::getTerminatingOutputs(
-    Fusion* const fusion) {
-  FusionGuard fg(fusion);
-
-  std::unordered_set<Val*> used_vals;
-
-  const auto exprs = Exprs::getExprs(
-      fusion,
-      std::vector<Val*>(fusion->outputs().begin(), fusion->outputs().end()));
-
-  for (auto expr : exprs) {
-    for (auto inp : expr->inputs())
-      used_vals.emplace(inp);
-  }
-
-  std::unordered_set<Val*> terminating_outputs;
-  for (auto out : fusion->outputs())
-    if (used_vals.find(out) == used_vals.end())
-      terminating_outputs.emplace(out);
-
-  return terminating_outputs;
-}
 
 std::unordered_set<Val*> IterVisitor::getInputsTo(
     const std::vector<Val*>& vals) {
@@ -276,9 +226,9 @@ class AllVals : public IterVisitor {
 
 std::vector<Statement*> BackwardVisitor::next(Statement* stmt) {
   if (stmt->isVal())
-    return next(static_cast<Val*>(stmt));
+    return next(stmt->as<Val>());
   else if (stmt->isExpr())
-    return next(static_cast<Expr*>(stmt));
+    return next(stmt->as<Expr>());
   else
     TORCH_INTERNAL_ASSERT(
         false, "BackwardVisitor could not detect type in next_dispatch.");
@@ -323,7 +273,7 @@ void BackwardVisitor::traverseFrom(
 
   auto vals = AllVals::get(fusion, from);
 
-  auto exprs = Exprs::getExprs(fusion, from);
+  auto exprs = ExprSort::getExprs(fusion, from);
 
   {
     size_t pos = 0;
@@ -434,7 +384,7 @@ class DependencyChains : public IterVisitor {
       std::deque<Val*> deps;
       for (auto stack : stmt_stack) {
         if (stack.back()->isVal())
-          deps.push_back(static_cast<Val*>(stack.back()));
+          deps.push_back(stack.back()->as<Val>());
       }
       // Order as dependency -> of
       dep_chains.emplace_back(deps.rbegin(), deps.rend());
