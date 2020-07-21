@@ -35,9 +35,7 @@ std::string FusionExecutor::getStructuredCode(const std::string& kernel) {
   return code;
 }
 
-void FusionExecutor::compileFusion(
-    const Fusion* fusion,
-    CompileOptions options) {
+void FusionExecutor::compileFusion(Fusion* fusion, CompileOptions options) {
   TORCH_INTERNAL_ASSERT(
       !fusion->outputs().empty(), "No output found for this kernel, aborting.");
 
