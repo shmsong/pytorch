@@ -1,11 +1,11 @@
 #include <torch/csrc/jit/codegen/cuda/scheduler.h>
 
 #include <torch/csrc/jit/codegen/cuda/arith.h>
+#include <torch/csrc/jit/codegen/cuda/executor_utils.h>
 #include <torch/csrc/jit/codegen/cuda/expr_evaluator.h>
 #include <torch/csrc/jit/codegen/cuda/ir_all_nodes.h>
 #include <torch/csrc/jit/codegen/cuda/ir_iostream.h>
 #include <torch/csrc/jit/codegen/cuda/parser.h>
-#include <torch/csrc/jit/codegen/cuda/executor_utils.h>
 
 #include <ATen/cuda/CUDAContext.h>
 
@@ -376,7 +376,7 @@ c10::optional<ReductionParams> scheduleReduction(
 
   TORCH_INTERNAL_ASSERT(
       red_expr->getExprType() != c10::nullopt &&
-      red_expr->getExprType().value() == ExprType::ReductionOp,
+          red_expr->getExprType().value() == ExprType::ReductionOp,
       "TensorView doesn't have a reduction.");
 
   const bool red_on_fastest_dim =
@@ -394,7 +394,8 @@ c10::optional<ReductionParams> scheduleReduction(
     red_tv->merge(1, 2);
   }
 
-  EvaluationContext eval_context(std::move(executor_utils::bindInputs(fusion_inputs, fusion)));
+  EvaluationContext eval_context(
+      std::move(executor_utils::bindInputs(fusion_inputs, fusion)));
 
   // Evaluate Dimensions of Reduction TensorView
   auto red_ids = red_tv->domain()->domain();

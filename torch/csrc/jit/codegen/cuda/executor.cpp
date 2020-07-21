@@ -220,7 +220,8 @@ std::vector<at::Tensor> FusionExecutor::runFusion(
   c10::DeviceGuard dg(options_.device);
   auto stream = at::cuda::getCurrentCUDAStream();
 
-  EvaluationContext evaluation_context = executor_utils::bindInputs(inputs, &fusion_);
+  EvaluationContext evaluation_context =
+      executor_utils::bindInputs(inputs, &fusion_);
 
   LaunchParams launch_params =
       computeLaunchParams(inputs, launch_constraints, evaluation_context);
