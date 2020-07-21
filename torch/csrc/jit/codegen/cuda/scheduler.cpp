@@ -472,7 +472,7 @@ c10::optional<ReductionParams> scheduleReduction(
         red_tv->split(1, rparams.grid_dim_y_);
         red_tv->split(1, rparams.block_dim_y_);
 
-        auto red_tv_rf = red_tv->rFactor({-5, -1});
+        auto red_tv_rf = red_tv->rFactor( {-5, -1}); // NOLINT(cppcoreguidelines-avoid-magic-numbers)
         red_tv_rf->computeAt(red_tv, 1);
 
         red_tv->axis(0)->parallelize(ParallelType::BIDx);
