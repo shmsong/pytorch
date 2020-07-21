@@ -22,9 +22,9 @@ struct TORCH_CUDA_API CompileOptions {
 
 class TORCH_CUDA_API FusionExecutor {
  public:
-  FusionExecutor() {}
-
-  void compileFusion(Fusion* fusion, CompileOptions options = CompileOptions());
+  void compileFusion(
+      const Fusion* fusion,
+      CompileOptions options = CompileOptions());
 
   std::vector<at::Tensor> runFusion(
       const at::ArrayRef<IValue>& inputs,
@@ -38,13 +38,13 @@ class TORCH_CUDA_API FusionExecutor {
   }
 
  private:
-  std::string KernelName() const {
+  std::string kernelName() const {
     std::stringstream ss;
     ss << "kernel" << fusion_id;
     return ss.str();
   }
 
-  static std::string Namespace() {
+  static std::string kernelNamespace() {
     return "CudaCodeGen";
   }
 
@@ -60,6 +60,7 @@ class TORCH_CUDA_API FusionExecutor {
 
   std::vector<at::Tensor> allocOutputs(EvaluationContext& ec);
 
+ private:
   Fusion fusion_;
 
   CompileOptions options_;

@@ -20,12 +20,12 @@ int FusionExecutor::fusion_id_counter = 0;
 
 std::string FusionExecutor::getStructuredCode(const std::string& kernel) {
   // generating cuda code;
-  std::string code = std::string("namespace ") + FusionExecutor::Namespace() +
+  std::string code = std::string("namespace ") + FusionExecutor::kernelNamespace() +
       " {\n" + executor_utils::kernelPreamble() + kernel + "}\n";
 
   const char* debug_env = getenv("PYTORCH_CUDA_FUSER_DEBUG");
   if (debug_env && atoi(debug_env)) {
-    std::cout << "\n==== codegen output for kernel: " << KernelName()
+    std::cout << "\n==== codegen output for kernel: " << kernelName()
               << " ====" << std::endl
               << code << std::endl
               << "=====*===============================" << std::endl;
@@ -34,7 +34,9 @@ std::string FusionExecutor::getStructuredCode(const std::string& kernel) {
   return code;
 }
 
-void FusionExecutor::compileFusion(Fusion* fusion, CompileOptions options) {
+void FusionExecutor::compileFusion(
+    const Fusion* fusion,
+    CompileOptions options) {
   TORCH_INTERNAL_ASSERT(
       !fusion->outputs().empty(), "No output found for this kernel, aborting.");
 
@@ -50,11 +52,11 @@ void FusionExecutor::compileFusion(Fusion* fusion, CompileOptions options) {
   fusion_id = ++fusion_id_counter;
   has_random = fusion->hasRNG();
   lowered = GPULower(&fusion_);
-  const auto kernel = lowered.getKernel(KernelName());
+  const auto kernel = lowered.getKernel(kernelName());
   const auto structured_code = getStructuredCode(kernel);
 
   compiled_kernel = executor_utils::nvrtcCompile(
-      structured_code, (Namespace() + "::" + KernelName()).c_str(), fusion_id);
+      structured_code, (kernelNamespace() + "::" + kernelName()).c_str(), fusion_id);
 }
 
 namespace {
