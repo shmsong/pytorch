@@ -55,11 +55,6 @@ void FusionExecutor::compileFusion(Fusion* fusion, CompileOptions options) {
       structured_code, (Namespace() + "::" + KernelName()).c_str(), fusion_id);
 }
 
-void FusionExecutor::compileEditedFusion(const std::string& prog) {
-  compiled_kernel = executor_utils::nvrtcCompile(
-      prog, (Namespace() + "::" + KernelName()).c_str(), fusion_id);
-}
-
 namespace {
 
 // Check if a value is already bound, if so validate we're trying to bind to the

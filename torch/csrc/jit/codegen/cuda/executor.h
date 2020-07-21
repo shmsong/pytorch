@@ -26,8 +26,6 @@ class TORCH_CUDA_API FusionExecutor {
 
   void compileFusion(Fusion* fusion, CompileOptions options = CompileOptions());
 
-  void compileEditedFusion(const std::string &prog);
-
   std::vector<at::Tensor> runFusion(
       const at::ArrayRef<IValue>& inputs,
       const std::vector<at::Tensor>& outputs,
