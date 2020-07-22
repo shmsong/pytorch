@@ -213,7 +213,8 @@ Statement* OptOutMutator::mutate(ReductionOp* rop) {
 
 Statement* OptOutMutator::mutate(kir::GridReduction* gr) {
   ReductionOp* reduction_op = mutate(gr->reduction_op())->as<ReductionOp>();
-  kir::Allocate* reduction_buffer = mutate(gr->reduction_buffer())->as<kir::Allocate>();
+  kir::Allocate* reduction_buffer =
+      mutate(gr->reduction_buffer())->as<kir::Allocate>();
   kir::Allocate* sync_buffer = mutate(gr->sync_buffer())->as<kir::Allocate>();
 
   if (reduction_op->sameAs(gr->reduction_op()) &&

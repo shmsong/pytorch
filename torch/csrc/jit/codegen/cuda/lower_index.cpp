@@ -43,7 +43,8 @@ void IndexLowering::handle(kir::ForLoop* fl) {
   Expr* prev_scope_expr = active_scope_expr;
   kir::Scope* prev_scope = active_scope;
 
-  auto newFl = new kir::ForLoop(fl->index(), fl->iter_domain(), {}, prev_scope_expr);
+  auto newFl =
+      new kir::ForLoop(fl->index(), fl->iter_domain(), {}, prev_scope_expr);
   pushBack(newFl);
 
   active_scope_expr = newFl;
@@ -213,7 +214,8 @@ void IndexLowering::handle(ReductionOp* rop) {
     TensorView* reduce_sync_tv =
         new TensorView(new TensorDomain({sync_id}), DataType::Int);
 
-    auto reduce_buffer = new kir::Allocate(reduce_buffer_tv, MemoryType::Global);
+    auto reduce_buffer =
+        new kir::Allocate(reduce_buffer_tv, MemoryType::Global);
     auto sync_buffer = new kir::Allocate(reduce_sync_tv, MemoryType::Global);
 
     pushBack(reduce_buffer);

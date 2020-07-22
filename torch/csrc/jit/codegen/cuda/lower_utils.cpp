@@ -342,8 +342,8 @@ kir::ForLoop* openFor(Expr* scope, IterDomain* id) {
   if (id->isThread()) {
     std::stringstream ss;
     ss << id->parallel_method();
-    new_scope =
-        new kir::ForLoop(new NamedScalar(ss.str(), DataType::Int), id, {}, scope);
+    new_scope = new kir::ForLoop(
+        new NamedScalar(ss.str(), DataType::Int), id, {}, scope);
   } else {
     new_scope = new kir::ForLoop(new Int(), id, {}, scope);
   }
@@ -391,9 +391,10 @@ namespace ir_utils {
 
 std::vector<Val*> indices(std::vector<kir::ForLoop*> loops) {
   std::vector<Val*> inds(loops.size());
-  std::transform(loops.begin(), loops.end(), inds.begin(), [](kir::ForLoop* fl) {
-    return fl->index();
-  });
+  std::transform(
+      loops.begin(), loops.end(), inds.begin(), [](kir::ForLoop* fl) {
+        return fl->index();
+      });
   return inds;
 }
 

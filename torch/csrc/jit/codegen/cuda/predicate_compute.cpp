@@ -16,7 +16,8 @@ bool PredicateCompute::hasPredicates(const kir::TensorIndex* ti) {
   return false;
 }
 
-std::vector<Bool*> PredicateCompute::computePredicates(const kir::TensorIndex* ti) {
+std::vector<Bool*> PredicateCompute::computePredicates(
+    const kir::TensorIndex* ti) {
   const TensorView* tv = ti->view();
   const std::vector<IterDomain*>& root = tv->getRootDomain();
 

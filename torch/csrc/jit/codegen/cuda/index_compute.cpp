@@ -114,9 +114,10 @@ kir::TensorIndex* Index::getGlobalProducerIndex(
     const std::vector<kir::ForLoop*>& loops) {
   // Grab indices from the loops
   std::vector<Val*> indices(loops.size());
-  std::transform(loops.begin(), loops.end(), indices.begin(), [](kir::ForLoop* fl) {
-    return fl->index();
-  });
+  std::transform(
+      loops.begin(), loops.end(), indices.begin(), [](kir::ForLoop* fl) {
+        return fl->index();
+      });
 
   // What would the consumer indices be if it was global, keeping in mind
   // reduction axes:
@@ -254,9 +255,10 @@ kir::TensorIndex* Index::getGlobalConsumerIndex(
   // loops. If we're actually performing the reduction, we will.
 
   std::vector<Val*> indices(loops.size());
-  std::transform(loops.begin(), loops.end(), indices.begin(), [](kir::ForLoop* fl) {
-    return fl->index();
-  });
+  std::transform(
+      loops.begin(), loops.end(), indices.begin(), [](kir::ForLoop* fl) {
+        return fl->index();
+      });
 
   std::vector<Val*> computed_inds =
       IndexCompute::get(consumer->domain(), indices);
@@ -344,14 +346,16 @@ kir::TensorIndex* Index::getConsumerIndex_impl(
   }
 
   std::vector<IterDomain*> ranges(loops.size());
-  std::transform(loops.begin(), loops.end(), ranges.begin(), [](kir::ForLoop* fl) {
-    return fl->iter_domain();
-  });
+  std::transform(
+      loops.begin(), loops.end(), ranges.begin(), [](kir::ForLoop* fl) {
+        return fl->iter_domain();
+      });
 
   std::vector<Val*> indices(loops.size());
-  std::transform(loops.begin(), loops.end(), indices.begin(), [](kir::ForLoop* fl) {
-    return fl->iter_domain()->isBroadcast() ? new Int(0) : fl->index();
-  });
+  std::transform(
+      loops.begin(), loops.end(), indices.begin(), [](kir::ForLoop* fl) {
+        return fl->iter_domain()->isBroadcast() ? new Int(0) : fl->index();
+      });
 
   std::vector<Val*> used_inds;
   std::vector<IterDomain*> used_ranges;

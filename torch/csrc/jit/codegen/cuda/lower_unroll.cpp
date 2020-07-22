@@ -155,8 +155,8 @@ void UnrollPass::handle(kir::ForLoop* fl) {
     Bool* unroll_predicate =
         getPredicate(out, unroll_pred_inds, getThreadPredicate(out));
     // Make the IfThenElse controlling the unrolling
-    kir::IfThenElse* unroll_ite =
-        new kir::IfThenElse(unroll_predicate, {}, {}, first_unroll->parentScope());
+    kir::IfThenElse* unroll_ite = new kir::IfThenElse(
+        unroll_predicate, {}, {}, first_unroll->parentScope());
 
     // Get the loop nest for the unrolled path
     kir::ForLoop* unrolled_loop =
@@ -182,8 +182,8 @@ void UnrollPass::handle(kir::ForLoop* fl) {
       Bool* inline_predicate = getPredicate(
           out, ir_utils::indices(for_loops), getThreadPredicate(out));
 
-      kir::IfThenElse* inline_ite =
-          new kir::IfThenElse(inline_predicate, {expr}, {}, inner_most_inlined_loop);
+      kir::IfThenElse* inline_ite = new kir::IfThenElse(
+          inline_predicate, {expr}, {}, inner_most_inlined_loop);
       std::unordered_map<Expr*, Expr*> inline_replacement_map;
       inline_replacement_map.emplace(std::pair<Expr*, Expr*>(expr, inline_ite));
       scope_utils::replaceExprsInScope(

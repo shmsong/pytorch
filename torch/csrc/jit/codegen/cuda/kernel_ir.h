@@ -14,7 +14,6 @@
 #include <unordered_map>
 #include <vector>
 
-
 namespace torch {
 namespace jit {
 namespace fuser {
@@ -298,7 +297,6 @@ class TORCH_CUDA_API BroadcastOp : public Expr {
   Val* const in_ = nullptr;
 };
 
-
 // Allocate is a lower level Node that describes a buffer of memory that
 // is required as an intermediate within a kernel.  The extent is the expression
 // of the size of the buffer that is generated from the TensorView that
@@ -334,7 +332,6 @@ class TORCH_CUDA_API Allocate : public Expr {
   MemoryType memory_type_ = MemoryType::Local;
   Val* size_ = nullptr;
 };
-
 
 class TORCH_CUDA_API Scope {
  public:
@@ -386,7 +383,6 @@ class TORCH_CUDA_API Scope {
   std::vector<Expr*> exprs_;
 };
 
-
 // ForLoop provides scoping around an int iterator from 0 to range. Exprs placed
 // in its body are considered inside the scope of the for loop. In the future
 // the implementation should look quite different so that we can do proper
@@ -425,7 +421,6 @@ class TORCH_CUDA_API ForLoop : public Expr {
   Scope body_;
   Expr* parent_scope_ = nullptr;
 };
-
 
 // IfThenElse provides scoping for an boolean operator. Exprs placed in its body
 // are considered inside the scope of the if statement. In the future the

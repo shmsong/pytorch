@@ -26,7 +26,8 @@ class GridReductionBuffers : OptOutDispatch {
     return fgr.global_allocations_;
   }
 
-  static std::vector<kir::Allocate*> getSyncAllocs(const std::vector<Expr*>& exprs) {
+  static std::vector<kir::Allocate*> getSyncAllocs(
+      const std::vector<Expr*>& exprs) {
     GridReductionBuffers fgr;
     for (auto expr : exprs) {
       fgr.handle(expr);

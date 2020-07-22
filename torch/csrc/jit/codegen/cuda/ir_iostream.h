@@ -46,7 +46,7 @@ class ForLoop;
 class IfThenElse;
 class GridReduction;
 
-}
+} // namespace kir
 
 /*
  * Define pretty printing functions for all nodes. handle is used so we can take

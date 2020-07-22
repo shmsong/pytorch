@@ -83,7 +83,7 @@ class ForLoop;
 class IfThenElse;
 class GridReduction;
 
-}
+} // namespace kir
 
 /*
  * By default, all IR nodes are handled in this dispatch, and will call an empty
