@@ -260,6 +260,8 @@ class TORCH_CUDA_API TensorIndex : public Val {
  public:
   TensorIndex(const TensorView* view, std::vector<Val*> indices);
 
+  TensorIndex(const TensorIndex* src, IrCloner* ir_cloner);
+
   std::vector<Val*>::size_type nDims() const {
     return indices_.size();
   }
@@ -311,6 +313,8 @@ class TORCH_CUDA_API Allocate : public Expr {
       MemoryType _memory_type = MemoryType::Local,
       Val* _size = nullptr);
 
+  Allocate(const Allocate* src, IrCloner* ir_cloner);
+
   Val* buffer() const {
     return buffer_;
   }
@@ -335,6 +339,9 @@ class TORCH_CUDA_API Allocate : public Expr {
 
 class TORCH_CUDA_API Scope {
  public:
+  Scope() = default;
+  Scope(const Scope* src, IrCloner* ir_cloner);
+
   const std::vector<Expr*>& exprs() const {
     return exprs_;
   }
@@ -389,11 +396,13 @@ class TORCH_CUDA_API Scope {
 // dependency annalysis like in Fusion.
 class TORCH_CUDA_API ForLoop : public Expr {
  public:
-  ForLoop(
+  explicit ForLoop(
       Val* _index,
       IterDomain* _iter_domain,
       const std::vector<Expr*>& _body = {},
       Expr* parent_scope = nullptr);
+
+  ForLoop(const ForLoop* src, IrCloner* ir_cloner);
 
   Val* index() const {
     return index_;
@@ -428,11 +437,13 @@ class TORCH_CUDA_API ForLoop : public Expr {
 // dependency annalysis like in Fusion.
 class TORCH_CUDA_API IfThenElse : public Expr {
  public:
-  IfThenElse(
+  explicit IfThenElse(
       Bool* _cond,
       const std::vector<Expr*>& _if_body = {},
       const std::vector<Expr*>& _else_body = {},
       Expr* _parent_scope = nullptr);
+
+  IfThenElse(const IfThenElse* src, IrCloner* ir_cloner);
 
   Bool* cond() const {
     return cond_;
@@ -476,10 +487,13 @@ class TORCH_CUDA_API IfThenElse : public Expr {
 class TORCH_CUDA_API GridReduction : public Expr {
  public:
   explicit GridReduction(ReductionOp* reduction_op);
+
   GridReduction(
       ReductionOp* reduction_op,
       Allocate* reduction_buffer,
       Allocate* sync_buffer);
+
+  GridReduction(const GridReduction* src, IrCloner* ir_cloner);
 
   ReductionOp* reduction_op() const {
     return reduction_op_;
