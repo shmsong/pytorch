@@ -81,6 +81,7 @@ class IrNodeLabel : private OptInConstDispatch {
 
   void handle(const IterDomain* id) override {
     label_ << id->getIterType();
+    label_ << id->getParallelType();
 
     label_ << "(";
     if (!id->start()->isZeroInt()) {
