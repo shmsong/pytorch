@@ -31,10 +31,17 @@ void ExprSort::handle(Expr* expr) {
 std::vector<Expr*> ExprSort::getExprs(
     Fusion* fusion,
     bool from_outputs_only,
-    bool breadth_first,
     bool respect_compute_at) {
   ExprSort es;
-  es.traverse(fusion, from_outputs_only, breadth_first, respect_compute_at);
+  es.traverse(fusion, from_outputs_only, respect_compute_at);
+  return es.exprs;
+}
+
+std::vector<Expr*> ExprSort::getExprs(
+    Fusion* fusion,
+    const std::vector<Val*>& from) {
+  ExprSort es;
+  es.traverseFrom(fusion, from, false);
   return es.exprs;
 }
 
@@ -296,12 +303,8 @@ void Fusion::assertInFusion(const Statement* stmt, const std::string& msg)
 
 std::vector<Expr*> Fusion::exprs(
     bool from_outputs_only,
-    bool breadth_first,
     bool respect_compute_at) {
-  if (breadth_first)
-    TORCH_INTERNAL_ASSERT(false, "Not implemented yet.");
-  return ExprSort::getExprs(
-      this, from_outputs_only, breadth_first, respect_compute_at);
+  return ExprSort::getExprs(this, from_outputs_only, respect_compute_at);
 }
 
 std::unordered_set<Val*> Fusion::inputsOf(Val* val) {
@@ -539,6 +542,28 @@ bool Fusion::hasGridReduction() {
           return true;
 
   return false;
+}
+
+std::vector<Val*> Fusion::getTerminatingOutputs() {
+  FusionGuard fg(this);
+
+  std::unordered_set<Val*> used_vals;
+
+  const auto exprs = ExprSort::getExprs(
+      this, std::vector<Val*>(outputs().begin(), outputs().end()));
+
+  for (auto expr : exprs) {
+    for (auto inp : expr->inputs())
+      used_vals.emplace(inp);
+  }
+
+  std::vector<Val*> terminating_outputs;
+  for (auto out : outputs()) {
+    if (used_vals.find(out) != used_vals.end())
+      continue;
+    terminating_outputs.push_back(out);
+  }
+  return terminating_outputs;
 }
 
 } // namespace fuser
