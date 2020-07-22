@@ -153,6 +153,8 @@ namespace jit {
   _(GPU_FusionSoftmax1DNormalized)    \
   _(GPU_FusionSoftmax3D)              \
   _(GPU_FusionSoftmax3DNormalized)    \
+  _(GPU_FusionSoftmax2DNormalized)    \
+  _(GPU_FusionSoftmax2DNormalizedwarp)\
   _(GPU_FusionSoftmaxComputeAt)       \
   _(GPU_FusionGridReduction1)         \
   _(GPU_FusionGridReduction2)         \

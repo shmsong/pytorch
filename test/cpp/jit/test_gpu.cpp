@@ -3328,6 +3328,168 @@ void testGPU_FusionSoftmax3DNormalized() {
       t2.sub(cg_output).abs().max());
 }
 
+// Softmax with a 3D tensor with input normalization.
+void testGPU_FusionSoftmax2DNormalized() {
+  torch::jit::fuser::cuda::CudaKernel prog;
+  Fusion& fusion = *prog.fusion_;
+  FusionGuard fg(&fusion);
+
+  const int tidx = 128;
+  const int dimx = 65536;
+  const int dimy = 1024;
+
+  // Set up your input tensor views
+  TensorView* input_tv0 = makeDummyTensor(2);
+  fusion.addInput(input_tv0);
+
+  // Normalize with the max value before computing exp.
+  TensorView* max_val_tv1 =
+      reductionOp(BinaryOpType::Max, {-1}, new Float(0), input_tv0);
+  TensorView* bcast_max_tv2 = broadcast(max_val_tv1, {false, true});
+  TensorView* sub_tv3 = sub(input_tv0, bcast_max_tv2);
+  TensorView* exp_tv4 = unaryOp(UnaryOpType::Exp, sub_tv3);
+  TensorView* sum_exp_tv5 = sum(exp_tv4, {-1});
+  TensorView* bcast_sum_tv6 = broadcast(sum_exp_tv5, {false, true});
+
+  // Replicate exp_tv4 as exp_tv4_copy because exp_tv4 is going to be
+  // computed at sum_exp_rf_tv8.
+  TensorView* sub_tv3_copy = sub(input_tv0, bcast_max_tv2);
+  TensorView* exp_tv4_copy = unaryOp(UnaryOpType::Exp, sub_tv3_copy);
+
+  TensorView* output_tv7 = div(exp_tv4_copy, bcast_sum_tv6);
+
+  fusion.addOutput(output_tv7);
+
+  max_val_tv1->split(-1, tidx);
+  TensorView* max_val_rf_tv8 = max_val_tv1->rFactor({-2});
+
+  sum_exp_tv5->split(-1, tidx);
+  TensorView* sum_exp_rf_tv9 = sum_exp_tv5->rFactor({-2});
+
+  output_tv7->split(-1, tidx);
+
+  sub_tv3->computeAt(sum_exp_rf_tv9, -1);
+  sub_tv3_copy->computeAt(output_tv7, -1);
+
+  TensorView* tensors_to_parallelize[] = {max_val_tv1,
+                                          bcast_max_tv2,
+                                          sum_exp_tv5,
+                                          bcast_sum_tv6,
+                                          output_tv7,
+                                          max_val_rf_tv8,
+                                          sum_exp_rf_tv9};
+
+  for (auto tv : tensors_to_parallelize) {
+    tv->axis(0)->parallelize(ParallelType::BIDx);
+    tv->axis(-1)->parallelize(ParallelType::TIDx);
+  }
+
+  prog.device_ = 0;
+  prog.grid(dimx);
+  prog.block(tidx);
+
+  auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
+  at::Tensor t0 = at::randn({dimx, dimy}, options);
+  at::Tensor cg_output = at::empty({dimx, dimy}, options);
+  torch::jit::fuser::cuda::compileKernel(&prog);
+
+  for (int i=0;i<1000;i++) torch::jit::fuser::cuda::runTestKernel(&prog, {t0}, {cg_output});
+  for (int i=0;i<1000;i++) auto t2 = at::_softmax(t0, -1, false);
+  cudaDeviceSynchronize();
+  /*
+  TORCH_CHECK(
+      t2.allclose(cg_output, 1e-5, 1e-5),
+      "Error of: ",
+      t2.sub(cg_output).abs().max());
+  */
+}
+
+void testGPU_FusionSoftmax2DNormalizedwarp() {
+  torch::jit::fuser::cuda::CudaKernel prog;
+  Fusion& fusion = *prog.fusion_;
+  FusionGuard fg(&fusion);
+
+  const int tidx = 32;
+  const int tidy = 4;
+  const int dimx = 4096;
+  const int dimy = 1024;
+
+  // Set up your input tensor views
+  TensorView* input_tv0 = makeDummyTensor(2);
+  fusion.addInput(input_tv0);
+
+  // Normalize with the max value before computing exp.
+  TensorView* max_val_tv1 =
+      reductionOp(BinaryOpType::Max, {-1}, new Float(0), input_tv0);
+  TensorView* bcast_max_tv2 = broadcast(max_val_tv1, {false, true});
+  TensorView* sub_tv3 = sub(input_tv0, bcast_max_tv2);
+  TensorView* exp_tv4 = unaryOp(UnaryOpType::Exp, sub_tv3);
+  TensorView* sum_exp_tv5 = sum(exp_tv4, {-1});
+  TensorView* bcast_sum_tv6 = broadcast(sum_exp_tv5, {false, true});
+
+  // Replicate exp_tv4 as exp_tv4_copy because exp_tv4 is going to be
+  // computed at sum_exp_rf_tv8.
+  TensorView* sub_tv3_copy = sub(input_tv0, bcast_max_tv2);
+  TensorView* exp_tv4_copy = unaryOp(UnaryOpType::Exp, sub_tv3_copy);
+
+  TensorView* output_tv7 = div(exp_tv4_copy, bcast_sum_tv6);
+
+  fusion.addOutput(output_tv7);
+
+  // we want 128 threads per block on short reduction
+  // so we use 1 warp per reduction
+  // thus split batch dim here and give it to blockdim.y
+  max_val_tv1->split(0, tidy);
+  bcast_max_tv2->split(0, tidy);
+  sum_exp_tv5->split(0, tidy);
+  bcast_sum_tv6->split(0, tidy);
+  output_tv7->split(0, tidy);
+
+  max_val_tv1->split(-1, tidx);
+  TensorView* max_val_rf_tv8 = max_val_tv1->rFactor({-2});
+
+  sum_exp_tv5->split(-1, tidx);
+  TensorView* sum_exp_rf_tv9 = sum_exp_tv5->rFactor({-2});
+
+  output_tv7->split(-1, tidx);
+
+  sub_tv3->computeAt(sum_exp_rf_tv9, -1);
+  sub_tv3_copy->computeAt(output_tv7, -1);
+  bcast_sum_tv6->computeAt(output_tv7, -2);
+
+  TensorView* tensors_to_parallelize[] = {max_val_tv1,
+                                          bcast_max_tv2,
+                                          sum_exp_tv5,
+                                          bcast_sum_tv6,
+                                          output_tv7,
+                                          max_val_rf_tv8,
+                                          sum_exp_rf_tv9};
+  for (auto tv : tensors_to_parallelize) {
+    tv->axis(0)->parallelize(ParallelType::BIDx);
+    tv->axis(1)->parallelize(ParallelType::TIDy);
+    tv->axis(-1)->parallelize(ParallelType::TIDx);
+  }
+
+  prog.device_ = 0;
+  prog.grid(dimx/tidy);
+  prog.block(tidx, tidy);
+
+  auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
+  at::Tensor t0 = at::randn({dimx, dimy}, options);
+  at::Tensor cg_output = at::empty({dimx, dimy}, options);
+  torch::jit::fuser::cuda::compileKernel(&prog);
+
+  for (int i=0;i<1000;i++) auto t2 = at::_softmax(t0, -1, false);
+  for (int i=0;i<1000;i++) torch::jit::fuser::cuda::runTestKernel(&prog, {t0}, {cg_output});
+  cudaDeviceSynchronize();
+  //TORCH_CHECK(
+  //    t2.allclose(cg_output, 1e-5, 1e-5),
+  //   "Error of: ",
+  //   t2.sub(cg_output).abs().max());
+}
+
+
+
 void testGPU_FusionSoftmaxComputeAt() {
   torch::jit::fuser::cuda::CudaKernel prog;
   Fusion& fusion = *prog.fusion_;
