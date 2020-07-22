@@ -129,7 +129,7 @@ void LoopNestGenerator::initReduction(
 
     // If we found an unroll, we want to place the allocation outside the unroll
     if (alloc_pos < tv->nDims() &&
-        tv->getComputeAtAxis(alloc_pos).first->parallel_method() ==
+        tv->getComputeAtAxis(alloc_pos).first->getParallelType() ==
             ParallelType::Unroll) {
       break;
     }
@@ -176,7 +176,7 @@ void LoopNestGenerator::initReduction(
     if (id->isThread()) {
       // If based on a thread, make sure we get the named Int right
       std::stringstream ss;
-      ss << id->parallel_method();
+      ss << id->getParallelType();
       new_fl = new ForLoop(
           new NamedScalar(ss.str(), DataType::Int), id, {}, inner_fl);
     } else {

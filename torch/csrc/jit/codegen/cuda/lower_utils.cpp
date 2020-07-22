@@ -341,7 +341,7 @@ ForLoop* openFor(Expr* scope, IterDomain* id) {
   ForLoop* new_scope = nullptr;
   if (id->isThread()) {
     std::stringstream ss;
-    ss << id->parallel_method();
+    ss << id->getParallelType();
     new_scope =
         new ForLoop(new NamedScalar(ss.str(), DataType::Int), id, {}, scope);
   } else {
@@ -465,7 +465,7 @@ bool isUnrolledFor(const Expr* expr) {
   if (expr->getExprType() != ExprType::ForLoop) {
     return false;
   }
-  return expr->as<ForLoop>()->iter_domain()->parallel_method() ==
+  return expr->as<ForLoop>()->iter_domain()->getParallelType() ==
       ParallelType::Unroll;
 }
 
@@ -594,7 +594,7 @@ ParallelTypeBitmap getParallelBroadcastDomains(
   const auto& iter_domains = out_tv->domain()->domain();
   for (auto id : iter_domains) {
     if (id->isBroadcast() && id->isThread()) {
-      parallel_broadcast.set(id->parallel_method(), true);
+      parallel_broadcast.set(id->getParallelType(), true);
     }
   }
 
