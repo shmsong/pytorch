@@ -27,7 +27,7 @@ class TORCH_CUDA_API Bool : public Val {
 
   Bool() : Val(ValType::Scalar, DataType::Bool), maybe_value_{c10::nullopt} {}
 
-  Bool(bool _value)
+  explicit Bool(bool _value)
       : Val(ValType::Scalar, DataType::Bool), maybe_value_{_value} {}
 
   Bool(const Bool* src, IrCloner* ir_cloner);
@@ -67,7 +67,7 @@ class TORCH_CUDA_API Float : public Val {
 
   Float() : Val(ValType::Scalar, DataType::Float), maybe_value_{c10::nullopt} {}
 
-  Float(ScalarType _value)
+  explicit Float(ScalarType _value)
       : Val(ValType::Scalar, DataType::Float), maybe_value_{_value} {}
 
   Float(const Float* src, IrCloner* ir_cloner);
@@ -105,7 +105,7 @@ class TORCH_CUDA_API Half : public Val {
 
   Half() : Val(ValType::Scalar, DataType::Half), maybe_value_{c10::nullopt} {}
 
-  Half(float _value)
+  explicit Half(float _value)
       : Val(ValType::Scalar, DataType::Half), maybe_value_{_value} {}
 
   Half(const Half* src, IrCloner* ir_cloner);
@@ -142,7 +142,7 @@ class TORCH_CUDA_API Int : public Val {
 
   Int() : Val(ValType::Scalar, DataType::Int), maybe_value_{c10::nullopt} {}
 
-  Int(ScalarType _value)
+  explicit Int(ScalarType _value)
       : Val(ValType::Scalar, DataType::Int), maybe_value_{_value} {}
 
   Int(const Int* src, IrCloner* ir_cloner);
@@ -246,12 +246,19 @@ class TORCH_CUDA_API TensorView : public Val {
 
   // Will check if an axis is inside computeAtAxis and will fetch the reference
   // to be used in code generation.
-  std::pair<IterDomain*, TensorView*> getComputeAtAxis(int pos) {
+  std::pair<int, TensorView*> getComputeAtPos(int pos) {
+    pos = normalizeAxisPos(pos);
     TORCH_INTERNAL_ASSERT(
         nDims() > 0, "Tried to access a computeAt axis in a 0-dim TensorView");
     if (!hasComputeAt() || getThisComputeAtAxis() <= (unsigned int)pos)
-      return std::pair<IterDomain*, TensorView*>(axis(pos), this);
-    return compute_at_view_->getComputeAtAxis(getComputeAtRelPos(pos));
+      return std::make_pair(pos, this);
+    return compute_at_view_->getComputeAtPos(getComputeAtRelPos(pos));
+  }
+
+  std::pair<IterDomain*, TensorView*> getComputeAtAxis(int pos) {
+    const auto computeAtPos = getComputeAtPos(pos);
+    return std::make_pair(
+        computeAtPos.second->axis(computeAtPos.first), computeAtPos.second);
   }
 
   const std::vector<IterDomain*>& getRootDomain() const;
@@ -357,6 +364,13 @@ class TORCH_CUDA_API TensorView : public Val {
   }
 
  private:
+  int normalizeAxisPos(int pos) const {
+    if (pos < 0) {
+      pos += nDims();
+    }
+    return pos;
+  }
+
   // In Cache Before, for the origin expr of the original tensor,
   // we create a new operation where the original tensor is replaced
   // with the new cache tensor. This function creates a new expr

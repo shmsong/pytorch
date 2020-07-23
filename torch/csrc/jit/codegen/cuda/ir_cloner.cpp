@@ -60,10 +60,6 @@ void IrCloner::handle(const IterDomain* id) {
   clone_ = new IterDomain(id, this);
 }
 
-void IrCloner::handle(const TensorIndex* ti) {
-  clone_ = new TensorIndex(ti, this);
-}
-
 void IrCloner::handle(const Bool* b) {
   clone_ = new Bool(b, this);
 }
@@ -108,28 +104,32 @@ void IrCloner::handle(const ReductionOp* op) {
   clone_ = new ReductionOp(op, this);
 }
 
-void IrCloner::handle(const GridReduction* gr) {
-  clone_ = new GridReduction(gr, this);
-}
-
-void IrCloner::handle(const ForLoop* for_loop) {
-  clone_ = new ForLoop(for_loop, this);
-}
-
-void IrCloner::handle(const IfThenElse* if_then_else) {
-  clone_ = new IfThenElse(if_then_else, this);
-}
-
-void IrCloner::handle(const Allocate* allocate) {
-  clone_ = new Allocate(allocate, this);
-}
-
 void IrCloner::handle(const Split* split) {
   clone_ = new Split(split, this);
 }
 
 void IrCloner::handle(const Merge* merge) {
   clone_ = new Merge(merge, this);
+}
+
+void IrCloner::handle(const kir::TensorIndex* node) {
+  clone_ = new kir::TensorIndex(node, this);
+}
+
+void IrCloner::handle(const kir::Allocate* node) {
+  clone_ = new kir::Allocate(node, this);
+}
+
+void IrCloner::handle(const kir::ForLoop* node) {
+  clone_ = new kir::ForLoop(node, this);
+}
+
+void IrCloner::handle(const kir::IfThenElse* node) {
+  clone_ = new kir::IfThenElse(node, this);
+}
+
+void IrCloner::handle(const kir::GridReduction* node) {
+  clone_ = new kir::GridReduction(node, this);
 }
 
 } // namespace fuser
