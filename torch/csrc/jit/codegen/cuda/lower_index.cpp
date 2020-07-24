@@ -222,7 +222,8 @@ void IndexLowering::handle(ReductionOp* rop) {
     pushBack(sync_buffer);
     pushBack(new kir::GridReduction(
         block_reduction == nullptr
-            ? new ReductionOp(rop->getReductionOpType(), rop->init(), out, in)
+            ? new ReductionOp(
+                  rop->getReductionOpType(), rop->init(), out, in)
             : block_reduction,
         reduce_buffer,
         sync_buffer));
@@ -248,6 +249,10 @@ void IndexLowering::handle(BroadcastOp* bop) {
         ir_utils::asTV(bop->out()),
         scope_utils::getLoops(active_scope_expr));
   pushBack(new BroadcastOp(out, in));
+}
+
+void IndexLowering::handle(kir::Allocate* allocate) {
+  pushBack(allocate);
 }
 
 void IndexLowering::generate(const std::vector<Expr*>& exprs) {

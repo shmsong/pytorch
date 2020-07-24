@@ -2,9 +2,10 @@
 #pragma once
 
 #include <torch/csrc/WindowsTorchApiMacro.h>
-#include <torch/csrc/jit/codegen/cuda/ir_base_nodes.h>
+#include <torch/csrc/jit/codegen/cuda/utils.h>
 
-// TODO: remove these
+// TODO: remove these once the Kernel IR is separated from Fusion IR
+#include <torch/csrc/jit/codegen/cuda/ir_base_nodes.h>
 #include <torch/csrc/jit/codegen/cuda/ir_interface_nodes.h>
 #include <torch/csrc/jit/codegen/cuda/ir_internal_nodes.h>
 
@@ -19,7 +20,39 @@ namespace jit {
 namespace fuser {
 namespace kir {
 
-#if 0 // WIP: split lowered versions of generic nodes
+#if 0 // TODO: switch to the new class hierarchy
+
+// Base class for Kernel IR nodes
+class TORCH_CUDA_API Node : public NonCopyable, public PolymorphicBase {};
+
+// A generic value (scalar or tensor)
+class TORCH_CUDA_API Val : public Node {
+ public:
+  explicit Val(ValType vtype, DataType dtype = DataType::Null)
+      : vtype_(vtype), dtype_(dtype) {}
+
+ private:
+  const ValType vtype_;
+  const DataType dtype_;
+};
+
+// A computation, with inputs and outputs
+//
+// TODO: rename to Statement/Operation?
+//
+class TORCH_CUDA_API Expr : public Node {
+ public:
+  explicit Expr(ExprType type) : type_(type) {}
+
+ private:
+  ExprType type_ = ExprType::Invalid;
+  std::vector<Val*> inputs_;
+  std::vector<Val*> outputs_;
+};
+
+#endif
+
+#if 0
 
 class TORCH_CUDA_API NamedScalar : public Val {
  public:
@@ -48,7 +81,6 @@ class TORCH_CUDA_API NamedScalar : public Val {
   std::string name_;
 };
 
-
 class TORCH_CUDA_API Bool : public Val {
  public:
   Bool() : Val(ValType::Scalar, DataType::Bool), maybe_value_{c10::nullopt} {}
@@ -69,7 +101,6 @@ class TORCH_CUDA_API Bool : public Val {
  private:
   const c10::optional<bool> maybe_value_;
 };
-
 
 class TORCH_CUDA_API Float : public Val {
  public:
@@ -94,7 +125,6 @@ class TORCH_CUDA_API Float : public Val {
   const c10::optional<ScalarType> maybe_value_;
 };
 
-
 class TORCH_CUDA_API Half : public Val {
  public:
   Half() : Val(ValType::Scalar, DataType::Half), maybe_value_{c10::nullopt} {}
@@ -115,7 +145,6 @@ class TORCH_CUDA_API Half : public Val {
  private:
   const c10::optional<float> maybe_value_;
 };
-
 
 class TORCH_CUDA_API Int : public Val {
  public:
@@ -140,7 +169,6 @@ class TORCH_CUDA_API Int : public Val {
   const c10::optional<ScalarType> maybe_value_;
 };
 
-
 class TORCH_CUDA_API UnaryOp : public Expr {
  public:
   UnaryOp(UnaryOpType _type, Val* _out, Val* _in);
@@ -161,7 +189,6 @@ class TORCH_CUDA_API UnaryOp : public Expr {
   Val* const out_ = nullptr;
   Val* const in_ = nullptr;
 };
-
 
 class TORCH_CUDA_API BinaryOp : public Expr {
  public:
@@ -187,7 +214,6 @@ class TORCH_CUDA_API BinaryOp : public Expr {
   Val* const lhs_ = nullptr;
   Val* const rhs_ = nullptr;
 };
-
 
 class TORCH_CUDA_API TernaryOp : public Expr {
  public:
@@ -218,7 +244,6 @@ class TORCH_CUDA_API TernaryOp : public Expr {
   Val* const in2_ = nullptr;
   Val* const in3_ = nullptr;
 };
-
 
 class TORCH_CUDA_API ReductionOp : public Expr {
  public:
@@ -251,7 +276,6 @@ class TORCH_CUDA_API ReductionOp : public Expr {
 };
 
 #endif
-
 
 // TODO: Fill out TensorIndex, which is a list of Ints used to directly index a
 // TensorView. It is not the flattened index, which needs to be computed using

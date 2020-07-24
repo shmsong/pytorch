@@ -316,11 +316,16 @@ class TORCH_CUDA_API OptInDispatch {
   virtual void handle(ReductionOp*) {
     TORCH_INTERNAL_ASSERT(false, "Handle not overriden for ReductionOp.");
   }
-  virtual void handle(kir::GridReduction*) {
-    TORCH_INTERNAL_ASSERT(false, "Handle not overriden for GridReduction.");
-  }
   virtual void handle(BroadcastOp*) {
     TORCH_INTERNAL_ASSERT(false, "Handle not overriden for BroadcastOp.");
+  }
+
+  // Kernel IR
+  //
+  // TODO: move to a specialized visitor
+  //
+  virtual void handle(kir::GridReduction*) {
+    TORCH_INTERNAL_ASSERT(false, "Handle not overriden for GridReduction.");
   }
   virtual void handle(kir::ForLoop*) {
     TORCH_INTERNAL_ASSERT(false, "Handle not overriden for ForLoop.");

@@ -32,12 +32,14 @@ enum class ExprType {
   TernaryOp,
   ReductionOp,
   BroadcastOp,
+  Split,
+  Merge,
+
+  // Temporary: Kernel IR types
   GridReduction,
   ForLoop,
   IfThenElse,
   Allocate,
-  Split,
-  Merge
 };
 
 enum class UnaryOpType {
