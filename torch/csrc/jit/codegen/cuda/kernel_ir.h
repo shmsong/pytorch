@@ -20,12 +20,10 @@ namespace jit {
 namespace fuser {
 namespace kir {
 
-#if 0
-
 class TORCH_CUDA_API NamedScalar : public Val {
  public:
-  NamedScalar(std::string _name, DataType dtype)
-      : Val(ValType::NamedScalar, dtype), name_(_name) {}
+  NamedScalar(std::string name, DataType dtype)
+      : Val(ValType::KirNamedScalar, dtype), name_(name) {}
 
   const std::string& name() const {
     return name_;
@@ -51,10 +49,11 @@ class TORCH_CUDA_API NamedScalar : public Val {
 
 class TORCH_CUDA_API Bool : public Val {
  public:
-  Bool() : Val(ValType::Scalar, DataType::Bool), maybe_value_{c10::nullopt} {}
+  Bool()
+      : Val(ValType::KirScalar, DataType::Bool), maybe_value_{c10::nullopt} {}
 
-  explicit Bool(bool _value)
-      : Val(ValType::Scalar, DataType::Bool), maybe_value_{_value} {}
+  explicit Bool(bool value)
+      : Val(ValType::KirScalar, DataType::Bool), maybe_value_{value} {}
 
   bool isSymbolic() const {
     return !(maybe_value_.has_value());
@@ -74,10 +73,11 @@ class TORCH_CUDA_API Float : public Val {
  public:
   using ScalarType = double;
 
-  Float() : Val(ValType::Scalar, DataType::Float), maybe_value_{c10::nullopt} {}
+  Float()
+      : Val(ValType::KirScalar, DataType::Float), maybe_value_{c10::nullopt} {}
 
-  explicit Float(ScalarType _value)
-      : Val(ValType::Scalar, DataType::Float), maybe_value_{_value} {}
+  explicit Float(ScalarType value)
+      : Val(ValType::KirScalar, DataType::Float), maybe_value_{value} {}
 
   bool isSymbolic() const {
     return !(maybe_value_.has_value());
@@ -95,10 +95,11 @@ class TORCH_CUDA_API Float : public Val {
 
 class TORCH_CUDA_API Half : public Val {
  public:
-  Half() : Val(ValType::Scalar, DataType::Half), maybe_value_{c10::nullopt} {}
+  Half()
+      : Val(ValType::KirScalar, DataType::Half), maybe_value_{c10::nullopt} {}
 
-  explicit Half(float _value)
-      : Val(ValType::Scalar, DataType::Half), maybe_value_{_value} {}
+  explicit Half(float value)
+      : Val(ValType::KirScalar, DataType::Half), maybe_value_{value} {}
 
   bool isSymbolic() const {
     return !(maybe_value_.has_value());
@@ -118,10 +119,10 @@ class TORCH_CUDA_API Int : public Val {
  public:
   using ScalarType = int64_t;
 
-  Int() : Val(ValType::Scalar, DataType::Int), maybe_value_{c10::nullopt} {}
+  Int() : Val(ValType::KirScalar, DataType::Int), maybe_value_{c10::nullopt} {}
 
-  explicit Int(ScalarType _value)
-      : Val(ValType::Scalar, DataType::Int), maybe_value_{_value} {}
+  explicit Int(ScalarType value)
+      : Val(ValType::KirScalar, DataType::Int), maybe_value_{value} {}
 
   bool isSymbolic() const {
     return !(maybe_value_.has_value());
@@ -139,7 +140,7 @@ class TORCH_CUDA_API Int : public Val {
 
 class TORCH_CUDA_API UnaryOp : public Expr {
  public:
-  UnaryOp(UnaryOpType _type, Val* _out, Val* _in);
+  UnaryOp(UnaryOpType type, Val* out, Val* in);
 
   Val* out() const {
     return out_;
@@ -160,7 +161,7 @@ class TORCH_CUDA_API UnaryOp : public Expr {
 
 class TORCH_CUDA_API BinaryOp : public Expr {
  public:
-  BinaryOp(BinaryOpType _type, Val* _out, Val* _lhs, Val* _rhs);
+  BinaryOp(BinaryOpType type, Val* out, Val* lhs, Val* rhs);
 
   Val* out() const {
     return out_;
@@ -185,7 +186,7 @@ class TORCH_CUDA_API BinaryOp : public Expr {
 
 class TORCH_CUDA_API TernaryOp : public Expr {
  public:
-  TernaryOp(TernaryOpType _type, Val* _out, Val* _in1, Val* _in2, Val* _in3);
+  TernaryOp(TernaryOpType type, Val* out, Val* in1, Val* in2, Val* in3);
 
   Val* out() const {
     return out_;
@@ -215,7 +216,7 @@ class TORCH_CUDA_API TernaryOp : public Expr {
 
 class TORCH_CUDA_API ReductionOp : public Expr {
  public:
-  ReductionOp(BinaryOpType _reduction_op_type, Val* _init, Val* _out, Val* _in);
+  ReductionOp(BinaryOpType reduction_op_type, Val* init, Val* out, Val* in);
 
   Val* out() const {
     return out_;
@@ -242,8 +243,6 @@ class TORCH_CUDA_API ReductionOp : public Expr {
   Val* const out_ = nullptr;
   Val* const in_ = nullptr;
 };
-
-#endif
 
 // TODO: Fill out TensorIndex, which is a list of Ints used to directly index a
 // TensorView. It is not the flattened index, which needs to be computed using
@@ -277,7 +276,7 @@ class TORCH_CUDA_API TensorIndex : public Val {
 
 class TORCH_CUDA_API BroadcastOp : public Expr {
  public:
-  BroadcastOp(Val* _out, Val* _in);
+  BroadcastOp(Val* out, Val* in);
 
   Val* out() const {
     return out_;
@@ -301,9 +300,9 @@ class TORCH_CUDA_API BroadcastOp : public Expr {
 class TORCH_CUDA_API Allocate : public Expr {
  public:
   explicit Allocate(
-      Val* _buffer,
-      MemoryType _memory_type = MemoryType::Local,
-      Val* _size = nullptr);
+      Val* buffer,
+      MemoryType memory_type = MemoryType::Local,
+      Val* size = nullptr);
 
   Allocate(const Allocate* src, IrCloner* ir_cloner);
 
@@ -389,9 +388,9 @@ class TORCH_CUDA_API Scope {
 class TORCH_CUDA_API ForLoop : public Expr {
  public:
   explicit ForLoop(
-      Val* _index,
-      IterDomain* _iter_domain,
-      const std::vector<Expr*>& _body = {},
+      Val* index,
+      IterDomain* iter_domain,
+      const std::vector<Expr*>& body = {},
       Expr* parent_scope = nullptr);
 
   ForLoop(const ForLoop* src, IrCloner* ir_cloner);
@@ -430,10 +429,10 @@ class TORCH_CUDA_API ForLoop : public Expr {
 class TORCH_CUDA_API IfThenElse : public Expr {
  public:
   explicit IfThenElse(
-      Bool* _cond,
-      const std::vector<Expr*>& _if_body = {},
-      const std::vector<Expr*>& _else_body = {},
-      Expr* _parent_scope = nullptr);
+      Bool* cond,
+      const std::vector<Expr*>& if_body = {},
+      const std::vector<Expr*>& else_body = {},
+      Expr* parent_scope = nullptr);
 
   IfThenElse(const IfThenElse* src, IrCloner* ir_cloner);
 
@@ -506,6 +505,12 @@ class TORCH_CUDA_API GridReduction : public Expr {
 };
 
 std::string getPredicateFlagName(const TensorView* val);
+
+// A minimal builder interface
+
+Val* andExpr(Val* v1, Val* v2);
+Val* eqExpr(Val* v1, Val* v2);
+Val* ltExpr(Val* v1, Val* v2);
 
 } // namespace kir
 } // namespace fuser

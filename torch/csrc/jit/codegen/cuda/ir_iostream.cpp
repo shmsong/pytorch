@@ -400,16 +400,14 @@ void IRPrinter::handle(const TernaryOp* top) {
 }
 
 void IRPrinter::handle(const ReductionOp* rop) {
-  // Check if we've lowered yet.
+  TORCH_CHECK(rop->out()->getValType() != ValType::TensorIndex);
+  os << rop->out() << " = reduction( " << rop->in()
+     << ", op = " << rop->getReductionOpType()
+     << ", initial value = " << rop->init() << " )\n";
+}
 
-  bool lowered = rop->out()->getValType() == ValType::TensorIndex;
-
-  if (!lowered) {
-    os << rop->out() << " = reduction( " << rop->in()
-       << ", op = " << rop->getReductionOpType()
-       << ", initial value = " << rop->init() << " )\n";
-    return;
-  }
+void IRPrinter::handle(const kir::ReductionOp* rop) {
+  TORCH_CHECK(rop->out()->getValType() == ValType::TensorIndex);
 
   auto out = rop->out()->as<kir::TensorIndex>();
   auto vec_domain = out->view()->domain()->domain();
@@ -513,12 +511,12 @@ void IRPrinter::handle(const kir::GridReduction* gr) {
 }
 
 void IRPrinter::handle(const BroadcastOp* bop) {
-  // Check if we've lowered yet.
-  bool lowered = bop->out()->getValType() == ValType::TensorIndex;
-  if (!lowered) {
-    os << bop->out() << " = broadcast( " << bop->in() << " )\n";
-    return;
-  }
+  TORCH_CHECK(bop->out()->getValType() != ValType::TensorIndex);
+  os << bop->out() << " = broadcast( " << bop->in() << " )\n";
+}
+
+void IRPrinter::handle(const kir::BroadcastOp* bop) {
+  TORCH_CHECK(bop->out()->getValType() == ValType::TensorIndex);
 
   const ir_utils::ParallelTypeBitmap domains =
       ir_utils::getParallelBroadcastDomains(bop, getThreadPredicateMap());

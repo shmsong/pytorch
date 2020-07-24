@@ -116,9 +116,11 @@ class TORCH_CUDA_API IRPrinter : public OptInConstDispatch {
   void handle(const BinaryOp*) override;
   void handle(const TernaryOp*) override;
   void handle(const ReductionOp*) override;
-  void handle(const kir::GridReduction*) override;
   void handle(const BroadcastOp*) override;
 
+  void handle(const kir::ReductionOp*) override;
+  void handle(const kir::BroadcastOp*) override;
+  void handle(const kir::GridReduction*) override;
   void handle(const kir::ForLoop*) override;
   void handle(const kir::IfThenElse*) override;
   void handle(const kir::Allocate*) override;

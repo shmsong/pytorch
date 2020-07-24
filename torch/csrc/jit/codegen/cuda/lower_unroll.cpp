@@ -10,13 +10,13 @@ namespace torch {
 namespace jit {
 namespace fuser {
 
-Bool* UnrollPass::getThreadPredicate(TensorView* tv) {
+kir::Bool* UnrollPass::getThreadPredicate(TensorView* tv) {
   // No thread predicate is needed predicate when tv is output of a
   // parallel broadcast expression.
   if (tv->getOrigin() != nullptr &&
       tv->getOrigin()->getExprType() == ExprType::BroadcastOp &&
       ir_utils::getParallelBroadcastDomains(
-          tv->getOrigin()->as<BroadcastOp>(), thread_predicates_)
+          tv->getOrigin()->as<kir::BroadcastOp>(), thread_predicates_)
           .any()) {
     return nullptr;
   }
@@ -30,7 +30,11 @@ void UnrollPass::handle(Expr* expr) {
 }
 
 namespace {
-Bool* getPredicate(TensorView* tv, std::vector<Val*> inds_, Bool* thread_pred) {
+
+kir::Bool* getPredicate(
+    TensorView* tv,
+    std::vector<Val*> inds_,
+    kir::Bool* thread_pred) {
   TORCH_INTERNAL_ASSERT(
       inds_.size() == tv->nDims() ||
       inds_.size() == tv->domain()->noReductions().size());
@@ -59,21 +63,22 @@ Bool* getPredicate(TensorView* tv, std::vector<Val*> inds_, Bool* thread_pred) {
         inds.insert(inds.begin() + i, new Int(0));
     }
   }
-  std::vector<Bool*> all_preds = PredicateCompute::computePredicates(
+  
+  auto all_preds = PredicateCompute::computePredicates(
       new kir::TensorIndex(tv, IndexCompute::get(tv->domain(), inds)));
 
   if (thread_pred != nullptr) {
     all_preds.push_back(thread_pred);
   }
 
-  std::vector<Bool*> preds;
+  std::vector<kir::Bool*> preds;
 
-  for (Bool* pred : all_preds)
+  for (auto pred : all_preds)
     if (!(pred->isConst()) || !(pred->isConst() && pred->value().value()))
       preds.push_back(pred);
 
   if (preds.size() == 0)
-    return new Bool(true);
+    return new kir::Bool(true);
 
   Val* cond = preds[0];
 
@@ -87,8 +92,9 @@ Bool* getPredicate(TensorView* tv, std::vector<Val*> inds_, Bool* thread_pred) {
       "Error computing predicate, should be returning a Bool, but returning ",
       cond->getDataType().value());
 
-  return cond->as<Bool>();
+  return cond->as<kir::Bool>();
 }
+
 } // namespace
 
 // This function is one huge mess that should be refactored.
@@ -152,7 +158,7 @@ void UnrollPass::handle(kir::ForLoop* fl) {
     }
 
     // Make predicates for the unrolling, and the epilogue
-    Bool* unroll_predicate =
+    kir::Bool* unroll_predicate =
         getPredicate(out, unroll_pred_inds, getThreadPredicate(out));
     // Make the IfThenElse controlling the unrolling
     kir::IfThenElse* unroll_ite = new kir::IfThenElse(
@@ -179,7 +185,7 @@ void UnrollPass::handle(kir::ForLoop* fl) {
         continue;
 
       // Setup the expressions that need predicates around them.
-      Bool* inline_predicate = getPredicate(
+      auto inline_predicate = getPredicate(
           out, ir_utils::indices(for_loops), getThreadPredicate(out));
 
       kir::IfThenElse* inline_ite = new kir::IfThenElse(
@@ -200,7 +206,7 @@ void UnrollPass::handle(kir::ForLoop* fl) {
 
       TensorView* out = ir_utils::asTV(ir_utils::asExpr(expr)->outputs()[0]);
 
-      Bool* pred = getPredicate(
+      auto pred = getPredicate(
           out, ir_utils::indices(for_loops), getThreadPredicate(out));
 
       // If we need a predicate, put expr inside an if then else

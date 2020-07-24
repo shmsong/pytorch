@@ -15,12 +15,16 @@ namespace fuser {
 
 // Order of strength
 enum class ValType {
-  TensorIndex,
   TensorDomain,
   IterDomain,
   TensorView,
   Scalar,
-  NamedScalar
+  NamedScalar,
+
+  // Temporary: Kernel IR nodes
+  TensorIndex,
+  KirNamedScalar,
+  KirScalar,
 };
 
 enum class DataType { Bool, Float, Half, Int, Null };
@@ -35,11 +39,16 @@ enum class ExprType {
   Split,
   Merge,
 
-  // Temporary: Kernel IR types
+  // Temporary: Kernel IR nodes
   GridReduction,
   ForLoop,
   IfThenElse,
   Allocate,
+  KirUnaryOp,
+  KirBinaryOp,
+  KirTernaryOp,
+  KirReductionOp,
+  KirBroadcastOp,
 };
 
 enum class UnaryOpType {
