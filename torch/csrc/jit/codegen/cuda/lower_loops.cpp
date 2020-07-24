@@ -28,7 +28,7 @@ Expr* LoopNestGenerator::pushAlloc(TensorView* tv) {
     }
     // If we found an unroll, we want to place the allocation outside the unroll
     if (alloc_pos < tv->nDims() &&
-        tv->getComputeAtAxis(alloc_pos).first->parallel_method() ==
+        tv->getComputeAtAxis(alloc_pos).first->getParallelType() ==
             ParallelType::Unroll) {
       break;
     }
@@ -139,7 +139,7 @@ void LoopNestGenerator::initReduction(
 
     // If we found an unroll, we want to place the allocation outside the unroll
     if (alloc_pos < tv->nDims() &&
-        tv->getComputeAtAxis(alloc_pos).first->parallel_method() ==
+        tv->getComputeAtAxis(alloc_pos).first->getParallelType() ==
             ParallelType::Unroll) {
       break;
     }
@@ -161,9 +161,7 @@ void LoopNestGenerator::initReduction(
   // Unsafe clone, as we want an exact replica of tv so we can create a UnaryOp
   // to set the buffer to the init_val.
   auto clone = tv->unsafeClone();
-  if (thread_predicates_.find(tv) != thread_predicates_.end()) {
-    thread_predicates_[clone] = thread_predicates_[tv];
-  }
+  thread_predicates_.duplicate(clone, tv);
   // The initilization stmt that will be located inside the loop nest (if there
   // is one)
   auto init_stmt = new UnaryOp(UnaryOpType::Set, clone, init_val);
@@ -186,7 +184,7 @@ void LoopNestGenerator::initReduction(
     if (id->isThread()) {
       // If based on a thread, make sure we get the named Int right
       std::stringstream ss;
-      ss << id->parallel_method();
+      ss << id->getParallelType();
       new_fl = new kir::ForLoop(
           new NamedScalar(ss.str(), DataType::Int), id, {}, inner_fl);
     } else {

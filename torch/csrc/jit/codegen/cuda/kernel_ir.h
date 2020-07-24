@@ -505,6 +505,8 @@ class TORCH_CUDA_API GridReduction : public Expr {
   Allocate* sync_buffer_ = nullptr;
 };
 
+std::string getPredicateFlagName(const TensorView* val);
+
 } // namespace kir
 } // namespace fuser
 } // namespace jit

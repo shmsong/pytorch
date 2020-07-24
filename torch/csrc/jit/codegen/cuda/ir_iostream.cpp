@@ -156,26 +156,8 @@ void IRPrinter::handle(const TensorView* tv) {
 }
 
 void IRPrinter::handle(const IterDomain* id) {
-  if (id->isReduction())
-    os << "r";
-  else if (id->isBroadcast())
-    os << "b";
-  else
-    os << "i";
-  switch (id->parallel_method()) {
-    case ParallelType::Vectorize:
-      os << "V";
-      break;
-    case ParallelType::Unroll:
-      os << "U";
-      break;
-    case ParallelType::Serial:
-      os << "S";
-      break;
-    default:
-      os << id->parallel_method();
-  }
-
+  os << id->getIterType();
+  os << id->getParallelType();
   os << "{";
   if (!id->start()->isZeroInt()) {
     print_inline(id->start());
@@ -509,7 +491,8 @@ void IRPrinter::handle(const kir::GridReduction* gr) {
   indent();
   // Since block-level reduction is already done, those dimensions
   // with tidx/y/z being true do not participate in the grid reduction.
-  os << "reduction::gridReduce< " << (bidx ? "true" : "false") << ", "
+  os << "bool " << kir::getPredicateFlagName(out->view()) << " = "
+     << "reduction::gridReduce< " << (bidx ? "true" : "false") << ", "
      << (bidy ? "true" : "false") << ", " << (bidz ? "true" : "false") << ", "
      << (!tidx ? "true" : "false") << ", " << (!tidy ? "true" : "false") << ", "
      << (!tidz ? "true" : "false") << " >"
