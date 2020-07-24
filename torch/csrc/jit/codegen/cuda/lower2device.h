@@ -37,11 +37,21 @@ class TORCH_CUDA_API GpuLower {
     return sync_allocations_;
   }
 
+  std::vector<kir::Allocate*> dynamic_allocations() {
+    return dynamic_smem_allocations_;
+  }
+
+  std::vector<kir::Allocate*> static_allocations() {
+    return static_smem_allocations_;
+  }
+
   // Converts a Fusion IR value into the Kernel IR equivalent
   //
   // TODO(kir): revisit this interface
   //
   static Val* lowerValue(const Val* val);
+
+  Val* getLowerValue(const Val* val);
 
  private:
   void lower();
@@ -64,6 +74,12 @@ class TORCH_CUDA_API GpuLower {
   // List of syncronization buffers that must be initialized to 0 when running
   // the fusion
   std::vector<kir::Allocate*> sync_allocations_;
+
+  // List of dynamic shared memory buffers
+  std::vector<kir::Allocate*> dynamic_smem_allocations_;
+
+  // List of static shared memory buffers
+  std::vector<kir::Allocate*> static_smem_allocations_;
 
   // Lowered IR
   std::vector<Expr*> lowered_exprs_;

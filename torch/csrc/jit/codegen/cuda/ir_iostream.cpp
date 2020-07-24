@@ -40,7 +40,8 @@ void IRPrinter::handle(const Expr* e) {
 void IRPrinter::printHeader(
     Fusion* fusion,
     const std::string& kernel_name_,
-    const std::vector<Val*>& global_buffers) {
+    const std::vector<Val*>& global_buffers,
+    const bool hasDynamicSmem) {
   os << "__global__ void " << kernel_name_ << "(";
 
   std::vector<Val*> vals;
@@ -89,6 +90,15 @@ void IRPrinter::printHeader(
 
   os << "){\n";
   indent_size++;
+
+  // Dynamic Shared Memory
+  if (hasDynamicSmem) {
+    indent();
+    os << "extern __shared__ char array[];\n";
+    indent();
+    os << "unsigned offset = 0;\n";
+  }
+
   if (fusion->hasRNG()) {
     indent();
     os << "int idx = blockIdx.x*blockDim.x + threadIdx.x;\n";
@@ -851,15 +861,37 @@ void IRPrinter::handle(const kir::Allocate* a) {
         os << "// Allocate global tensor ";
         break;
       case MemoryType::Shared:
-        os << "__shared__ ";
+        if (a->size()->isConstScalar()) {
+          // Static Shared Memory
+          os << "__shared__ ";
+        }
         break;
       case MemoryType::Local:
         break;
     }
-    os << a->buffer_type();
-    os << " T" << tv->name() << "[";
-    print_inline(a->size());
-    os << "];\n";
+
+    // Dynamic Shared Memory
+    if (tv->getMemoryType() == MemoryType::Shared &&
+        !a->size()->isConstScalar()) {
+      // Shared Memory Pointer
+      os << a->buffer_type() << "* ";
+      os << "T" << tv->name();
+      os << " = (" << a->buffer_type() << "*)";
+      os << "(array + offset);\n";
+      indent();
+      // Increment Offset Position
+      os << "offset += (";
+      print_inline(a->size());
+      os << " * sizeof(";
+      os << a->buffer_type();
+      os << "));\n";
+    } else {
+      os << a->buffer_type();
+      os << " T" << tv->name() << "[";
+      print_inline(a->size());
+      os << "];\n";
+    }
+
   } else {
     os << a->buffer_type() << " ";
     handle(a->buffer());
@@ -939,7 +971,8 @@ void IRPrinter::printReductionOps(Fusion* fusion) {
 void IRPrinter::printKernel(
     const std::vector<Expr*>& exprs,
     const std::string& kernel_name,
-    const std::vector<Val*>& global_buffers) {
+    const std::vector<Val*>& global_buffers,
+    const bool hasDynamicSmem) {
   Fusion* fusion = FusionGuard::getCurFusion();
   if (exprs.empty())
     return;
@@ -948,7 +981,7 @@ void IRPrinter::printKernel(
       "Incorrect fusion set during printKernel.");
 
   printReductionOps(fusion);
-  printHeader(fusion, kernel_name, global_buffers);
+  printHeader(fusion, kernel_name, global_buffers, hasDynamicSmem);
 
   for (auto* expr : exprs) {
     handle(expr);

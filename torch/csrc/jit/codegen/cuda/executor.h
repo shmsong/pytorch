@@ -61,6 +61,10 @@ class TORCH_CUDA_API FusionExecutor : public NonCopyable {
       const LaunchParams& launch_constraints,
       EvaluationContext& ec);
 
+  unsigned computeSharedMemory(
+      EvaluationContext& ec,
+      const std::vector<kir::Allocate*>& buffers);
+
   std::vector<at::Tensor> allocGlobalVals(EvaluationContext& ec);
 
   std::vector<at::Tensor> allocOutputs(EvaluationContext& ec);

@@ -6,6 +6,7 @@
 
 #include <torch/csrc/jit/codegen/cuda/executor.h>
 
+#include <ATen/cuda/CUDAContext.h>
 #include <ATen/cuda/Exceptions.h>
 #include <c10/core/DeviceGuard.h>
 #include <c10/cuda/CUDAFunctions.h>
@@ -55,6 +56,17 @@ void FusionExecutor::compileFusion(Fusion* fusion, CompileOptions options) {
   const auto kernel = lowered_.getKernel(kernelName());
   const auto structured_code = getStructuredCode(kernel);
 
+  if (lowered_.static_allocations().size() > 0) {
+    EvaluationContext evaluation_context(&fusion_);
+    unsigned static_smem_size =
+        computeSharedMemory(evaluation_context, lowered_.static_allocations());
+
+    cudaDeviceProp* deviceProp = at::cuda::getCurrentDeviceProperties();
+    TORCH_INTERNAL_ASSERT(
+        static_smem_size < deviceProp->sharedMemPerBlock,
+        "The static shared memory allocation is larger than available memory.");
+  }
+
   compiled_kernel_ = executor_utils::nvrtcCompile(
       structured_code,
       (kernelNamespace() + "::" + kernelName()).c_str(),
@@ -71,14 +83,14 @@ at::Tensor inferAndAlloc(
     bool zero_init = false) {
   std::vector<int64_t> sizes;
   for (auto id : TensorDomain::noReductions(tv->getRootDomain())) {
-    auto infered_val = ExpressionEvaluator::evaluate(id->rawExtent(), &ec);
+    auto inferred_val = ExpressionEvaluator::evaluate(id->rawExtent(), &ec);
     TORCH_INTERNAL_ASSERT(
-        infered_val.has_value(),
+        inferred_val.has_value(),
         "Could not launch kernel as program could not infer ",
         id->rawExtent(),
         " for the buffer ",
         tv);
-    sizes.push_back(infered_val.value());
+    sizes.push_back(inferred_val.value());
   }
 
   auto at_type = data_type_to_aten(tv->getDataType().value());
@@ -95,6 +107,26 @@ at::Tensor inferAndAlloc(
 }
 
 } // namespace
+
+unsigned FusionExecutor::computeSharedMemory(
+    EvaluationContext& ec,
+    const std::vector<kir::Allocate*>& buffers) {
+  unsigned total = 0;
+  for (auto smem_alloc : buffers) {
+    auto inferred_size = ExpressionEvaluator::evaluate(smem_alloc->size(), &ec);
+    if (inferred_size.has_value()) {
+      total += inferred_size.value() * dataTypeSize(smem_alloc->buffer_type());
+    } else {
+      TORCH_INTERNAL_ASSERT(
+          false,
+          "Failed to evaluate the size ",
+          smem_alloc->size(),
+          " of shared memory buffer - T",
+          smem_alloc->buffer()->name());
+    }
+  }
+  return total;
+}
 
 LaunchParams FusionExecutor::computeLaunchParams(
     const at::ArrayRef<IValue>& aten_inputs,
@@ -129,24 +161,24 @@ LaunchParams FusionExecutor::computeLaunchParams(
 
   // If any dimension was set in launch constraints we need to run through
   // IterDomains that have been parallelized, and bind those values. Or make
-  // sure if they could be infered the inference matches what was set.
+  // sure if they could be inferred the inference matches what was set.
   if (launch_constraints.nBlocks() * launch_constraints.nThreads() != -1) {
     for (auto& entry : parallel_iter_domains) {
       auto p_type = entry.first;
       if (launch_constraints.hasDim(p_type)) {
         auto parallel_ids = entry.second;
         for (auto parallel_id : parallel_ids) {
-          auto infered_val =
+          auto inferred_val =
               ExpressionEvaluator::evaluate(parallel_id->rawExtent(), &ec);
-          if (infered_val.has_value()) {
-            // This value could have been infered, make sure it was set right.
+          if (inferred_val.has_value()) {
+            // This value could have been inferred, make sure it was set right.
             TORCH_CHECK(
-                infered_val.value() == launch_constraints.getDim(p_type) ||
+                inferred_val.value() == launch_constraints.getDim(p_type) ||
                     launch_constraints.getRawVal(p_type) == -1,
-                "Infered that ",
+                "inferred that ",
                 p_type,
                 " should be set to ",
-                infered_val.value(),
+                inferred_val.value(),
                 " but launch constraints specified ",
                 launch_constraints.getDim(p_type));
           } else {
@@ -154,6 +186,10 @@ LaunchParams FusionExecutor::computeLaunchParams(
             executor_utils::safeBind(
                 ec,
                 parallel_id->rawExtent(),
+                launch_constraints.getDim(entry.first));
+            executor_utils::safeBind(
+                ec,
+                lowered_.getLowerValue(parallel_id->rawExtent()),
                 launch_constraints.getDim(entry.first));
             launch_params.bind(launch_constraints.getDim(p_type), p_type);
           }
@@ -176,6 +212,20 @@ LaunchParams FusionExecutor::computeLaunchParams(
       launch_params.bind(val.value(), p_type);
     }
   }
+
+  // Calculate Dynamic Shared Memory Size
+  unsigned dynamic_smem_size =
+      computeSharedMemory(ec, lowered_.dynamic_allocations());
+  unsigned static_smem_size =
+      computeSharedMemory(ec, lowered_.static_allocations());
+  unsigned total_smem_size = dynamic_smem_size + static_smem_size;
+  if (total_smem_size > 0) {
+    cudaDeviceProp* deviceProp = at::cuda::getCurrentDeviceProperties();
+    TORCH_INTERNAL_ASSERT(
+        total_smem_size < deviceProp->sharedMemPerBlock,
+        "The total shared memory allocation is larger than available memory.");
+  }
+  launch_params.set_smem(dynamic_smem_size);
 
   return launch_params;
 }
@@ -227,12 +277,11 @@ std::vector<at::Tensor> FusionExecutor::runFusion(
 
   executor_utils::validateKernelInputs(&fusion_, inputs, options_.device);
 
-  const auto prior_device = at::cuda::current_device();
   c10::DeviceGuard dg(options_.device);
   auto stream = at::cuda::getCurrentCUDAStream();
 
   EvaluationContext evaluation_context =
-      executor_utils::bindInputs(inputs, &fusion_);
+      executor_utils::bindInputs(inputs, &fusion_, &lowered_);
 
   LaunchParams launch_params =
       computeLaunchParams(inputs, launch_constraints, evaluation_context);
@@ -259,6 +308,18 @@ std::vector<at::Tensor> FusionExecutor::runFusion(
     kernel_arguments.appendPhiloxRNGSeed(rand_offset);
   }
 
+  unsigned dynamic_smem_size =
+      computeSharedMemory(evaluation_context, lowered_.dynamic_allocations());
+  unsigned static_smem_size =
+      computeSharedMemory(evaluation_context, lowered_.static_allocations());
+  unsigned total_smem_size = dynamic_smem_size + static_smem_size;
+  if (total_smem_size > 0) {
+    cudaDeviceProp* deviceProp = at::cuda::getCurrentDeviceProperties();
+    TORCH_INTERNAL_ASSERT(
+        total_smem_size < deviceProp->sharedMemPerBlock,
+        "The total shared memory allocation is larger than available memory.");
+  }
+
   AT_CUDA_DRIVER_CHECK(at::globalContext().getNVRTC().cuLaunchKernel(
       compiled_kernel_.function,
       launch_params.gdimx(),
@@ -267,7 +328,7 @@ std::vector<at::Tensor> FusionExecutor::runFusion(
       launch_params.bdimx(),
       launch_params.bdimy(),
       launch_params.bdimz(),
-      0, // smem
+      launch_params.smem(),
       stream,
       kernel_arguments.getBuffer(),
       nullptr));

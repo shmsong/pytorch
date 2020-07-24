@@ -186,6 +186,9 @@ namespace jit {
   _(GPU_FusionSmemReduce)                           \
   _(GPU_FusionSmemBlockGemm)                        \
   _(GPU_FusionSmemBlockGemmCache)                   \
+  _(GPU_FusionSmemDynamic)                          \
+  _(GPU_FusionSmemDynamicMul)                       \
+  _(GPU_FusionSmemDynamicReduce)                    \
   _(GPU_FusionConstCheck)                           \
   _(GPU_FusionSymbolicReduction)                    \
   _(GPU_FusionUnrollWithAlloc)                      \
