@@ -13,12 +13,12 @@ namespace fuser {
 kir::Bool* UnrollPass::getThreadPredicate(TensorView* tv) {
   // No thread predicate is needed predicate when tv is output of a
   // parallel broadcast expression.
-  if (tv->getOrigin() != nullptr &&
-      tv->getOrigin()->getExprType() == ExprType::BroadcastOp &&
-      ir_utils::getParallelBroadcastDomains(
-          tv->getOrigin()->as<kir::BroadcastOp>(), thread_predicates_)
-          .any()) {
-    return nullptr;
+  const auto origin = tv->getOrigin();
+  if (origin != nullptr && origin->getExprType() == ExprType::BroadcastOp) {
+    const auto out = origin->as<BroadcastOp>()->out();
+    if (ir_utils::getParallelBroadcastDomains(out, thread_predicates_).any()) {
+      return nullptr;
+    }
   }
 
   return thread_predicates_.getExpr(tv);
@@ -63,7 +63,7 @@ kir::Bool* getPredicate(
         inds.insert(inds.begin() + i, new Int(0));
     }
   }
-  
+
   auto all_preds = PredicateCompute::computePredicates(
       new kir::TensorIndex(tv, IndexCompute::get(tv->domain(), inds)));
 
@@ -83,11 +83,11 @@ kir::Bool* getPredicate(
   Val* cond = preds[0];
 
   for (decltype(preds.size()) i{1}; i < preds.size(); i++) {
-    cond = andOp(cond, preds[i]);
+    cond = kir::andExpr(cond, preds[i]);
   }
 
   TORCH_INTERNAL_ASSERT(
-      cond->getValType().value() == ValType::Scalar &&
+      cond->getValType().value() == ValType::KirScalar &&
           cond->getDataType().value() == DataType::Bool,
       "Error computing predicate, should be returning a Bool, but returning ",
       cond->getDataType().value());

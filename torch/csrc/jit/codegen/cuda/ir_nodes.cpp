@@ -188,33 +188,20 @@ bool TernaryOp::sameAs(const TernaryOp* other) const {
 
 BroadcastOp::BroadcastOp(Val* _out, Val* _in)
     : Expr(ExprType::BroadcastOp), out_(_out), in_(_in) {
-  auto out_type = _out->getValType().value();
-  auto in_type = _in->getValType().value();
-  if (out_type == ValType::TensorView) {
-    TORCH_INTERNAL_ASSERT(
-        in_type == ValType::TensorView,
-        "Cannot braodcast a non-tensor object.");
+  TORCH_CHECK(_out->getValType().value() == ValType::TensorView);
+  TORCH_CHECK(_in->getValType().value() == ValType::TensorView);
 
-    int ndims = 0;
-    for (auto dom : out()->as<TensorView>()->getRootDomain())
-      if (!dom->isBroadcast())
-        ndims++;
+  int ndims = 0;
+  for (auto dom : out()->as<TensorView>()->getRootDomain())
+    if (!dom->isBroadcast())
+      ndims++;
 
-    TORCH_INTERNAL_ASSERT(
-        ndims ==
-            (int)TensorDomain::noReductions(
-                in_->as<TensorView>()->getRootDomain())
-                .size(),
-        "Invalid broadcast op. Non-broadcasted dims don't match from input to output.");
-  } else {
-    TORCH_INTERNAL_ASSERT(
-        in_type == ValType::TensorIndex && out_type == ValType::TensorIndex,
-        "Invalid types provided for broadcast op, ",
-        in_type,
-        " ",
-        out_type,
-        ".");
-  }
+  TORCH_INTERNAL_ASSERT(
+      ndims ==
+          (int)TensorDomain::noReductions(
+              in_->as<TensorView>()->getRootDomain())
+              .size(),
+      "Invalid broadcast op. Non-broadcasted dims don't match from input to output.");
 
   addOutput(_out);
   addInput(_in);

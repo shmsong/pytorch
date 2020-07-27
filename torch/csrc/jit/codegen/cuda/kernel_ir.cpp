@@ -55,14 +55,14 @@ c10::optional<ParallelType> NamedScalar::getParallelIndex() const {
 }
 
 UnaryOp::UnaryOp(UnaryOpType type, Val* out, Val* in)
-    : Expr(ExprType::UnaryOp), unary_op_type_{type}, out_{out}, in_{in} {
+    : Expr(ExprType::KirUnaryOp), unary_op_type_{type}, out_{out}, in_{in} {
   addOutput(out);
   addInput(in);
   name_ = FusionGuard::getCurFusion()->registerExpr(this);
 }
 
 BinaryOp::BinaryOp(BinaryOpType type, Val* out, Val* lhs, Val* rhs)
-    : Expr(ExprType::BinaryOp),
+    : Expr(ExprType::KirBinaryOp),
       binary_op_type_{type},
       out_{out},
       lhs_{lhs},
@@ -78,7 +78,7 @@ ReductionOp::ReductionOp(
     Val* init,
     Val* out,
     Val* in)
-    : Expr(ExprType::ReductionOp),
+    : Expr(ExprType::KirReductionOp),
       reduction_op_type_(reduction_op_type),
       init_(init),
       out_(out),
@@ -122,7 +122,9 @@ std::unordered_map<ParallelType, IterDomain*, TypeHash> ReductionOp::
 }
 
 BroadcastOp::BroadcastOp(Val* out, Val* in)
-    : Expr(ExprType::BroadcastOp), out_(out), in_(in) {
+    : Expr(ExprType::KirBroadcastOp), out_(out), in_(in) {
+  TORCH_CHECK(in->getValType().value() == ValType::TensorIndex);
+  TORCH_CHECK(out->getValType().value() == ValType::TensorIndex);
   addOutput(out);
   addInput(in);
   name_ = FusionGuard::getCurFusion()->registerExpr(this);

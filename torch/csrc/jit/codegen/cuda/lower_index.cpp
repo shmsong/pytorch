@@ -248,7 +248,7 @@ void IndexLowering::handle(BroadcastOp* bop) {
         ir_utils::asTV(in),
         ir_utils::asTV(bop->out()),
         scope_utils::getLoops(active_scope_expr));
-  pushBack(new BroadcastOp(out, in));
+  pushBack(new kir::BroadcastOp(out, in));
 }
 
 void IndexLowering::handle(kir::Allocate* allocate) {

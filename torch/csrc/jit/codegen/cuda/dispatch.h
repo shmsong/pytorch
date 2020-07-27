@@ -121,7 +121,6 @@ class TORCH_CUDA_API OptOutConstDispatch {
   virtual void handle(const IterDomain*) {}
   virtual void handle(const TensorDomain*) {}
   virtual void handle(const TensorView*) {}
-  virtual void handle(const kir::TensorIndex*) {}
   virtual void handle(const Bool*) {}
   virtual void handle(const Float*) {}
   virtual void handle(const Half*) {}
@@ -135,8 +134,23 @@ class TORCH_CUDA_API OptOutConstDispatch {
   virtual void handle(const BinaryOp*) {}
   virtual void handle(const TernaryOp*) {}
   virtual void handle(const ReductionOp*) {}
-  virtual void handle(const kir::GridReduction*) {}
   virtual void handle(const BroadcastOp*) {}
+
+  // Kernel IR nodes
+  virtual void handle(const kir::Bool*) {}
+  virtual void handle(const kir::Float*) {}
+  virtual void handle(const kir::Half*) {}
+  virtual void handle(const kir::Int*) {}
+  virtual void handle(const kir::NamedScalar*) {}
+
+  virtual void handle(const kir::UnaryOp*) {}
+  virtual void handle(const kir::BinaryOp*) {}
+  virtual void handle(const kir::TernaryOp*) {}
+  virtual void handle(const kir::ReductionOp*) {}
+  virtual void handle(const kir::BroadcastOp*) {}
+
+  virtual void handle(const kir::TensorIndex*) {}
+  virtual void handle(const kir::GridReduction*) {}
   virtual void handle(const kir::ForLoop*) {}
   virtual void handle(const kir::IfThenElse*) {}
   virtual void handle(const kir::Allocate*) {}
@@ -162,7 +176,6 @@ class TORCH_CUDA_API OptOutDispatch {
   virtual void handle(IterDomain*) {}
   virtual void handle(TensorDomain*) {}
   virtual void handle(TensorView*) {}
-  virtual void handle(kir::TensorIndex*) {}
   virtual void handle(Bool*) {}
   virtual void handle(Float*) {}
   virtual void handle(Half*) {}
@@ -176,8 +189,23 @@ class TORCH_CUDA_API OptOutDispatch {
   virtual void handle(BinaryOp*) {}
   virtual void handle(TernaryOp*) {}
   virtual void handle(ReductionOp*) {}
-  virtual void handle(kir::GridReduction*) {}
   virtual void handle(BroadcastOp*) {}
+
+  // Kernel IR nodes
+  virtual void handle(kir::Bool*) {}
+  virtual void handle(kir::Float*) {}
+  virtual void handle(kir::Half*) {}
+  virtual void handle(kir::Int*) {}
+  virtual void handle(kir::NamedScalar*) {}
+  
+  virtual void handle(kir::UnaryOp*) {}
+  virtual void handle(kir::BinaryOp*) {}
+  virtual void handle(kir::TernaryOp*) {}
+  virtual void handle(kir::ReductionOp*) {}
+  virtual void handle(kir::BroadcastOp*) {}
+
+  virtual void handle(kir::TensorIndex*) {}
+  virtual void handle(kir::GridReduction*) {}
   virtual void handle(kir::ForLoop*) {}
   virtual void handle(kir::IfThenElse*) {}
   virtual void handle(kir::Allocate*) {}
