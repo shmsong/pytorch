@@ -2,7 +2,6 @@
 #pragma once
 
 #include <torch/csrc/WindowsTorchApiMacro.h>
-#include <torch/csrc/jit/codegen/cuda/utils.h>
 
 // TODO: remove these once the Kernel IR is separated from Fusion IR
 #include <torch/csrc/jit/codegen/cuda/ir_base_nodes.h>
@@ -24,6 +23,9 @@ class TORCH_CUDA_API NamedScalar : public Val {
  public:
   NamedScalar(std::string name, DataType dtype)
       : Val(ValType::KirNamedScalar, dtype), name_(name) {}
+
+  NamedScalar(const NamedScalar* src, IrCloner* ir_cloner)
+      : Val(src, ir_cloner), name_(src->name_) {}
 
   const std::string& name() const {
     return name_;
@@ -55,6 +57,9 @@ class TORCH_CUDA_API Bool : public Val {
   explicit Bool(bool value)
       : Val(ValType::KirScalar, DataType::Bool), maybe_value_{value} {}
 
+  Bool(const Bool* src, IrCloner* ir_cloner)
+    : Val(src, ir_cloner), maybe_value_(src->maybe_value_) {}
+
   bool isSymbolic() const {
     return !(maybe_value_.has_value());
   }
@@ -79,6 +84,9 @@ class TORCH_CUDA_API Float : public Val {
   explicit Float(ScalarType value)
       : Val(ValType::KirScalar, DataType::Float), maybe_value_{value} {}
 
+  Float(const Float* src, IrCloner* ir_cloner)
+    : Val(src, ir_cloner), maybe_value_(src->maybe_value_) {}
+
   bool isSymbolic() const {
     return !(maybe_value_.has_value());
   }
@@ -100,6 +108,9 @@ class TORCH_CUDA_API Half : public Val {
 
   explicit Half(float value)
       : Val(ValType::KirScalar, DataType::Half), maybe_value_{value} {}
+
+  Half(const Half* src, IrCloner* ir_cloner)
+    : Val(src, ir_cloner), maybe_value_(src->maybe_value_) {}
 
   bool isSymbolic() const {
     return !(maybe_value_.has_value());
@@ -124,6 +135,9 @@ class TORCH_CUDA_API Int : public Val {
   explicit Int(ScalarType value)
       : Val(ValType::KirScalar, DataType::Int), maybe_value_{value} {}
 
+  Int(const Int* src, IrCloner* ir_cloner)
+    : Val(src, ir_cloner), maybe_value_(src->maybe_value_) {}
+
   bool isSymbolic() const {
     return !(maybe_value_.has_value());
   }
@@ -141,6 +155,8 @@ class TORCH_CUDA_API Int : public Val {
 class TORCH_CUDA_API UnaryOp : public Expr {
  public:
   UnaryOp(UnaryOpType type, Val* out, Val* in);
+
+  UnaryOp(const UnaryOp* src, IrCloner* ir_cloner);
 
   Val* out() const {
     return out_;
@@ -162,6 +178,8 @@ class TORCH_CUDA_API UnaryOp : public Expr {
 class TORCH_CUDA_API BinaryOp : public Expr {
  public:
   BinaryOp(BinaryOpType type, Val* out, Val* lhs, Val* rhs);
+
+  BinaryOp(const BinaryOp* src, IrCloner* ir_cloner);
 
   Val* out() const {
     return out_;
@@ -187,6 +205,8 @@ class TORCH_CUDA_API BinaryOp : public Expr {
 class TORCH_CUDA_API TernaryOp : public Expr {
  public:
   TernaryOp(TernaryOpType type, Val* out, Val* in1, Val* in2, Val* in3);
+
+  TernaryOp(const TernaryOp* src, IrCloner* ir_cloner);
 
   Val* out() const {
     return out_;
@@ -217,6 +237,8 @@ class TORCH_CUDA_API TernaryOp : public Expr {
 class TORCH_CUDA_API ReductionOp : public Expr {
  public:
   ReductionOp(BinaryOpType reduction_op_type, Val* init, Val* out, Val* in);
+
+  ReductionOp(const ReductionOp* src, IrCloner* ir_cloner);
 
   Val* out() const {
     return out_;
@@ -277,6 +299,8 @@ class TORCH_CUDA_API TensorIndex : public Val {
 class TORCH_CUDA_API BroadcastOp : public Expr {
  public:
   BroadcastOp(Val* out, Val* in);
+
+  BroadcastOp(const BroadcastOp* src, IrCloner* ir_cloner);
 
   Val* out() const {
     return out_;

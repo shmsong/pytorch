@@ -61,6 +61,12 @@ UnaryOp::UnaryOp(UnaryOpType type, Val* out, Val* in)
   name_ = FusionGuard::getCurFusion()->registerExpr(this);
 }
 
+UnaryOp::UnaryOp(const UnaryOp* src, IrCloner* ir_cloner)
+    : Expr(src, ir_cloner),
+      unary_op_type_(src->unary_op_type_),
+      out_(ir_cloner->clone(src->out_)),
+      in_(ir_cloner->clone(src->in_)) {}
+
 BinaryOp::BinaryOp(BinaryOpType type, Val* out, Val* lhs, Val* rhs)
     : Expr(ExprType::KirBinaryOp),
       binary_op_type_{type},
@@ -72,6 +78,21 @@ BinaryOp::BinaryOp(BinaryOpType type, Val* out, Val* lhs, Val* rhs)
   addInput(rhs);
   name_ = FusionGuard::getCurFusion()->registerExpr(this);
 }
+
+BinaryOp::BinaryOp(const BinaryOp* src, IrCloner* ir_cloner)
+    : Expr(src, ir_cloner),
+      binary_op_type_(src->binary_op_type_),
+      out_(ir_cloner->clone(src->out_)),
+      lhs_(ir_cloner->clone(src->lhs_)),
+      rhs_(ir_cloner->clone(src->rhs_)) {}
+
+TernaryOp::TernaryOp(const TernaryOp* src, IrCloner* ir_cloner)
+    : Expr(src, ir_cloner),
+      ternary_op_type_(src->ternary_op_type_),
+      out_(ir_cloner->clone(src->out_)),
+      in1_(ir_cloner->clone(src->in1_)),
+      in2_(ir_cloner->clone(src->in2_)),
+      in3_(ir_cloner->clone(src->in3_)) {}
 
 ReductionOp::ReductionOp(
     BinaryOpType reduction_op_type,
@@ -87,6 +108,13 @@ ReductionOp::ReductionOp(
   addInput(in);
   name_ = FusionGuard::getCurFusion()->registerExpr(this);
 }
+
+ReductionOp::ReductionOp(const ReductionOp* src, IrCloner* ir_cloner)
+    : Expr(src, ir_cloner),
+      reduction_op_type_(src->reduction_op_type_),
+      init_(ir_cloner->clone(src->init_)),
+      out_(ir_cloner->clone(src->out_)),
+      in_(ir_cloner->clone(src->in_)) {}
 
 std::vector<IterDomain*> ReductionOp::getReductionDomains() const {
   const Val* out_val = out();
@@ -129,6 +157,11 @@ BroadcastOp::BroadcastOp(Val* out, Val* in)
   addInput(in);
   name_ = FusionGuard::getCurFusion()->registerExpr(this);
 }
+
+BroadcastOp::BroadcastOp(const BroadcastOp* src, IrCloner* ir_cloner)
+    : Expr(src, ir_cloner),
+      out_(ir_cloner->clone(src->out_)),
+      in_(ir_cloner->clone(src->in_)) {}
 
 TensorIndex::TensorIndex(const TensorView* view, std::vector<Val*> indices)
     : Val(ValType::TensorIndex, view->getDataType().value()),
