@@ -58,7 +58,7 @@ class TORCH_CUDA_API Bool : public Val {
       : Val(ValType::KirScalar, DataType::Bool), maybe_value_{value} {}
 
   Bool(const Bool* src, IrCloner* ir_cloner)
-    : Val(src, ir_cloner), maybe_value_(src->maybe_value_) {}
+      : Val(src, ir_cloner), maybe_value_(src->maybe_value_) {}
 
   bool isSymbolic() const {
     return !(maybe_value_.has_value());
@@ -85,7 +85,7 @@ class TORCH_CUDA_API Float : public Val {
       : Val(ValType::KirScalar, DataType::Float), maybe_value_{value} {}
 
   Float(const Float* src, IrCloner* ir_cloner)
-    : Val(src, ir_cloner), maybe_value_(src->maybe_value_) {}
+      : Val(src, ir_cloner), maybe_value_(src->maybe_value_) {}
 
   bool isSymbolic() const {
     return !(maybe_value_.has_value());
@@ -110,7 +110,7 @@ class TORCH_CUDA_API Half : public Val {
       : Val(ValType::KirScalar, DataType::Half), maybe_value_{value} {}
 
   Half(const Half* src, IrCloner* ir_cloner)
-    : Val(src, ir_cloner), maybe_value_(src->maybe_value_) {}
+      : Val(src, ir_cloner), maybe_value_(src->maybe_value_) {}
 
   bool isSymbolic() const {
     return !(maybe_value_.has_value());
@@ -136,7 +136,7 @@ class TORCH_CUDA_API Int : public Val {
       : Val(ValType::KirScalar, DataType::Int), maybe_value_{value} {}
 
   Int(const Int* src, IrCloner* ir_cloner)
-    : Val(src, ir_cloner), maybe_value_(src->maybe_value_) {}
+      : Val(src, ir_cloner), maybe_value_(src->maybe_value_) {}
 
   bool isSymbolic() const {
     return !(maybe_value_.has_value());

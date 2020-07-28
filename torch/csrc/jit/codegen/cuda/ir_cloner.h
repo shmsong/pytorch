@@ -72,7 +72,7 @@ class TORCH_CUDA_API IrCloner : private OptInConstDispatch {
   void handle(const kir::Half*) override;
   void handle(const kir::Int*) override;
   void handle(const kir::NamedScalar*) override;
-  
+
   void handle(const kir::UnaryOp*) override;
   void handle(const kir::BinaryOp*) override;
   void handle(const kir::TernaryOp*) override;

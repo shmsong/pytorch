@@ -197,7 +197,7 @@ class TORCH_CUDA_API OptOutDispatch {
   virtual void handle(kir::Half*) {}
   virtual void handle(kir::Int*) {}
   virtual void handle(kir::NamedScalar*) {}
-  
+
   virtual void handle(kir::UnaryOp*) {}
   virtual void handle(kir::BinaryOp*) {}
   virtual void handle(kir::TernaryOp*) {}
