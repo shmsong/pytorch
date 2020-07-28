@@ -2633,7 +2633,10 @@ void testGPU_FusionReduction4() {
   fe.runFusion({input}, {cg_output});
 
   auto aten_output = input.sum({1});
-  TORCH_CHECK(aten_output.allclose(cg_output));
+  TORCH_CHECK(
+      aten_output.allclose(cg_output, 1e-5, 1e-7),
+      "Error of: ",
+      aten_output.sub(cg_output).abs().max());
 }
 
 void testGPU_FusionReduction5() {
