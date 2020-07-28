@@ -195,21 +195,28 @@ BroadcastOp::BroadcastOp(Val* _out, Val* _in)
         in_type == ValType::TensorView,
         "Cannot braodcast a non-tensor object.");
 
-    int ndims = 0;
-    for (auto dom : out()->as<TensorView>()->getRootDomain())
-      if (!dom->isBroadcast())
-        ndims++;
-
-    for (auto dom : in()->as<TensorView>()->getRootDomain())
-      if (dom->isBroadcast())
-        ndims++;
+    // This is a generic check that root dims of a consumer and producer match.
+    // Maybe we shouldn't relegate it to this constructor.
+    auto c_root = out()->as<TensorView>()->getRootDomain();
+    auto p_root = in()->as<TensorView>()->getRootDomain();
+    auto root_c2p = TensorDomain::mapDomainCtoP(c_root, p_root);
+    auto root_p2c = TensorDomain::mapDomainCtoP(p_root, c_root);
+    bool bad_mismatch = false;
+    for (size_t c_i = 0; c_i < root_c2p.size(); c_i++) {
+      if (c_i == -1) {
+        bad_mismatch = !c_root[c_i]->isBroadcast();
+      }
+    }
+    for (size_t p_i = 0; p_i < root_p2c.size(); p_i++) {
+      if (p_i == -1) {
+        bad_mismatch = !p_root[p_i]->isReduction();
+      }
+    }
 
     TORCH_INTERNAL_ASSERT(
-        ndims ==
-            (int)TensorDomain::noReductions(
-                in_->as<TensorView>()->getRootDomain())
-                .size(),
+        !bad_mismatch,
         "Invalid broadcast op. Non-broadcasted dims don't match from input to output.");
+
   } else {
     TORCH_INTERNAL_ASSERT(
         in_type == ValType::TensorIndex && out_type == ValType::TensorIndex,
