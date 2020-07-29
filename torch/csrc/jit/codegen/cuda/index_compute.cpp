@@ -378,19 +378,17 @@ std::vector<bool> getBCastMergedIndices(
 
   // map c_bcast_merged to producer
   std::vector<bool> p_bcast_merged(producer->nDims(), false);
-  auto c2p =
-      TensorDomain::mapDomainCtoP(consumer->domain(), producer->domain());
+  std::vector<std::pair<int, int>> pc_map =
+      TensorDomain::mapDomainPandC(consumer->domain(), producer->domain());
 
-  for (size_t c_i = 0; c_i < c2p.size(); c_i++) {
-    auto p_i = c2p[c_i];
-    if (p_i != -1) {
-      p_bcast_merged[p_i] = c_bcast_merged[c_i];
-    }
+  for (std::pair<int, int> entry : pc_map) {
+    int p_i = entry.first;
+    int c_i = entry.second;
+    p_bcast_merged[p_i] = c_bcast_merged[c_i];
   }
 
   // map p_bcast_merged to producer->root
   std::vector<bool> p_root_bcast_merged(producer->nDims(), false);
-
   // map producer root IterDomain to it's position in producer->rootDomain()
   std::unordered_map<IterDomain*, int> p_root_id_to_index;
   for (size_t p_i = 0; p_i < producer->rootDomain().size(); p_i++) {
@@ -403,7 +401,7 @@ std::vector<bool> getBCastMergedIndices(
     IterDomain* id = producer->axis((int)p_i);
     auto id_inps = ir_utils::iterDomainInputsOf({id});
     for (auto inp : id_inps) {
-      p_root_bcast_merged[p_root_id_to_index.at(id)] = true;
+      p_root_bcast_merged[p_root_id_to_index.at(inp)] = true;
     }
   }
 
@@ -420,8 +418,15 @@ kir::TensorIndex* Index::getGlobalProducerIndex(
                       producer_tv->domain(), consumer_tv->domain(), -1)
                       .first;
 
-  auto p2c = TensorDomain::mapDomainPtoC(
+  std::vector<int> p2c(producer->nDims(), false);
+  auto pc_map = TensorDomain::mapDomainPandC(
       producer->domain(), consumer_tv->domain()->domain());
+  for (auto entry : pc_map) {
+    int p_i = entry.first;
+    int c_i = entry.second;
+    p2c[p_i] = c_i;
+  }
+
   std::vector<Val*> indices;
   for (size_t i = 0; i < producer->domain().size(); i++) {
     indices.push_back(loops[p2c[i]]->index());
@@ -642,8 +647,6 @@ kir::TensorIndex* Index::getGlobalConsumerIndex(
       consumer->getRootDomain()[consumer->getRootDomain().size() - 1]
               ->getIterType() == IterType::Iteration &&
       consumer->domain()->contiguity()[consumer->getRootDomain().size() - 1];
-
-  inner_most_dim_contig = false;
 
   std::vector<Val*> strided_inds;
   for (size_t i = 0; i < computed_inds.size(); i++) {
