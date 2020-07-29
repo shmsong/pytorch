@@ -22,6 +22,30 @@ namespace jit {
 namespace fuser {
 namespace cuda {
 
+// [ Note -- cache level ]
+//
+// 2 level cache behind PyTorch IR node `prim::CudaFusionGroup`:
+//     1. GraphCache
+//     2. FusionExecutorCache
+//
+// The node stores:
+//     1. a PyTorch IR in `attr::Subgraph`
+//     2. an int in `attr::cache_id`, which is a hashed value from stringified
+//        `attr::Subgraph`.
+//
+// We have 2 unordered_map:
+//   std::unordered_map<std::string, int32_t> graph_cache_id_;
+//   std::unordered_map<int64_t, std::unique_ptr<FusionExecutor>> graph_cache_;
+//
+// CudaFusionManager holds a FusionExecutor and handles all interfacing
+// including compilation and execution.
+//
+// We cache two maps here:
+//   a. string of graph -> kernel_id
+//   b. kernel_id -> FusionExecutor
+//
+// This allows FusionExecutor reuse across nodes;
+
 namespace {
 c10::Device getDevice(const at::ArrayRef<IValue>& inputs) {
   // find device in inputs.
@@ -37,14 +61,6 @@ c10::Device getDevice(const at::ArrayRef<IValue>& inputs) {
       false, "Could not detect device of inputs to a fusion.");
 }
 
-// CudaFusionManager holds a FusionExecutor and handles all interfacing
-// including compilation and execution.
-//
-// We cache two maps here:
-//   a. string of graph -> kernel_id
-//   b. kernel_id -> FusionExecutor
-//
-// This allows FusionExecutor reuse across nodes;
 class CudaFusionManager {
  public:
   static CudaFusionManager& getManager() {
@@ -407,6 +423,8 @@ void runCudaFusionGroup(const Node* fusion_node, Stack& stack) {
     const auto nInputs = graph->inputs().size();
     at::ArrayRef<IValue> inputs = last(stack, nInputs);
 
+    // TODO: we would/could want an extra layer of graph cache in order to
+    //       handle varying contiguity/broadcast;
     // Only needed if we are doing codegen
     // if no shape information available, we feed current shape into the kernel;
     // This is needed because our current broadcast on size-1 dimension
