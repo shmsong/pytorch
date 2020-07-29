@@ -199,7 +199,7 @@ void UnrollPass::handle(kir::ForLoop* fl) {
         tv_ops,
         unroll_pred_inds,
         getThreadPredicate(ir_utils::getTVOutput(tv_ops[0])));
-        
+
     // Make the IfThenElse controlling the unrolling
     kir::IfThenElse* unroll_ite = new kir::IfThenElse(
         unroll_predicate, {}, {}, first_unroll->parentScope());
