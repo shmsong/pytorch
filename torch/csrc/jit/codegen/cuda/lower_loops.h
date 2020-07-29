@@ -52,11 +52,11 @@ class TORCH_CUDA_API LoopNestGenerator : public OptOutDispatch {
   void cleanSharedMemory();
 
   // Toggle modify status for this shared memory buffer
-  void modifySharedMemory(Val* const key);
+  void modifySharedMemory(Val* key);
 
   // Return the status of the shared memory buffer
   // False if TensorView is not shared memory buffer
-  bool statusSharedMemory(Val* const key) const;
+  bool isModifiedSharedMemory(Val* key) const;
 
   // Create, place, and return the allocation for tv
   Expr* pushAlloc(TensorView*);

@@ -336,7 +336,7 @@ Allocate::Allocate(const Allocate* src, IrCloner* ir_cloner)
       size_(ir_cloner->clone(src->size_)) {}
 
 Sync::Sync() : Expr(ExprType::Sync) {
-  this->name_ = FusionGuard::getCurFusion()->registerExpr(this);
+  name_ = FusionGuard::getCurFusion()->registerExpr(this);
 }
 
 Sync::Sync(const Sync* src, IrCloner* ir_cloner) : Expr(src, ir_cloner) {}

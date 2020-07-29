@@ -144,8 +144,7 @@ Statement* OptOutMutator::mutate(kir::Allocate* a) {
 }
 
 Statement* OptOutMutator::mutate(kir::Sync* a) {
-  FusionGuard::getCurFusion()->removeExpr(a);
-  return new kir::Sync();
+  return a;
 }
 
 Statement* OptOutMutator::mutate(Split* s) {

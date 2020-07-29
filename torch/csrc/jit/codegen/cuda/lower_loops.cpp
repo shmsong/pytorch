@@ -79,7 +79,7 @@ Expr* LoopNestGenerator::pushAlloc(TensorView* tv) {
     lowered_exprs.insert(lowered_exprs.begin(), alloc);
   } else if (alloc_pos == for_loops.size()) {
     // If we allocate inline, push to the back of the last for loop
-    scope_utils::pushBack(for_loops[for_loops.size() - 1], alloc);
+    scope_utils::pushBack(for_loops.back(), alloc);
   } else {
     // Otherwise we allocate in some loop nest that is not inline, or root, so
     // insert right before the loop we're just outside of
@@ -276,11 +276,12 @@ void LoopNestGenerator::handle(Expr* expr) {
   //  0) Apply SyncThreads if any shared memory inputs are modified
   bool shared_memory_sync = false;
   for (auto in : expr->inputs()) {
-    shared_memory_sync |= statusSharedMemory(in);
+    shared_memory_sync |= isModifiedSharedMemory(in);
   }
   if (shared_memory_sync) {
-    // push to the back of the last for loop
-    scope_utils::pushBack(for_loops[for_loops.size() - 1], new kir::Sync());
+    // push Sync to the back of the last for loop
+    scope_utils::pushBack(for_loops.back(), new kir::Sync());
+    cleanSharedMemory();
   }
 
   TensorView* out = expr->output(0)->as<TensorView>();
@@ -543,8 +544,7 @@ void LoopNestGenerator::generate(const std::vector<Expr*>& exprs) {
   // Initialize Modified status
   for (auto v : fusion_->vals()) {
     if (v->getValType().value() == ValType::TensorView) {
-      TensorView* tv = dynamic_cast<TensorView*>(v);
-      if (tv->getMemoryType() == MemoryType::Shared) {
+      if (v->as<TensorView>()->getMemoryType() == MemoryType::Shared) {
         smem_.insert({v, false});
       }
     }
@@ -567,14 +567,14 @@ void LoopNestGenerator::cleanSharedMemory() {
   }
 }
 
-void LoopNestGenerator::modifySharedMemory(Val* const key) {
+void LoopNestGenerator::modifySharedMemory(Val* key) {
   auto it = smem_.find(key);
   if (it != smem_.end()) {
     it->second = true;
   }
 }
 
-bool LoopNestGenerator::statusSharedMemory(Val* const key) const {
+bool LoopNestGenerator::isModifiedSharedMemory(Val* key) const {
   auto it = smem_.find(key);
   if (it != smem_.end()) {
     return it->second;
