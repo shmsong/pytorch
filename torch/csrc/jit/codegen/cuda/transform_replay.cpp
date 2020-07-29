@@ -168,7 +168,8 @@ TensorDomain* TransformReplay::fullSelfReplay(
     }
   }
 
-  return new TensorDomain(new_self_root->domain(), new_domain);
+  return new TensorDomain(
+      new_self_root->domain(), new_domain, self->contiguity());
 }
 
 // Producer could have rfactor axes which consumer may want replayed. We can
@@ -205,7 +206,7 @@ std::pair<TensorDomain*, unsigned int> TransformReplay::replayPasC(
 
   // Map of consumer_CA_root_ids to related producer_CA_ids
   auto replay_root_map =
-      TensorDomain::mapRootCtoP(consumer, producer, true, consumer_CA_root_ids);
+      TensorDomain::mapRootCtoP(consumer, producer, consumer_CA_root_ids);
 
   // Track which root axes in producer we will send to replay
   std::unordered_set<IterDomain*> producer_roots4replay;
@@ -342,7 +343,10 @@ std::pair<TensorDomain*, unsigned int> TransformReplay::replayPasC(
       new_IDs.push_back(id);
 
   TensorDomain* replayed = new TensorDomain(
-      producer->rootDomain(), producer->rfactorDomain(), new_IDs);
+      producer->rootDomain(),
+      producer->rfactorDomain(),
+      new_IDs,
+      producer->contiguity());
   return {replayed, producer_compute_at_axis};
 }
 
@@ -387,7 +391,7 @@ std::pair<TensorDomain*, unsigned int> TransformReplay::replayCasP(
   }
 
   auto replay_root_map =
-      TensorDomain::mapRootPtoC(producer, consumer, true, producer_CA_root_ids);
+      TensorDomain::mapRootPtoC(producer, consumer, producer_CA_root_ids);
 
   // Track which root axes in producer we will send to replay
   std::unordered_set<IterDomain*> consumer_roots4replay;
@@ -513,7 +517,10 @@ std::pair<TensorDomain*, unsigned int> TransformReplay::replayCasP(
       new_IDs.push_back(id);
 
   TensorDomain* replayed = new TensorDomain(
-      consumer->rootDomain(), consumer->rfactorDomain(), new_IDs);
+      consumer->rootDomain(),
+      consumer->rfactorDomain(),
+      new_IDs,
+      consumer->contiguity());
 
   return {replayed, producer_CA_ids.size()};
 }
