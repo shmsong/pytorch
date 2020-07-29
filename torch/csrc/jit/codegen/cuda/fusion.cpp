@@ -92,6 +92,12 @@ void swap(Fusion& a, Fusion& b) noexcept {
   for (auto expr : b.expr_set_) {
     expr->fusion_ = &b;
   }
+
+  // Lowered IR nodes
+  swap(a.lowered_val_set_, b.lowered_val_set_);
+  swap(a.lowered_expr_set_, b.lowered_expr_set_);
+  swap(a.lowered_val_name_counter_, b.lowered_val_name_counter_);
+  swap(a.lowered_expr_name_counter_, b.lowered_expr_name_counter_);
 }
 
 Fusion::Fusion(const Fusion& other) {
@@ -136,6 +142,8 @@ Fusion::Fusion(const Fusion& other) {
 
   inputs_ = ir_cloner.clone(other.inputs_);
   outputs_ = ir_cloner.clone(other.outputs_);
+
+  // Lowered IR nodes are not copied!
 }
 
 Fusion::Fusion(Fusion&& other) noexcept {
@@ -187,6 +195,19 @@ void Fusion::clear() noexcept {
 
   inputs_.clear();
   outputs_.clear();
+
+  // Lowered IR nodes
+  for (auto ptr : lowered_val_set_) {
+    delete ptr;
+  }
+  for (auto ptr : lowered_expr_set_) {
+    delete ptr;
+  }
+  lowered_val_set_.clear();
+  lowered_expr_set_.clear();
+
+  lowered_val_name_counter_ = 0;
+  lowered_expr_name_counter_ = 0;
 }
 
 void Fusion::removeExpr(Expr* expr) {
@@ -426,6 +447,44 @@ StmtNameType Fusion::registerStatement(Statement* stmt) {
       false,
       "Could not register statement as Fusion could not recognize its type.");
   return UNINITIALIZED_STMTNAMETYPE;
+}
+
+StmtNameType Fusion::registerLoweredVal(Val* val) {
+  TORCH_CHECK(val->fusion() == this);
+  TORCH_CHECK(!inFusion(val));
+  TORCH_CHECK(lowered_val_set_.find(val) == lowered_val_set_.end());
+  lowered_val_set_.insert(val);
+  return lowered_val_name_counter_++;
+}
+
+StmtNameType Fusion::registerLoweredExpr(Expr* expr) {
+  TORCH_CHECK(expr->fusion() == this);
+  TORCH_CHECK(!inFusion(expr));
+  TORCH_CHECK(lowered_expr_set_.find(expr) == lowered_expr_set_.end());
+
+/*
+  for (Val* input : expr->inputs()) {
+    assertInFusion(input, "Input to expr is invalid, ");
+    if (uses_.find(input) == uses_.end()) {
+      uses_[input] = {expr};
+    } else {
+      uses_.find(input)->second.emplace(expr);
+    }
+  }
+
+  for (Val* output : expr->outputs()) {
+    assertInFusion(output, "Output to expr is invalid, ");
+    auto it = origin_.find(output);
+    if (it != origin_.end()) {
+      removeExpr(it->second); // will also remove origin entry
+    }
+
+    origin_[output] = expr;
+  }
+*/
+
+  lowered_expr_set_.insert(expr);
+  return lowered_expr_name_counter_++;
 }
 
 bool Fusion::used(Val* val) const {
