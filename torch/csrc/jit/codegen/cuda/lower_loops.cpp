@@ -539,6 +539,8 @@ void reorderExprsForComputeAt(std::vector<Expr*>& exprs) {
 void LoopNestGenerator::generate(const std::vector<Expr*>& exprs) {
   FusionGuard fg(fusion_);
 
+  // Identify all shared memory TensorViews
+  // Initialize Modified status
   for (auto v : fusion_->vals()) {
     if (v->getValType().value() == ValType::TensorView) {
       TensorView* tv = dynamic_cast<TensorView*>(v);

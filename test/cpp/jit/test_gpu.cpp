@@ -4682,6 +4682,7 @@ void testGPU_FusionSmemReduce() {
   // M/BSX, BSX, K/BSX, BSX, N/BSX, BSX
   tv1->reorder({{0, 0}, {1, 2}, {2, 4}, {3, 5}, {4, 1}, {5, 3}});
   TensorView* tv3 = tv1->rFactor({-2});
+
   tv0->computeAt(tv1, -2);
   tv0->computeAt(tv3, -2);
   // Schedule
@@ -4772,7 +4773,7 @@ void testGPU_FusionSmemBlockGemm() {
       aten_output.sub(outputs[0]).abs().max());
 }
 
-void testGPU_FusionSmemSimpleGemm() {
+void testGPU_FusionSmemBlockGemmCache() {
   Fusion fusion;
   FusionGuard fg(&fusion);
 
@@ -4787,32 +4788,55 @@ void testGPU_FusionSmemSimpleGemm() {
   fusion.addOutput(tv5);
   // Algorithm
 
-  tv2->setMemoryType(MemoryType::Shared);
-  tv3->setMemoryType(MemoryType::Shared);
+  // Remove reduction axis from tv5
+  // tv6 = (M, R, N)
+  // tv5 = (M, N)
+  TensorView* tv6 = tv5->cache_before();
 
-  constexpr int BSX = 32;
-  tv5->split(2, BSX);
+  constexpr int BSX = 16;
   tv5->split(1, BSX);
   tv5->split(0, BSX);
-  tv5->reorder({{0, 0}, {1, 2}, {2, 4}, {3, 5}, {4, 1}, {5, 3}});
+  // M/BSX, BSX, N/BSX, BSX
+  tv5->reorder({{0, 0}, {1, 2}, {2, 1}, {3, 3}});
+  // tv5 = M/BSX, N/BSX, MSX, NSX
+
+  tv6->computeAt(tv5, 2);
+  tv6->computeAt(tv5, 2);
+
+  tv6->split(-1, BSX);
+  // M/BSX, BSX, K/BSX, BSX, N/BSX, BSX
+  tv6->reorder({{0, 0}, {1, 1}, {2, 3}, {3, 4}, {4, 2}, {5, 5}});
   // M/BSX, N/BSX, K/BSX, MSX, NSX, KSX
-  TensorView* tv6 = tv5->rFactor({-2});
+  TensorView* tv7 = tv6->rFactor({-1});
+  // tv7 = M/BSX, N/BSX, K/BSXrf, MSX, NSX, KSXr
+  // tv6 = M/BSX, N/BSX, K/BSXr, MSX, NSX
 
-  tv0->computeAt(tv5, -2);
-  tv1->computeAt(tv5, -2);
+  tv0->computeAt(tv6, 3);
+  tv1->computeAt(tv6, 3);
 
-  tv0->computeAt(tv6, -2);
-  tv1->computeAt(tv6, -2);
+  tv0->computeAt(tv7, 3);
+  tv1->computeAt(tv7, 3);
   // Schedule
 
-  // Output Binding
+  tv2->setMemoryType(MemoryType::Shared);
+  tv3->setMemoryType(MemoryType::Shared);
+  tv4->setMemoryType(MemoryType::Shared);
+  tv6->setMemoryType(MemoryType::Shared);
+  tv7->setMemoryType(MemoryType::Shared);
+  // Memory Type
+
   tv5->axis(0)->parallelize(ParallelType::BIDx);
   tv5->axis(1)->parallelize(ParallelType::BIDy);
+  tv5->axis(-2)->parallelize(ParallelType::TIDy);
   tv5->axis(-1)->parallelize(ParallelType::TIDx);
   // Manual Binding
   tv2->axis(-1)->parallelize(ParallelType::TIDx);
   tv3->axis(-1)->parallelize(ParallelType::TIDx);
   tv4->axis(-1)->parallelize(ParallelType::TIDx);
+  tv7->axis(-3)->parallelize(ParallelType::TIDy);
+  tv7->axis(-2)->parallelize(ParallelType::TIDx);
+
+  tv6->axis(-2)->parallelize(ParallelType::TIDy);
   tv6->axis(-1)->parallelize(ParallelType::TIDx);
   // Thread and Block binding
 

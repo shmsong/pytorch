@@ -339,8 +339,7 @@ Sync::Sync() : Expr(ExprType::Sync) {
   this->name_ = FusionGuard::getCurFusion()->registerExpr(this);
 }
 
-Sync::Sync(const Sync* src, IrCloner* ir_cloner)
-    : Expr(src, ir_cloner) {}
+Sync::Sync(const Sync* src, IrCloner* ir_cloner) : Expr(src, ir_cloner) {}
 
 GridReduction::GridReduction(ReductionOp* reduction_op)
     : Expr(ExprType::GridReduction), reduction_op_(reduction_op) {

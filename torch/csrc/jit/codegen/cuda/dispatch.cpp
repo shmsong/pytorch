@@ -161,6 +161,7 @@ void Expr::dispatch(T handler, Expr* expr) {
     case ExprType::Sync:
       ptr(handler)->handle(expr->as<kir::Sync>());
       return;
+
     default:
       TORCH_INTERNAL_ASSERT(false, "Unknown exprtype in dispatch!");
   }
@@ -298,6 +299,7 @@ void Expr::constDispatch(T handler, const Expr* expr) {
     case ExprType::Sync:
       ptr(handler)->handle(expr->as<kir::Sync>());
       return;
+
     default:
       TORCH_INTERNAL_ASSERT(false, "Unknown exprtype in dispatch!");
   }
