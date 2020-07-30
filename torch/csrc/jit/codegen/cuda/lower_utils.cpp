@@ -343,9 +343,9 @@ kir::ForLoop* openFor(Expr* scope, IterDomain* id) {
     std::stringstream ss;
     ss << id->getParallelType();
     new_scope = new kir::ForLoop(
-        new kir::NamedScalar(ss.str(), DataType::Int), id, {}, scope);
+        new NamedScalar(ss.str(), DataType::Int), id, {}, scope);
   } else {
-    new_scope = new kir::ForLoop(new kir::Int(), id, {}, scope);
+    new_scope = new kir::ForLoop(new Int(), id, {}, scope);
   }
   if (scope != nullptr)
     pushBack(scope, new_scope);
