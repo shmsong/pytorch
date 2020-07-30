@@ -181,7 +181,6 @@ namespace jit {
   _(GPU_FusionCacheComplex)                         \
   _(GPU_FusionCacheMultiConsumer)                   \
   _(GPU_FusionSmem)                                 \
-  _(GPU_FusionSmemReduce)                           \
   _(GPU_FusionSmemBlockGemmCache)                   \
   _(GPU_FusionConstCheck)                           \
   _(GPU_FusionSymbolicReduction)                    \
