@@ -128,9 +128,7 @@ void IterVisitor::traverse(Fusion* fusion, bool from_outputs_only) {
   traverse_(fusion, from_outputs_only, false);
 }
 
-void IterVisitor::traverseAllPaths(
-    Fusion* fusion,
-    bool from_outputs_only) {
+void IterVisitor::traverseAllPaths(Fusion* fusion, bool from_outputs_only) {
   traverse_(fusion, from_outputs_only, true);
 }
 
