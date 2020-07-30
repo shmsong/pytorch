@@ -497,17 +497,17 @@ StmtNameType Fusion::registerStatement(Statement* stmt) {
 }
 
 StmtNameType Fusion::registerLoweredVal(Val* val) {
-  TORCH_CHECK(val->fusion() == this);
-  TORCH_CHECK(!inFusion(val));
-  TORCH_CHECK(!inKernelIr(val));
+  TORCH_INTERNAL_ASSERT(val->fusion() == this);
+  TORCH_INTERNAL_ASSERT(!inFusion(val));
+  TORCH_INTERNAL_ASSERT(!inKernelIr(val));
   lowered_val_set_.insert(val);
   return lowered_val_name_counter_++;
 }
 
 StmtNameType Fusion::registerLoweredExpr(Expr* expr) {
-  TORCH_CHECK(expr->fusion() == this);
-  TORCH_CHECK(!inFusion(expr));
-  TORCH_CHECK(!inKernelIr(expr));
+  TORCH_INTERNAL_ASSERT(expr->fusion() == this);
+  TORCH_INTERNAL_ASSERT(!inFusion(expr));
+  TORCH_INTERNAL_ASSERT(!inKernelIr(expr));
 
   for (Val* input : expr->inputs()) {
     // TORCH_CHECK(inKernelIr(input));
