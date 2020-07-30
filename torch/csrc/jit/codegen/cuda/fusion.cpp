@@ -512,14 +512,6 @@ StmtNameType Fusion::registerLoweredExpr(Expr* expr) {
   for (Val* input : expr->inputs()) {
     //TORCH_CHECK(inKernelIr(input));
     assertInFusion(input);
-
-    #if 0
-    if (uses_.find(input) == uses_.end()) {
-      uses_[input] = {expr};
-    } else {
-      uses_.find(input)->second.emplace(expr);
-    }
-    #endif
   }
 
   for (Val* output : expr->outputs()) {
