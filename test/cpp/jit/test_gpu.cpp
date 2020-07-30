@@ -4371,18 +4371,19 @@ void testGPU_FusionReductionSchedulerDimShmoo() {
 
   // Tried to cut down the number iterations with just
   // doing every other power of 2.
-  for(int i = 1; i <= 1024*1024; i <<= 2) {
+  for (int i = 1; i <= 1024 * 1024; i <<= 2) {
     red_dims.push_back(i);
   }
 
-  for(auto fp16 : fp16_usage) {
-    for(auto &axis : red_axis) {
-      for(auto &odim : output_dims) {
-        for(auto &rdim : red_dims) {
+  for (auto fp16 : fp16_usage) {
+    for (auto& axis : red_axis) {
+      for (auto& odim : output_dims) {
+        for (auto& rdim : red_dims) {
           Fusion fusion;
           FusionGuard fg(&fusion);
 
-          TensorView* tv0 = makeDummyTensor(2, (fp16 ? DataType::Half : DataType::Float));
+          TensorView* tv0 =
+              makeDummyTensor(2, (fp16 ? DataType::Half : DataType::Float));
           fusion.addInput(tv0);
 
           torch::jit::fuser::Val* tv0_cast = nullptr;
@@ -4390,7 +4391,11 @@ void testGPU_FusionReductionSchedulerDimShmoo() {
             tv0_cast = castOp(DataType::Float, tv0);
           }
 
-          TensorView* tv1 = reductionOp(BinaryOpType::Add, {axis}, new Float(0), (fp16 ? tv0_cast->as<TensorView>() : tv0));
+          TensorView* tv1 = reductionOp(
+              BinaryOpType::Add,
+              {axis},
+              new Float(0),
+              (fp16 ? tv0_cast->as<TensorView>() : tv0));
 
           TensorView* tv1_cast = nullptr;
           if (fp16) {
@@ -4399,15 +4404,20 @@ void testGPU_FusionReductionSchedulerDimShmoo() {
 
           fusion.addOutput((fp16 ? tv1_cast : tv1));
 
-          auto options = at::TensorOptions().dtype((fp16 ? at::kHalf : at::kFloat)).device(at::kCUDA, 0);
-          at::Tensor input = (axis ? at::rand({odim, rdim}, options) : at::rand({rdim, odim}, options));
+          auto options = at::TensorOptions()
+                             .dtype((fp16 ? at::kHalf : at::kFloat))
+                             .device(at::kCUDA, 0);
+          at::Tensor input =
+              (axis ? at::rand({odim, rdim}, options)
+                    : at::rand({rdim, odim}, options));
 
           const at::ArrayRef<c10::IValue> inputs({input});
 
-          c10::optional<cuda::ReductionParams> rparams = cuda::scheduleReduction(&fusion, inputs, tv1);
+          c10::optional<cuda::ReductionParams> rparams =
+              cuda::scheduleReduction(&fusion, inputs, tv1);
           TORCH_CHECK(rparams != c10::nullopt, "Reduction is not found!");
-          if(fp16) {
-            if (axis == 0 ) {
+          if (fp16) {
+            if (axis == 0) {
               int tidx = rparams.value().bdimx.value;
               tv1_cast->split(-1, tidx);
               tv1_cast->axis(-1)->parallelize(ParallelType::TIDx);
