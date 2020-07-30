@@ -98,6 +98,19 @@ void swap(Fusion& a, Fusion& b) noexcept {
   swap(a.lowered_expr_set_, b.lowered_expr_set_);
   swap(a.lowered_val_name_counter_, b.lowered_val_name_counter_);
   swap(a.lowered_expr_name_counter_, b.lowered_expr_name_counter_);
+
+  for (auto val : a.lowered_val_set_) {
+    val->fusion_ = &a;
+  }
+  for (auto expr : a.lowered_expr_set_) {
+    expr->fusion_ = &a;
+  }
+  for (auto val : b.lowered_val_set_) {
+    val->fusion_ = &b;
+  }
+  for (auto expr : b.lowered_expr_set_) {
+    expr->fusion_ = &b;
+  }
 }
 
 Fusion::Fusion(const Fusion& other) {
@@ -143,7 +156,17 @@ Fusion::Fusion(const Fusion& other) {
   inputs_ = ir_cloner.clone(other.inputs_);
   outputs_ = ir_cloner.clone(other.outputs_);
 
-  // Lowered IR nodes are not copied!
+  // Lowered nodes
+  for (auto val : other.lowered_val_set_) {
+    lowered_val_set_.insert(ir_cloner.clone(val));
+  }
+
+  for (auto expr : other.lowered_expr_set_) {
+    lowered_expr_set_.insert(ir_cloner.clone(expr));
+  }
+
+  lowered_val_name_counter_ = other.lowered_val_name_counter_;
+  lowered_expr_name_counter_ = other.lowered_expr_name_counter_;
 }
 
 Fusion::Fusion(Fusion&& other) noexcept {
@@ -301,21 +324,43 @@ void Fusion::addOutput(Val* const output) {
 }
 
 bool Fusion::inFusion(const Statement* stmt) const {
-  bool infusion = stmt->fusion() == this;
+  bool in_fusion = stmt->fusion() == this;
   Statement* nonconst_stmt = const_cast<Statement*>(stmt); // NOLINT
 
-  if (stmt->isExpr())
-    infusion &= expr_set_.find(nonconst_stmt->as<Expr>()) != expr_set_.end();
-  if (stmt->isVal())
-    infusion &= val_set_.find(nonconst_stmt->as<Val>()) != val_set_.end();
+  if (stmt->isExpr()) {
+    in_fusion &= expr_set_.find(nonconst_stmt->as<Expr>()) != expr_set_.end();
+  }
+  if (stmt->isVal()) {
+    in_fusion &= val_set_.find(nonconst_stmt->as<Val>()) != val_set_.end();
+  }
 
-  return infusion;
+  return in_fusion;
+}
+
+bool Fusion::inKernelIr(const Statement* stmt) const {
+  bool in_fusion = stmt->fusion() == this;
+  Statement* nonconst_stmt = const_cast<Statement*>(stmt); // NOLINT
+
+  if (stmt->isExpr()) {
+    in_fusion &= lowered_expr_set_.find(nonconst_stmt->as<Expr>()) !=
+        lowered_expr_set_.end();
+  }
+  if (stmt->isVal()) {
+    in_fusion &= lowered_val_set_.find(nonconst_stmt->as<Val>()) !=
+        lowered_val_set_.end();
+  }
+
+  return in_fusion;
 }
 
 void Fusion::assertInFusion(const Statement* stmt, const std::string& msg)
     const {
-  if (inFusion(stmt))
+  if (inFusion(stmt)) {
     return;
+  }
+  if (inKernelIr(stmt)) {
+    return;
+  }
   TORCH_CHECK(false, msg, " it was not found in the active fusion.");
 }
 
@@ -412,6 +457,7 @@ StmtNameType Fusion::registerExpr(Expr* expr) {
 
   for (Val* input : expr->inputs()) {
     assertInFusion(input, "Input to expr is invalid, ");
+    //TORCH_CHECK(!inKernelIr(input));
     if (uses_.find(input) == uses_.end()) {
       uses_[input] = {expr};
     } else {
@@ -421,6 +467,7 @@ StmtNameType Fusion::registerExpr(Expr* expr) {
 
   for (Val* output : expr->outputs()) {
     assertInFusion(output, "Output to expr is invalid, ");
+    //TORCH_CHECK(!inKernelIr(output));
     auto it = origin_.find(output);
     if (it != origin_.end()) {
       removeExpr(it->second); // will also remove origin entry
@@ -452,7 +499,7 @@ StmtNameType Fusion::registerStatement(Statement* stmt) {
 StmtNameType Fusion::registerLoweredVal(Val* val) {
   TORCH_CHECK(val->fusion() == this);
   TORCH_CHECK(!inFusion(val));
-  TORCH_CHECK(lowered_val_set_.find(val) == lowered_val_set_.end());
+  TORCH_CHECK(!inKernelIr(val));
   lowered_val_set_.insert(val);
   return lowered_val_name_counter_++;
 }
@@ -460,28 +507,26 @@ StmtNameType Fusion::registerLoweredVal(Val* val) {
 StmtNameType Fusion::registerLoweredExpr(Expr* expr) {
   TORCH_CHECK(expr->fusion() == this);
   TORCH_CHECK(!inFusion(expr));
-  TORCH_CHECK(lowered_expr_set_.find(expr) == lowered_expr_set_.end());
+  TORCH_CHECK(!inKernelIr(expr));
 
-/*
   for (Val* input : expr->inputs()) {
-    assertInFusion(input, "Input to expr is invalid, ");
+    //TORCH_CHECK(inKernelIr(input));
+    assertInFusion(input);
+
+    #if 0
     if (uses_.find(input) == uses_.end()) {
       uses_[input] = {expr};
     } else {
       uses_.find(input)->second.emplace(expr);
     }
+    #endif
   }
 
   for (Val* output : expr->outputs()) {
-    assertInFusion(output, "Output to expr is invalid, ");
-    auto it = origin_.find(output);
-    if (it != origin_.end()) {
-      removeExpr(it->second); // will also remove origin entry
-    }
-
-    origin_[output] = expr;
+    //TORCH_CHECK(inKernelIr(output));
+    assertInFusion(output);
+    TORCH_CHECK(origin_.insert({output, expr}).second);
   }
-*/
 
   lowered_expr_set_.insert(expr);
   return lowered_expr_name_counter_++;
@@ -517,10 +562,8 @@ std::unordered_set<Expr*> Fusion::unordered_uses(Val* val) const {
 Expr* Fusion::origin(Val* val) const {
   assertInFusion(val, "Cannot detect the origin of val, ");
   auto it = origin_.find(val);
-
   if (it == origin_.end())
     return nullptr;
-
   return it->second;
 }
 
