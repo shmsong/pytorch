@@ -51,6 +51,17 @@ TensorView* makeDummyTensor(int nDims, DataType dtype = DataType::Float) {
   return new TensorView(new TensorDomain(dom), dtype);
 }
 
+TensorView* makeConcreteTensor(
+    std::vector<int> sizes,
+    DataType dtype = DataType::Float) {
+  // We can uncomment the below statement to test all tests with contiguous
+  // tensors. return makeContigTensor(nDims, dtype);
+  std::vector<IterDomain*> dom;
+  for (int i = 0; i < sizes.size(); i++)
+    dom.push_back(new IterDomain(new Int(0), new Int(sizes[i])));
+  return new TensorView(new TensorDomain(dom), dtype);
+}
+
 TensorView* makeTensorWithContig(
     int nDims,
     std::vector<bool> contig_info,
@@ -3039,6 +3050,53 @@ void testGPU_FusionSimpleBCast() {
 #endif
 }
 
+void testGPU_FusionComplexBCast() {
+  Fusion fusion;
+  FusionGuard fg(&fusion);
+
+  int x = 2, y = 3, z = 4;
+
+  auto tv0 = makeConcreteTensor({y});
+  auto tv1 = broadcast(tv0, {false, true});
+  auto tv2 = makeConcreteTensor({y, z});
+  auto tv3 = mul(tv1, tv2);
+  auto tv4 = broadcast(tv3, {true, false, false});
+  auto tv5 = makeConcreteTensor({x, y, z});
+  auto tv6 = add(tv4, tv5);
+
+  // tv0[    i1    ]
+  // tv1[    i1, b2]
+  // tv2[    i1, i2]
+  // tv3[    i1, i2]
+  // tv4[b0, i1, i2]
+  // tv5[i0, i1, i2]
+  // tv6[i0, i1, i2]
+
+  // tv3 = bcast(tv0) * tv2
+  // tv6 = bcast(tv3) + tv5
+
+  fusion.addInput(tv0);
+  fusion.addInput(tv2);
+  fusion.addInput(tv5);
+
+  fusion.addOutput(tv6);
+
+  auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
+
+  at::Tensor t0 = at::randn({y}, options);
+  at::Tensor t2 = at::randn({y, z}, options);
+  at::Tensor t5 = at::randn({x, y, z}, options);
+
+  auto t3 = t0.unsqueeze(-1).expand({y, z}) * t2;
+  auto t6 = t3.unsqueeze(0).expand({x, y, z}) + t5;
+
+  torch::jit::fuser::cuda::FusionExecutor fe;
+  fe.compileFusion(&fusion);
+  auto outputs = fe.runFusion({t0, t2, t5});
+
+  TORCH_CHECK(t6.allclose(outputs[0]));
+}
+
 // Test a simple Gemm but also play around with fusion executor features
 void testGPU_FusionSimpleGemm() {
   Fusion fusion;
@@ -4381,13 +4439,13 @@ void testGPU_FusionReductionSchedulerDimShmoo() {
           TORCH_CHECK(rparams != c10::nullopt, "Reduction is not found!");
           if (fp16) {
             if (axis == 0) {
-              int tidx = rparams.value().bdimx.value;
+              int tidx = rparams.value().lparams.bdimx();
               tv1_cast->split(-1, tidx);
               tv1_cast->axis(-1)->parallelize(ParallelType::TIDx);
               tv1_cast->axis(-2)->parallelize(ParallelType::BIDx);
             } else {
               if (rparams.value().mul_reds_per_blk) {
-                int tidy = rparams.value().bdimy.value;
+                int tidy = rparams.value().lparams.bdimy();
                 tv1_cast->split(0, tidy);
                 tv1_cast->axis(-1)->parallelize(ParallelType::TIDy);
               }
