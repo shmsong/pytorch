@@ -618,11 +618,11 @@ void IRPrinter::handle(const ReductionOp* rop) {
 void IRPrinter::handle(const kir::ReductionOp* rop) {
   TORCH_CHECK(rop->out()->getValType() == ValType::TensorIndex);
 
-  auto out = rop->out()->as<kir::TensorIndex>();
-  auto vec_domain = out->view()->domain()->domain();
+  const auto out = rop->out()->as<kir::TensorIndex>();
+  const auto domain = out->view()->domain();
 
-  bool has_block_reduce = out->view()->hasBlockReduction();
-  bool has_grid_reduce = out->view()->hasGridReduction();
+  const bool has_block_reduce = domain->hasBlockReduction();
+  const bool has_grid_reduce = domain->hasGridReduction();
 
   if (!has_block_reduce && !has_grid_reduce) {
     FusionGuard fg(rop->fusion());
@@ -674,9 +674,8 @@ void IRPrinter::handle(const kir::GridReduction* gr) {
       "GridReduction node is a lowered node but did not find the output to be a TensorIndex.");
 
   const auto out = rop->out()->as<kir::TensorIndex>();
-  TORCH_INTERNAL_ASSERT(out->view()->hasGridReduction());
-
-  const auto vec_domain = out->view()->domain()->domain();
+  const auto domain = out->view()->domain();
+  TORCH_INTERNAL_ASSERT(domain->hasGridReduction());
 
   const auto par_domains = rop->getParallelReductionDomains();
   const bool tidx = par_domains.find(ParallelType::TIDx) != par_domains.end();
@@ -706,7 +705,7 @@ void IRPrinter::handle(const kir::GridReduction* gr) {
      << " ( ";
   handle(rop->out());
   os << ", ";
-  if (out->view()->hasBlockReduction()) {
+  if (domain->hasBlockReduction()) {
     os << "block_result";
   } else {
     handle(rop->in());

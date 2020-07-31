@@ -1084,13 +1084,14 @@ void testGPU_FusionForLoop() {
   fusion.addInput(TV0);
   fusion.addInput(TV1);
 
-  auto ID0 = new IterDomain(new Int(0), new Int(8));
+  auto ID0 = new kir::IterDomain(new IterDomain(new Int(0), new Int(8)));
 
   TensorView* TV2 = add(TV0, TV1);
   BinaryOp* op = static_cast<BinaryOp*>(TV2->getOrigin());
   fusion.addOutput(TV2);
 
-  auto fl = new kir::ForLoop(new Int(), ID0, {op});
+  auto fl = new kir::ForLoop(new kir::Int(), ID0, {op});
+
   std::stringstream result;
   std::stringstream ref;
   result << fl;

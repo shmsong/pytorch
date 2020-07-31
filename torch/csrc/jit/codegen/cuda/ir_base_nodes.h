@@ -199,7 +199,8 @@ class TORCH_CUDA_API Val : public Statement {
   explicit Val(
       ValType _vtype,
       DataType _dtype = DataType::Null,
-      bool register_val = true);
+      bool register_val = true,
+      bool lowered = false);
 
   Val(const Val* src, IrCloner* ir_cloner);
 

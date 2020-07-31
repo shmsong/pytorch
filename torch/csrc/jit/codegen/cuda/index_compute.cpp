@@ -398,7 +398,7 @@ kir::TensorIndex* Index::getProducerIndex_impl(
       " dimensions but got one with ",
       producer->nDims());
 
-  std::vector<IterDomain*> ranges(loops_adjusted.size());
+  std::vector<kir::IterDomain*> ranges(loops_adjusted.size());
   std::transform(
       loops_adjusted.begin(),
       loops_adjusted.end(),
@@ -415,7 +415,7 @@ kir::TensorIndex* Index::getProducerIndex_impl(
       });
 
   std::vector<Val*> used_inds;
-  std::vector<IterDomain*> used_ranges;
+  std::vector<kir::IterDomain*> used_ranges;
   bool unrolled = false;
   for (size_t i = 0; i < loops_adjusted.size(); i++) {
     if (ranges[i]->getParallelType() == ParallelType::Unroll)
@@ -563,7 +563,7 @@ kir::TensorIndex* Index::getConsumerIndex_impl(
         consumer->nDims());
   }
 
-  std::vector<IterDomain*> ranges(loops.size());
+  std::vector<kir::IterDomain*> ranges(loops.size());
   std::transform(
       loops.begin(), loops.end(), ranges.begin(), [](kir::ForLoop* fl) {
         return fl->iter_domain();
@@ -576,7 +576,7 @@ kir::TensorIndex* Index::getConsumerIndex_impl(
       });
 
   std::vector<Val*> used_inds;
-  std::vector<IterDomain*> used_ranges;
+  std::vector<kir::IterDomain*> used_ranges;
   bool unrolled = false;
   {
     size_t c_i = 0, l_i = 0;

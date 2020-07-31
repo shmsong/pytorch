@@ -54,6 +54,83 @@ c10::optional<ParallelType> NamedScalar::getParallelIndex() const {
   return c10::nullopt;
 }
 
+IterDomain::IterDomain(const fuser::IterDomain* fusion_id)
+    : Val(ValType::KirIterDomain, DataType::Int, true, true),
+      start_(fusion_id->start()),
+      extent_(fusion_id->rawExtent()),
+      parallel_type_(fusion_id->getParallelType()),
+      iter_type_(fusion_id->getIterType()),
+      is_rfactor_domain_(fusion_id->isRFactorProduct()) {}
+
+IterDomain::IterDomain(const IterDomain* src, IrCloner* ir_cloner)
+    : Val(src, ir_cloner),
+      start_(ir_cloner->clone(src->start_)),
+      extent_(ir_cloner->clone(src->extent_)),
+      parallel_type_(src->parallel_type_),
+      iter_type_(src->iter_type_),
+      is_rfactor_domain_(src->is_rfactor_domain_) {}
+
+// TODO: get rid of the extent/rawExtent duplication
+Val* IterDomain::extent() const {
+  if (isThread()) {
+    if (extent_->getValType() == ValType::Scalar)
+      if (extent_->as<Int>()->isConst())
+        return extent_;
+
+    return NamedScalar::getParallelDim(getParallelType());
+  }
+  return extent_;
+}
+
+TensorDomain::TensorDomain(const fuser::TensorDomain* domain)
+    : Val(ValType::KirTensorDomain, DataType::Null, true, true) {
+  // TODO
+}
+
+bool TensorDomain::hasReduction() const {
+  return no_reduction_domain_.size() != domain_.size();
+}
+
+bool TensorDomain::hasBlockReduction() const {
+  return std::any_of(domain_.begin(), domain_.end(), [](IterDomain* id) {
+    return id->isReduction() && id->isThreadDim();
+  });
+}
+
+bool TensorDomain::hasGridReduction() const {
+  return std::any_of(domain_.begin(), domain_.end(), [](IterDomain* id) {
+    return id->isReduction() && id->isBlockDim();
+  });
+}
+
+bool TensorDomain::hasBroadcast() const {
+  return no_bcast_domain_.size() != domain_.size();
+}
+
+bool TensorDomain::hasRFactor() const {
+  return !rfactor_domain_.empty();
+}
+
+IterDomain* TensorDomain::axis(int i) const {
+  TORCH_INTERNAL_ASSERT(i >= 0 && i < int(domain_.size()));
+  return domain_[i];
+}
+
+TensorDomain::TensorDomain(const TensorDomain* src, IrCloner* ir_cloner)
+    : Val(src, ir_cloner),
+      root_domain_(ir_cloner->clone(src->root_domain_)),
+      domain_(ir_cloner->clone(src->domain_)),
+      no_bcast_domain_(ir_cloner->clone(src->no_bcast_domain_)),
+      no_reduction_domain_(ir_cloner->clone(src->no_reduction_domain_)),
+      rfactor_domain_(ir_cloner->clone(src->rfactor_domain_)),
+      contiguity_(src->contiguity()) {}
+
+TensorView::TensorView(const fuser::TensorView* tv)
+    : Val(ValType::KirTensorView, tv->getDataType().value(), true, true) {
+  // domain_ = new TensorDomain(tv->domain()); TODO
+  memory_type_ = tv->getMemoryType();
+}
+
 UnaryOp::UnaryOp(UnaryOpType type, Val* out, Val* in)
     : Expr(ExprType::KirUnaryOp), unary_op_type_{type}, out_{out}, in_{in} {
   addOutput(out);
@@ -118,6 +195,7 @@ ReductionOp::ReductionOp(const ReductionOp* src, IrCloner* ir_cloner)
 
 std::vector<IterDomain*> ReductionOp::getReductionDomains() const {
   const Val* out_val = out();
+
   TORCH_INTERNAL_ASSERT(
       out_val->getValType() == ValType::TensorView ||
           out_val->getValType() == ValType::TensorIndex,
@@ -129,6 +207,7 @@ std::vector<IterDomain*> ReductionOp::getReductionDomains() const {
   }
 
   auto vec_domain = out_val->as<TensorView>()->domain()->domain();
+
   vec_domain.erase(
       std::remove_if(
           vec_domain.begin(),
@@ -163,17 +242,19 @@ BroadcastOp::BroadcastOp(const BroadcastOp* src, IrCloner* ir_cloner)
       out_(ir_cloner->clone(src->out_)),
       in_(ir_cloner->clone(src->in_)) {}
 
-TensorIndex::TensorIndex(const TensorView* view, std::vector<Val*> indices)
-    : Val(ValType::TensorIndex, view->getDataType().value()),
-      view_(view),
+TensorIndex::TensorIndex(
+    const fuser::TensorView* view,
+    std::vector<Val*> indices)
+    : Val(ValType::TensorIndex, view->getDataType().value(), true, true),
+      view_(new TensorView(view)),
       indices_(indices) {
   TORCH_INTERNAL_ASSERT(
       std::all_of(
           indices.begin(),
           indices.end(),
           [](Val* v) {
-            return (v->getValType() == ValType::Scalar ||
-                    v->getValType() == ValType::NamedScalar) &&
+            return (v->getValType() == ValType::KirScalar ||
+                    v->getValType() == ValType::KirNamedScalar) &&
                 v->getDataType() == DataType::Int;
           }),
       "Cannot index with a value other than an int.");
@@ -302,11 +383,12 @@ Allocate::Allocate(Val* buffer, MemoryType memory_type, Val* size)
         buffer_);
   } else {
     if (buffer_->getValType().value() == ValType::TensorView) {
-      auto tv = buffer_->as<TensorView>();
-      size_ = tv->nDims() == 0 ? new Int(1) : tv->axis(0)->extent();
-      for (size_t i = 1; i < tv->nDims(); i++) {
+      const auto domain = buffer_->as<TensorView>()->domain();
+      size_ = domain->nDims() == 0 ? new Int(1) : domain->axis(0)->extent();
+      for (size_t i = 1; i < domain->nDims(); i++) {
         auto result = new Int();
-        new BinaryOp(BinaryOpType::Mul, result, size_, tv->axis(i)->extent());
+        new BinaryOp(
+            BinaryOpType::Mul, result, size_, domain->axis(i)->extent());
         size_ = result;
       }
     }
@@ -362,6 +444,12 @@ GridReduction::GridReduction(const GridReduction* src, IrCloner* ir_cloner)
       sync_buffer_(ir_cloner->clone(src->sync_buffer_)) {}
 
 std::string getPredicateFlagName(const TensorView* val) {
+  std::stringstream ss;
+  ss << "T" << val->name() << "pred";
+  return ss.str();
+}
+
+std::string getPredicateFlagName(const fuser::TensorView* val) {
   std::stringstream ss;
   ss << "T" << val->name() << "pred";
   return ss.str();

@@ -83,6 +83,10 @@ class Half;
 class Int;
 class NamedScalar;
 
+class IterDomain;
+class TensorDomain;
+class TensorView;
+
 class UnaryOp;
 class BinaryOp;
 class TernaryOp;

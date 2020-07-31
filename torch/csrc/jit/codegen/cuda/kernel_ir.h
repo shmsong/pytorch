@@ -3,6 +3,8 @@
 
 #include <torch/csrc/WindowsTorchApiMacro.h>
 
+#include <torch/csrc/jit/codegen/cuda/type.h>
+
 // TODO: remove these once the Kernel IR is separated from Fusion IR
 #include <torch/csrc/jit/codegen/cuda/ir_base_nodes.h>
 #include <torch/csrc/jit/codegen/cuda/ir_interface_nodes.h>
@@ -22,7 +24,7 @@ namespace kir {
 class TORCH_CUDA_API NamedScalar : public Val {
  public:
   NamedScalar(std::string name, DataType dtype)
-      : Val(ValType::KirNamedScalar, dtype), name_(name) {}
+      : Val(ValType::KirNamedScalar, dtype, true, true), name_(name) {}
 
   NamedScalar(const NamedScalar* src, IrCloner* ir_cloner)
       : Val(src, ir_cloner), name_(src->name_) {}
@@ -52,10 +54,12 @@ class TORCH_CUDA_API NamedScalar : public Val {
 class TORCH_CUDA_API Bool : public Val {
  public:
   Bool()
-      : Val(ValType::KirScalar, DataType::Bool), maybe_value_{c10::nullopt} {}
+      : Val(ValType::KirScalar, DataType::Bool, true, true),
+        maybe_value_(c10::nullopt) {}
 
   explicit Bool(bool value)
-      : Val(ValType::KirScalar, DataType::Bool), maybe_value_{value} {}
+      : Val(ValType::KirScalar, DataType::Bool, true, true),
+        maybe_value_(value) {}
 
   Bool(const Bool* src, IrCloner* ir_cloner)
       : Val(src, ir_cloner), maybe_value_(src->maybe_value_) {}
@@ -79,10 +83,12 @@ class TORCH_CUDA_API Float : public Val {
   using ScalarType = double;
 
   Float()
-      : Val(ValType::KirScalar, DataType::Float), maybe_value_{c10::nullopt} {}
+      : Val(ValType::KirScalar, DataType::Float, true, true),
+        maybe_value_(c10::nullopt) {}
 
   explicit Float(ScalarType value)
-      : Val(ValType::KirScalar, DataType::Float), maybe_value_{value} {}
+      : Val(ValType::KirScalar, DataType::Float, true, true),
+        maybe_value_(value) {}
 
   Float(const Float* src, IrCloner* ir_cloner)
       : Val(src, ir_cloner), maybe_value_(src->maybe_value_) {}
@@ -104,10 +110,12 @@ class TORCH_CUDA_API Float : public Val {
 class TORCH_CUDA_API Half : public Val {
  public:
   Half()
-      : Val(ValType::KirScalar, DataType::Half), maybe_value_{c10::nullopt} {}
+      : Val(ValType::KirScalar, DataType::Half, true, true),
+        maybe_value_(c10::nullopt) {}
 
   explicit Half(float value)
-      : Val(ValType::KirScalar, DataType::Half), maybe_value_{value} {}
+      : Val(ValType::KirScalar, DataType::Half, true, true),
+        maybe_value_(value) {}
 
   Half(const Half* src, IrCloner* ir_cloner)
       : Val(src, ir_cloner), maybe_value_(src->maybe_value_) {}
@@ -130,10 +138,13 @@ class TORCH_CUDA_API Int : public Val {
  public:
   using ScalarType = int64_t;
 
-  Int() : Val(ValType::KirScalar, DataType::Int), maybe_value_{c10::nullopt} {}
+  Int()
+      : Val(ValType::KirScalar, DataType::Int, true, true),
+        maybe_value_(c10::nullopt) {}
 
   explicit Int(ScalarType value)
-      : Val(ValType::KirScalar, DataType::Int), maybe_value_{value} {}
+      : Val(ValType::KirScalar, DataType::Int, true, true),
+        maybe_value_(value) {}
 
   Int(const Int* src, IrCloner* ir_cloner)
       : Val(src, ir_cloner), maybe_value_(src->maybe_value_) {}
@@ -150,6 +161,170 @@ class TORCH_CUDA_API Int : public Val {
 
  private:
   const c10::optional<ScalarType> maybe_value_;
+};
+
+class TORCH_CUDA_API IterDomain : public Val {
+ public:
+  explicit IterDomain(const fuser::IterDomain* fusion_id);
+
+  IterDomain(const IterDomain* src, IrCloner* ir_cloner);
+
+  bool isReduction() const {
+    return getIterType() == IterType::Reduction;
+  }
+
+  bool isRFactorProduct() const {
+    return is_rfactor_domain_;
+  }
+
+  bool isBroadcast() const {
+    return getIterType() == IterType::BroadcastWithStride ||
+        getIterType() == IterType::BroadcastWithoutStride;
+  }
+
+  bool isParallelized() const {
+    return getParallelType() != ParallelType::Serial;
+  }
+
+  // Return if this iter domain is mapped to a grid dimension
+  bool isBlockDim() const {
+    return (
+        getParallelType() == ParallelType::BIDz ||
+        getParallelType() == ParallelType::BIDy ||
+        getParallelType() == ParallelType::BIDx);
+  }
+
+  // Return if this iter domain is mapped to a block dimension
+  bool isThreadDim() const {
+    return (
+        getParallelType() == ParallelType::TIDz ||
+        getParallelType() == ParallelType::TIDy ||
+        getParallelType() == ParallelType::TIDx);
+  }
+
+  // Return if this iter domain is either mapped to a block or grid dimension
+  bool isThread() const {
+    return (isBlockDim() || isThreadDim());
+  }
+
+  ParallelType getParallelType() const {
+    return parallel_type_;
+  }
+
+  IterType getIterType() const {
+    return iter_type_;
+  }
+
+  Val* start() const {
+    return start_;
+  }
+
+  Val* extent() const;
+
+  Val* rawExtent() const {
+    return extent_;
+  }
+
+ private:
+  Val* const start_ = nullptr;
+  Val* const extent_ = nullptr;
+  ParallelType parallel_type_ = ParallelType::Serial;
+  IterType iter_type_ = IterType::Iteration;
+  bool is_rfactor_domain_ = false;
+};
+
+class TORCH_CUDA_API TensorDomain : public Val {
+ public:
+  explicit TensorDomain(const fuser::TensorDomain* domain);
+
+  TensorDomain(const TensorDomain* src, IrCloner* ir_cloner);
+
+  std::vector<IterDomain*>::size_type nDims() const {
+    return domain_.size();
+  }
+
+  const std::vector<IterDomain*>& domain() const {
+    return domain_;
+  }
+
+  const std::vector<bool>& contiguity() const {
+    return contiguity_;
+  }
+
+  std::string getContiguityString() const {
+    std::stringstream ss;
+    for (auto b : contiguity()) {
+      ss << (b ? "t" : "f");
+    }
+    return ss.str();
+  }
+
+  bool hasReduction() const;
+  bool hasBlockReduction() const;
+  bool hasGridReduction() const;
+  bool hasBroadcast() const;
+  bool hasRFactor() const;
+
+  const std::vector<IterDomain*>& noReductions() const {
+    return no_reduction_domain_;
+  }
+
+  const std::vector<IterDomain*>& noBroadcasts() const {
+    return no_bcast_domain_;
+  }
+
+  const std::vector<IterDomain*>& rootDomain() const {
+    return root_domain_;
+  };
+
+  const std::vector<IterDomain*>& rfactorDomain() const {
+    return rfactor_domain_;
+  };
+
+  void resetDomains() {
+    no_reduction_domain_ = noReductions(domain_);
+    no_bcast_domain_ = noBroadcasts(domain_);
+  }
+
+  IterDomain* axis(int i) const;
+
+  size_t posOf(IterDomain* id) const;
+
+  static std::vector<IterDomain*> noReductions(const std::vector<IterDomain*>&);
+  static std::vector<IterDomain*> noBroadcasts(const std::vector<IterDomain*>&);
+
+  static bool hasBroadcast(const std::vector<IterDomain*>&);
+  static bool hasReduction(const std::vector<IterDomain*>&);
+
+  // pair is in order where second is the consumer of first
+  std::pair<TensorDomain*, TensorDomain*> rFactor(const std::vector<int>& axes);
+
+ private:
+  const std::vector<IterDomain*> root_domain_;
+  std::vector<IterDomain*> domain_;
+  std::vector<IterDomain*> no_bcast_domain_;
+  std::vector<IterDomain*> no_reduction_domain_;
+  const std::vector<IterDomain*> rfactor_domain_;
+  const std::vector<bool> contiguity_;
+};
+
+class TORCH_CUDA_API TensorView : public Val {
+ public:
+  explicit TensorView(const fuser::TensorView* tv);
+
+  TensorView(const TensorView* src, IrCloner* ir_cloner);
+
+  TensorDomain* domain() const {
+    return domain_;
+  }
+
+  MemoryType getMemoryType() const {
+    return memory_type_;
+  }
+
+ private:
+  TensorDomain* domain_ = nullptr;
+  MemoryType memory_type_ = MemoryType::Global;
 };
 
 class TORCH_CUDA_API UnaryOp : public Expr {
@@ -254,10 +429,11 @@ class TORCH_CUDA_API ReductionOp : public Expr {
     return reduction_op_type_;
   }
 
-  std::vector<IterDomain*> getReductionDomains() const;
-
   std::unordered_map<ParallelType, IterDomain*, TypeHash>
   getParallelReductionDomains() const;
+
+ private:
+  std::vector<IterDomain*> getReductionDomains() const;
 
  private:
   const BinaryOpType reduction_op_type_;
@@ -266,12 +442,9 @@ class TORCH_CUDA_API ReductionOp : public Expr {
   Val* const in_ = nullptr;
 };
 
-// TODO: Fill out TensorIndex, which is a list of Ints used to directly index a
-// TensorView. It is not the flattened index, which needs to be computed using
-// stride information.
 class TORCH_CUDA_API TensorIndex : public Val {
  public:
-  TensorIndex(const TensorView* view, std::vector<Val*> indices);
+  TensorIndex(const fuser::TensorView* view, std::vector<Val*> indices);
 
   TensorIndex(const TensorIndex* src, IrCloner* ir_cloner);
 
@@ -536,6 +709,7 @@ class TORCH_CUDA_API GridReduction : public Expr {
 };
 
 std::string getPredicateFlagName(const TensorView* val);
+std::string getPredicateFlagName(const fuser::TensorView* val);
 
 // A minimal builder interface
 

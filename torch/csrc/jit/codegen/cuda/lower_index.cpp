@@ -186,7 +186,7 @@ void IndexLowering::handle(ReductionOp* rop) {
         buffer_ids.end());
 
     Val* buffer_size =
-        buffer_ids.empty() ? new Int(1) : buffer_ids[0]->rawExtent();
+        buffer_ids.empty() ? new kir::Int(1) : buffer_ids[0]->rawExtent();
     for (size_t i = 1; i < buffer_ids.size(); i++) {
       buffer_size = mul(buffer_size, buffer_ids[i]->rawExtent());
     }
@@ -201,16 +201,16 @@ void IndexLowering::handle(ReductionOp* rop) {
             }),
         sync_ids.end());
 
-    Val* sync_size = sync_ids.empty() ? new Int(1) : sync_ids[0]->rawExtent();
+    Val* sync_size = sync_ids.empty() ? new kir::Int(1) : sync_ids[0]->rawExtent();
     for (size_t i = 1; i < sync_ids.size(); i++) {
       sync_size = mul(sync_size, sync_ids[i]->rawExtent());
     }
 
-    IterDomain* buffer_id = new IterDomain(new Int(0), buffer_size);
+    IterDomain* buffer_id = new IterDomain(new kir::Int(0), buffer_size);
     TensorView* reduce_buffer_tv = new TensorView(
         new TensorDomain({buffer_id}), out->getDataType().value());
 
-    IterDomain* sync_id = new IterDomain(new Int(0), sync_size);
+    IterDomain* sync_id = new IterDomain(new kir::Int(0), sync_size);
     TensorView* reduce_sync_tv =
         new TensorView(new TensorDomain({sync_id}), DataType::Int);
 
