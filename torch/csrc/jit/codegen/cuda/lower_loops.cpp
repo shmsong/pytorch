@@ -230,7 +230,8 @@ void LoopNestGenerator::initReduction(
     }
   } else {
     if (alloc_expr != nullptr) {
-      // If there is an allocation for this tensor view place this loop nest after it
+      // If there is an allocation for this tensor view place this loop nest
+      // after it
       insert_loop->body().insert_after(alloc_expr, init_loop_nest);
     } else {
       // Otherwise we're allocating a global value
@@ -240,8 +241,8 @@ void LoopNestGenerator::initReduction(
 }
 
 void LoopNestGenerator::handle(Expr* expr) {
-
-  // Check if it's a tensor view expression we need to place in the loop nest structure
+  // Check if it's a tensor view expression we need to place in the loop nest
+  // structure
   if (!ir_utils::isTVOp(expr)) {
     for (auto out : expr->outputs()) {
       TORCH_INTERNAL_ASSERT(
@@ -283,7 +284,6 @@ void LoopNestGenerator::handle(Expr* expr) {
   // Look at each axis individually in out's domain
   for (int64_t out_i = 0; out_i < (int64_t)out->getThisComputeAtAxis();
        out_i++) {
-
     // Grab the axis information
     auto ca_point = out->getComputeAtAxis(out_i);
     auto ca_view = ca_point.second;
