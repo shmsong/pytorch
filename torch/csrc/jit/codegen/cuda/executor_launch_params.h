@@ -95,7 +95,7 @@ class TORCH_CUDA_API LaunchParams {
   // Returns false if value associated with p_type == UNINITIALIZED_VAL
   bool hasDim(ParallelType p_type) const;
 
-  bool operator==(const LaunchParams &other) const;
+  bool operator==(const LaunchParams& other) const;
 
  private:
   // Spell them out because I want signed ints to know if they were initialized

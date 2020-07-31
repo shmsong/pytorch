@@ -81,10 +81,9 @@ const int64_t& LaunchParams::getRawVal(ParallelType p_type) const {
   }
 }
 
-bool LaunchParams::operator==(const LaunchParams &other) const {
+bool LaunchParams::operator==(const LaunchParams& other) const {
   return gdimx_ == other.gdimx_ && gdimy_ == other.gdimy_ &&
-      bdimx_ == other.bdimx_ && bdimy_ == other.bdimy_ &&
-      smem_ == other.smem_;
+      bdimx_ == other.bdimx_ && bdimy_ == other.bdimy_ && smem_ == other.smem_;
 }
 
 } // namespace cuda
