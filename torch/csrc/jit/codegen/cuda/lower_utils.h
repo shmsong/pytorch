@@ -132,6 +132,53 @@ ParallelTypeBitmap getParallelBroadcastDomains(
     const ThreadPredicateMap& preds);
 
 } // namespace ir_utils
+
+namespace loop_utils {
+
+// I wanted to make the tv's in these util functions constant, but that started
+// a long const-ness project going into TensorView (making functions const
+// there) then into lower_loops where we sort exprs; TODO: We should fix this,
+// but at a later time.
+
+// Go through the iter domains in loops, and (in order) grab the ones that match
+// tv->getComputeAtAxis(...), map from the IterDomain in
+// tv->getComputeAtAxis(...) to its corresponding loop. If there are reduction
+// axes in the loops, assume we need to match reduction axes, otherwise assume
+// we ignore them.
+std::unordered_map<IterDomain*, kir::ForLoop*> computeAtToLoopMap(
+    TensorView* tv,
+    const std::vector<kir::ForLoop*>& loops);
+
+// Return inverse map of computeAtToLoopMap
+std::unordered_map<kir::ForLoop*, IterDomain*> loopToComputeAtMap(
+    TensorView* tv,
+    const std::vector<kir::ForLoop*>& loops);
+
+// Return an ordered set of ForLoops found in
+// computeAtToLoopMap/loopToComputeAtMap
+// TODO: Check if I needed this function?
+std::vector<kir::ForLoop*> getNeededLoops(
+    TensorView* tv,
+    const std::vector<kir::ForLoop*>& loops);
+
+// Run through loops which should have all indices needed to index into tv.
+// Validate these indices, and potentially modify them for use with tv.
+// We need to know the allocation point, because any indices outside it should
+// be 0 if we're not global memory.
+std::vector<Val*> getIndices(
+    TensorView* tv,
+    const std::vector<kir::ForLoop*>& loops);
+
+// Figure out which loop the allocation needs to be in. Returns nullptr if
+// outside the first loop in loops. Also find out which index in tv the
+// first dimension that needs to be allocated is. Meaning we need to allocate
+// that local axis and above.
+std::pair<kir::ForLoop*, int64_t> getAllocPoint(
+    TensorView* tv,
+    const std::vector<kir::ForLoop*>& loops);
+
+} // namespace loop_utils
+
 } // namespace fuser
 } // namespace jit
 } // namespace torch

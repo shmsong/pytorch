@@ -131,11 +131,6 @@ class Index {
   static kir::TensorIndex* getConsumerIndex(
       const TensorView* consumer,
       const std::vector<kir::ForLoop*>& loops);
-
-  // Will run inds through back prop index computation for tv
-  static kir::TensorIndex* manualBackprop(
-      TensorView tv,
-      std::vector<Val*> inds);
 };
 
 } // namespace fuser

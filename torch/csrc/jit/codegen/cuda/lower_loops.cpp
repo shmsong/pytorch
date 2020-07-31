@@ -11,25 +11,15 @@ namespace jit {
 namespace fuser {
 
 // Create, place, and return the allocation for tv
-Expr* LoopNestGenerator::pushAlloc(TensorView* tv, IterDomain* alloc_id) {
+Expr* LoopNestGenerator::pushAlloc(TensorView* tv) {
   TORCH_INTERNAL_ASSERT(
       !(FusionGuard::getCurFusion()->hasInput(tv) ||
         FusionGuard::getCurFusion()->hasOutput(tv)),
       "Tried to allocate an input or output tensor.");
 
-  // Alloc id is the iteration domain associated with the allocation point of
-  // tv, figure out which local axis it is so we can determine the allocation
-  // size.
-  size_t alloc_pos = 0;
-
-  if (alloc_id != nullptr) {
-    for (auto tv_i = alloc_pos; tv_i < tv->nDims(); tv_i++) {
-      if (alloc_id == tv->getComputeAtAxis(tv_i).first) {
-        alloc_pos = tv_i + 1;
-        break;
-      }
-    }
-  }
+  auto alloc_point = loop_utils::getAllocPoint(tv, for_loops);
+  auto alloc_loop = alloc_point.first;
+  auto alloc_pos = alloc_point.second;
 
   // Grab the dimensions the allocation will be based on to compute a size
   std::vector<Val*> alloc_dims;
@@ -68,17 +58,9 @@ Expr* LoopNestGenerator::pushAlloc(TensorView* tv, IterDomain* alloc_id) {
   // Create the allocation node
   kir::Allocate* alloc = new kir::Allocate(tv, tv->getMemoryType(), size);
 
-  // Find which for loop we need to place this allocation
-  bool inserted = false;
-  for (auto loop : for_loops) {
-    if (loop->iter_domain() == alloc_id) {
-      loop->body().insert(0, alloc);
-      inserted = true;
-      break;
-    }
-  }
-
-  if (!inserted) {
+  if (alloc_loop != nullptr) {
+    alloc_loop->body().insert(0, alloc);
+  } else {
     lowered_exprs.insert(lowered_exprs.begin(), alloc);
   }
 
@@ -118,22 +100,10 @@ void LoopNestGenerator::pushBack(Expr* expr) {
 void LoopNestGenerator::initReduction(
     TensorView* tv,
     Val* init_val,
-    IterDomain* alloc_id,
     Expr* alloc_expr) {
-  // This logic was taken from pushAlloc, as the initialization loop nest will
-  // go at the same place.
-  size_t alloc_pos = 0;
-
-  // Allocation id is the iteration domain associated with the for loop which we
-  // will place this initialization loop nest in
-  if (alloc_id != nullptr) {
-    for (auto tv_i = alloc_pos; tv_i < tv->nDims(); tv_i++) {
-      if (alloc_id == tv->getComputeAtAxis(tv_i).first) {
-        alloc_pos = tv_i + 1;
-        break;
-      }
-    }
-  }
+  auto alloc_point = loop_utils::getAllocPoint(tv, for_loops);
+  auto alloc_loop = alloc_point.first;
+  auto alloc_pos = alloc_point.second;
 
   // Grab the IDs that will be involved in the initialization, ignore reduction
   // dimensions. Everything else will be iterated over to cover the entire
@@ -206,17 +176,10 @@ void LoopNestGenerator::initReduction(
     inner_fl->body().push_back(init_stmt);
   }
 
-  // Figure out which loop we need to place this initialization loop in.
-  kir::ForLoop* insert_loop = nullptr;
-  for (auto loop : for_loops) {
-    if (loop->iter_domain() == alloc_id) {
-      insert_loop = loop;
-      break;
-    }
-  }
-
-  // If we don't find an insertion loop it means it needs to go in lowered_exprs
-  if (insert_loop == nullptr) {
+  // If we don't have an alloc_loop defined it means it needs to go in
+  // lowered_exprs Make sure to place after the allocation of what we're
+  // initializing if there is one.
+  if (alloc_loop == nullptr) {
     if (alloc_expr != nullptr) {
       auto it =
           std::find(lowered_exprs.begin(), lowered_exprs.end(), alloc_expr);
@@ -232,10 +195,10 @@ void LoopNestGenerator::initReduction(
     if (alloc_expr != nullptr) {
       // If there is an allocation for this tensor view place this loop nest
       // after it
-      insert_loop->body().insert_after(alloc_expr, init_loop_nest);
+      alloc_loop->body().insert_after(alloc_expr, init_loop_nest);
     } else {
       // Otherwise we're allocating a global value
-      insert_loop->body().insert(0, init_loop_nest);
+      alloc_loop->body().insert(0, init_loop_nest);
     }
   }
 }
@@ -272,9 +235,7 @@ void LoopNestGenerator::handle(Expr* expr) {
   TensorView* out = expr->output(0)->as<TensorView>();
 
   // Figure out what the entire loop structure should look like.
-  std::deque<
-      std::pair<torch::jit::fuser::IterDomain*, torch::jit::fuser::TensorView*>>
-      loop_structure;
+  std::deque<std::pair<IterDomain*, TensorView*>> loop_structure;
 
   // As we go through iteration domains track the previous view
   TensorView* last_ca_view = nullptr;
@@ -302,7 +263,8 @@ void LoopNestGenerator::handle(Expr* expr) {
     } else {
       // This is a new view, figure out where we are in it, and start from there
       for (start = 0; start < ca_view->nDims(); start++) {
-        if (loop_structure.back() == ca_view->getComputeAtAxis(start)) {
+        if (loop_structure.back().first ==
+            ca_view->getComputeAtAxis(start).first) {
           break;
         }
       }
@@ -357,27 +319,18 @@ void LoopNestGenerator::handle(Expr* expr) {
     loops_to_open.pop_front();
   }
 
-  // Figure out where we want to place alloc/reduction initialization
-  IterDomain* alloc_id = nullptr;
-  for (size_t out_i = 0; out_i < out->getThisComputeAtAxis(); out_i++) {
-    auto ca_id = out->getComputeAtAxis(out_i).first;
-    if (ca_id->getParallelType() == ParallelType::Unroll)
-      break;
-    alloc_id = ca_id;
-  }
-
   Expr* alloc_expr = nullptr;
   // Place the allocation for out
   if (!FusionGuard::getCurFusion()->hasInput(out) &&
       !FusionGuard::getCurFusion()->hasOutput(out)) {
-    alloc_expr = pushAlloc(out, alloc_id);
+    alloc_expr = pushAlloc(out);
   }
 
   //  If this is a reduction, initialize the output (open for loops to inner
   //  most, predicate, initialize, place next after allocation if exists, close
   //  to computeAt)
   if (out->hasReduction())
-    initReduction(out, expr->as<ReductionOp>()->init(), alloc_id, alloc_expr);
+    initReduction(out, expr->as<ReductionOp>()->init(), alloc_expr);
 
   //  Place the expression
   pushBack(expr);

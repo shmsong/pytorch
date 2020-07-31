@@ -1,4 +1,5 @@
 #include <torch/csrc/jit/codegen/cuda/lower_utils.h>
+#include <torch/csrc/jit/codegen/cuda/arith.h>
 #include <torch/csrc/jit/codegen/cuda/ir_iostream.h>
 #include <torch/csrc/jit/codegen/cuda/lower_thread_predicate.h>
 
@@ -623,6 +624,143 @@ ParallelTypeBitmap getParallelBroadcastDomains(
 }
 
 } // namespace ir_utils
+
+namespace loop_utils {
+
+std::unordered_map<IterDomain*, kir::ForLoop*> computeAtToLoopMap(
+    TensorView* tv,
+    const std::vector<kir::ForLoop*>& loops) {
+  // Map we're generating.
+  std::unordered_map<IterDomain*, kir::ForLoop*> map;
+
+  // If we're initializing a reduction buffer, we won't have the reduction
+  // loops. If we're actually performing the reduction, we will.
+
+  bool need_reduction_axes =
+      std::any_of(loops.begin(), loops.end(), [](kir::ForLoop* fl) {
+        return fl->iter_domain()->isReduction();
+      });
+
+  std::deque<kir::ForLoop*> loops_copy(loops.begin(), loops.end());
+
+  // Look at each axis individually in out's domain
+  for (int64_t tv_i = 0; tv_i < (int64_t)tv->nDims(); tv_i++) {
+    if (!need_reduction_axes && tv->axis(tv_i)->isReduction()) {
+      continue;
+    }
+
+    // Grab the axis information
+    auto ca_point = tv->getComputeAtAxis(tv_i);
+    auto ca_view = ca_point.second;
+    auto ca_id = ca_point.first;
+
+    while (!loops_copy.empty() && ca_id != loops_copy.front()->iter_domain()) {
+      loops_copy.pop_front();
+    }
+
+    TORCH_INTERNAL_ASSERT(
+        !loops_copy.empty(), "Could not find all required axes for indexing.");
+
+    map[ca_id] = loops_copy.front();
+    loops_copy.pop_front();
+  }
+
+  return map;
+}
+
+std::unordered_map<kir::ForLoop*, IterDomain*> loopToComputeAtMap(
+    TensorView* tv,
+    const std::vector<kir::ForLoop*>& loops) {
+  auto inverse_map = computeAtToLoopMap(tv, loops);
+  std::unordered_map<kir::ForLoop*, IterDomain*> map;
+  for (auto entry : inverse_map) {
+    map[entry.second] = entry.first;
+  }
+  return map;
+}
+
+std::vector<kir::ForLoop*> getNeededLoops(
+    TensorView* tv,
+    const std::vector<kir::ForLoop*>& loops) {
+  std::vector<kir::ForLoop*> needed_loops;
+
+  auto ca2loop = computeAtToLoopMap(tv, loops);
+
+  // Look at each axis individually in out's domain
+  for (int64_t tv_i = 0; tv_i < (int64_t)tv->nDims(); tv_i++) {
+    // Grab the axis information
+    auto ca_id = tv->getComputeAtAxis(tv_i).first;
+    auto it = ca2loop.find(ca_id);
+    if (it != ca2loop.end()) {
+      needed_loops.push_back(it->second);
+    }
+  }
+
+  return needed_loops;
+}
+
+std::vector<Val*> getIndices(
+    TensorView* tv,
+    const std::vector<kir::ForLoop*>& loops) {
+  std::vector<Val*> indices(tv->nDims(), nullptr);
+
+  auto ca2loop = computeAtToLoopMap(tv, loops);
+
+  auto zero = new Int(0);
+
+  // Look at each axis individually in out's domain
+  for (int64_t tv_i = 0; tv_i < (int64_t)tv->nDims(); tv_i++) {
+    // Grab the axis information
+    auto ca_id = tv->getComputeAtAxis(tv_i).first;
+    auto it = ca2loop.find(ca_id);
+    if (it != ca2loop.end()) {
+      indices[tv_i] = it->second->index();
+    } else {
+      indices[tv_i] = zero;
+    }
+  }
+
+  return indices;
+}
+
+std::pair<kir::ForLoop*, int64_t> getAllocPoint(
+    TensorView* tv,
+    const std::vector<kir::ForLoop*>& loops) {
+  // If in global memory, it can be all the way outside the loops.
+  if (tv->getMemoryType() == MemoryType::Global) {
+    return std::make_pair(nullptr, 0);
+  }
+
+  // Figure out where we want to place alloc/reduction initialization. We want
+  // outside an unroll loop, or inside our computeAt point.
+  kir::ForLoop* alloc_loop = nullptr;
+
+  std::deque<kir::ForLoop*> loops_copy(loops.begin(), loops.end());
+
+  // Look at each axis individually in out's domain
+  for (int64_t tv_i = 0; tv_i < (int64_t)tv->getThisComputeAtAxis(); tv_i++) {
+    // Grab the axis ID
+    auto ca_id = tv->getComputeAtAxis(tv_i).first;
+
+    while (!loops_copy.empty() && ca_id != loops_copy.front()->iter_domain()) {
+      if (loops_copy.front()->iter_domain()->getParallelType() ==
+          ParallelType::Unroll) {
+        return std::make_pair(alloc_loop, tv_i);
+      }
+      loops_copy.pop_front();
+    }
+
+    TORCH_INTERNAL_ASSERT(
+        !loops_copy.empty(), "Could not find all required axes for indexing.");
+
+    alloc_loop = loops_copy.front();
+    loops_copy.pop_front();
+  }
+
+  return std::make_pair(alloc_loop, (int64_t)tv->getThisComputeAtAxis());
+}
+
+} // namespace loop_utils
 
 } // namespace fuser
 } // namespace jit

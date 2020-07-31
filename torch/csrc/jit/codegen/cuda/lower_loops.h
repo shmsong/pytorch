@@ -50,7 +50,7 @@ class TORCH_CUDA_API LoopNestGenerator : public OptOutDispatch {
 
   // Create the allocation for tv, place it inside the loop associated with
   // alloc_id, return the node
-  Expr* pushAlloc(TensorView*, IterDomain* alloc_id);
+  Expr* pushAlloc(TensorView*);
 
   // Fusion shared_memory values
   // Tracks if shared memory is modified
@@ -77,18 +77,10 @@ class TORCH_CUDA_API LoopNestGenerator : public OptOutDispatch {
   // straight to lower_exprs
   void pushBack(Expr*);
 
-  // Update for loop structure based on this TensorView, see implementation for
-  // more details
-  void updateLoopNest(TensorView*);
-
   // Initialize a buffer to init_val. If this buffer is in smem or registers,
   // pass in its allocation statement so we can make sure that we insert this
   // initialization after the allocation.
-  void initReduction(
-      TensorView* tv,
-      Val* init_val,
-      IterDomain* alloc_id,
-      Expr* alloc_expr = nullptr);
+  void initReduction(TensorView* tv, Val* init_val, Expr* alloc_expr = nullptr);
 
   // Check if expr is a TV op and handle accordingly.
   void handle(Expr*) final;
