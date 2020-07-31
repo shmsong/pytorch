@@ -65,7 +65,7 @@ class TORCH_CUDA_API LoopNestGenerator : public OptOutDispatch {
   // Return the status of the shared memory buffer
   // False if TensorView is not shared memory buffer
   bool isModifiedSharedMemory(Val* key) const;
-  
+
   // Open a new inner most for loop, track which TV it was constructed from
   // according to the computeAt chain.
   void openFor(std::pair<IterDomain*, TensorView*>);
