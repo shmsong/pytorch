@@ -4418,7 +4418,7 @@ void testGPU_FusionReductionSchedulerDimShmoo() {
           TORCH_CHECK(rparams != c10::nullopt, "Reduction is not found!");
           if (fp16) {
             if (axis == 0) {
-              int tidx = rparams.value().bdimx.value;
+              int tidx = rparams.value().lparams.bdimx();
               tv1_cast->split(-1, tidx);
               tv1_cast->axis(-1)->parallelize(ParallelType::TIDx);
               tv1_cast->axis(-2)->parallelize(ParallelType::BIDx);

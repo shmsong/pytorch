@@ -315,7 +315,8 @@ ReductionParams reductionHeuristic(
   int device_multiprocessor_count =
       at::cuda::getCurrentDeviceProperties()->multiProcessorCount;
 
-  int blocks_per_sm = device_max_threads_per_multiprocessor / (bdimx * bdimy);
+  int blocks_per_sm = device_max_threads_per_multiprocessor /
+      (bdimx * bdimy);
   int target_grid_size = device_multiprocessor_count * blocks_per_sm;
 
   // Setting the number of blocks based on the number of outputs
@@ -348,17 +349,15 @@ ReductionParams reductionHeuristic(
               << " Cross Block? " << rparams.cross_block << " Cross Grid? "
               << rparams.cross_grid << std::endl
               << "Recommended Blocking:" << std::endl
-              << "\tGridX: " << gdimx << " GridY: " << gdimy
-              << " BlckX: " << bdimx << " BlckY: " << bdimy << std::endl
+              << "\tGridX: " << gdimx
+              << " GridY: " << gdimy
+              << " BlckX: " << bdimx
+              << " BlckY: " << bdimy << std::endl
               << "====================================" << std::endl;
   }
 
-  rparams.lparams = LaunchParams(
-      LaunchParams::UNINITIALIZED_VAL,
-      gdimy,
-      LaunchParams::UNINITIALIZED_VAL,
-      bdimx,
-      bdimy,
+  rparams.lparams = LaunchParams(LaunchParams::UNINITIALIZED_VAL, gdimy,
+      LaunchParams::UNINITIALIZED_VAL, bdimx, bdimy,
       LaunchParams::UNINITIALIZED_VAL);
   return rparams;
 }
