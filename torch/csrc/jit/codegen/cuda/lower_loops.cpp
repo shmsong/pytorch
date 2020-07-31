@@ -331,7 +331,7 @@ void LoopNestGenerator::handle(Expr* expr) {
   // We're up to the compute at point in loop_structure, grab the remaining
   // axes.
   for (int64_t out_i = (int64_t)out->getThisComputeAtAxis();
-       out_i < out->nDims();
+       out_i < (int64_t)out->nDims();
        out_i++) {
     // It's actually local, but getComputeAtAxis returns a std::pair, axis
     // doesn't
