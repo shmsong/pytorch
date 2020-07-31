@@ -40,6 +40,10 @@ class TORCH_CUDA_API LoopNestGenerator : public OptOutDispatch {
   // Track the active computeAt scope, and what view we're "computeAt-ing" into
   std::vector<std::pair<IterDomain*, TensorView*>> compute_at_scope;
 
+  // Track the array initialization expressions as they need be
+  // treated differently when adding predicatation.
+  std::unordered_set<Expr*> init_exprs_;
+
   // Predicates from ThreadPredicates that we will extend to reduction buffer
   // initialization
   ThreadPredicateMap& thread_predicates_;
@@ -48,6 +52,20 @@ class TORCH_CUDA_API LoopNestGenerator : public OptOutDispatch {
   // alloc_id, return the node
   Expr* pushAlloc(TensorView*, IterDomain* alloc_id);
 
+  // Fusion shared_memory values
+  // Tracks if shared memory is modified
+  std::unordered_map<Val*, bool> smem_;
+
+  // Clear the modify status for all shared memory buffers
+  void cleanSharedMemory();
+
+  // Toggle modify status for this shared memory buffer
+  void modifySharedMemory(Val* key);
+
+  // Return the status of the shared memory buffer
+  // False if TensorView is not shared memory buffer
+  bool isModifiedSharedMemory(Val* key) const;
+  
   // Open a new inner most for loop, track which TV it was constructed from
   // according to the computeAt chain.
   void openFor(std::pair<IterDomain*, TensorView*>);
@@ -78,18 +96,21 @@ class TORCH_CUDA_API LoopNestGenerator : public OptOutDispatch {
   // Run the pass and accumulate output in lowered_exprs
   void generate(const std::vector<Expr*>& exprs);
 
-  LoopNestGenerator(Fusion* _fusion, ThreadPredicateMap& _thread_predicates)
-      : fusion_(_fusion), thread_predicates_(_thread_predicates) {}
-
  public:
-  static std::vector<Expr*> getLoopNest(
-      Fusion* fusion,
-      std::vector<Expr*> exprs,
-      ThreadPredicateMap& thread_predicates) {
-    FusionGuard fg(fusion);
-    LoopNestGenerator lng(fusion, thread_predicates);
-    lng.generate(exprs);
-    return lng.lowered_exprs;
+  LoopNestGenerator(
+      Fusion* _fusion,
+      ThreadPredicateMap& _thread_predicates,
+      const std::vector<Expr*>& exprs)
+      : fusion_(_fusion), thread_predicates_(_thread_predicates) {
+    generate(exprs);
+  }
+
+  const auto& loweredExprs() const {
+    return lowered_exprs;
+  }
+
+  const auto& initExprs() const {
+    return init_exprs_;
   }
 };
 

@@ -29,6 +29,7 @@ Statement* IrCloner::clone(const Statement* statement) {
     // that something went horribly wrong.
     TORCH_INTERNAL_ASSERT(new_node != nullptr);
     TORCH_INTERNAL_ASSERT(clones_map_[statement] == new_node);
+    TORCH_INTERNAL_ASSERT(new_node->fusion() == fusion_);
 
     return new_node;
   }
@@ -37,6 +38,7 @@ Statement* IrCloner::clone(const Statement* statement) {
 void IrCloner::registerClone(const Statement* src, Statement* clone) {
   TORCH_CHECK(src != nullptr);
   TORCH_CHECK(clone != nullptr);
+  TORCH_CHECK(clone->fusion() == fusion_);
   TORCH_CHECK(clones_map_.insert({src, clone}).second);
 }
 
@@ -158,6 +160,10 @@ void IrCloner::handle(const kir::TensorIndex* node) {
 
 void IrCloner::handle(const kir::Allocate* node) {
   clone_ = new kir::Allocate(node, this);
+}
+
+void IrCloner::handle(const kir::Sync* node) {
+  clone_ = new kir::Sync(node, this);
 }
 
 void IrCloner::handle(const kir::ForLoop* node) {

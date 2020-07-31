@@ -58,7 +58,7 @@ UnaryOp::UnaryOp(UnaryOpType type, Val* out, Val* in)
     : Expr(ExprType::KirUnaryOp), unary_op_type_{type}, out_{out}, in_{in} {
   addOutput(out);
   addInput(in);
-  name_ = FusionGuard::getCurFusion()->registerExpr(this);
+  name_ = FusionGuard::getCurFusion()->registerLoweredExpr(this);
 }
 
 UnaryOp::UnaryOp(const UnaryOp* src, IrCloner* ir_cloner)
@@ -76,7 +76,7 @@ BinaryOp::BinaryOp(BinaryOpType type, Val* out, Val* lhs, Val* rhs)
   addOutput(out);
   addInput(lhs);
   addInput(rhs);
-  name_ = FusionGuard::getCurFusion()->registerExpr(this);
+  name_ = FusionGuard::getCurFusion()->registerLoweredExpr(this);
 }
 
 BinaryOp::BinaryOp(const BinaryOp* src, IrCloner* ir_cloner)
@@ -106,7 +106,7 @@ ReductionOp::ReductionOp(
       in_(in) {
   addOutput(out);
   addInput(in);
-  name_ = FusionGuard::getCurFusion()->registerExpr(this);
+  name_ = FusionGuard::getCurFusion()->registerLoweredExpr(this);
 }
 
 ReductionOp::ReductionOp(const ReductionOp* src, IrCloner* ir_cloner)
@@ -155,7 +155,7 @@ BroadcastOp::BroadcastOp(Val* out, Val* in)
   TORCH_CHECK(out->getValType().value() == ValType::TensorIndex);
   addOutput(out);
   addInput(in);
-  name_ = FusionGuard::getCurFusion()->registerExpr(this);
+  name_ = FusionGuard::getCurFusion()->registerLoweredExpr(this);
 }
 
 BroadcastOp::BroadcastOp(const BroadcastOp* src, IrCloner* ir_cloner)
@@ -245,7 +245,7 @@ ForLoop::ForLoop(
       "Cannot create a for loop with an index that is not an int.");
   addInput(index);
   addInput(iter_domain);
-  name_ = FusionGuard::getCurFusion()->registerExpr(this);
+  name_ = FusionGuard::getCurFusion()->registerLoweredExpr(this);
   for (Expr* expr : body) {
     body_.push_back(expr);
   }
@@ -265,7 +265,7 @@ IfThenElse::IfThenElse(
     Expr* parent_scope)
     : Expr(ExprType::IfThenElse), cond_{cond}, parent_scope_(parent_scope) {
   addInput(cond);
-  name_ = FusionGuard::getCurFusion()->registerExpr(this);
+  name_ = FusionGuard::getCurFusion()->registerLoweredExpr(this);
 
   for (auto* expr : if_body)
     body_.push_back(expr);
@@ -326,7 +326,7 @@ Allocate::Allocate(Val* buffer, MemoryType memory_type, Val* size)
   }
 
   addInput(size_);
-  name_ = FusionGuard::getCurFusion()->registerExpr(this);
+  name_ = FusionGuard::getCurFusion()->registerLoweredExpr(this);
 }
 
 Allocate::Allocate(const Allocate* src, IrCloner* ir_cloner)
@@ -334,6 +334,12 @@ Allocate::Allocate(const Allocate* src, IrCloner* ir_cloner)
       buffer_(ir_cloner->clone(src->buffer_)),
       memory_type_(src->memory_type_),
       size_(ir_cloner->clone(src->size_)) {}
+
+Sync::Sync() : Expr(ExprType::Sync) {
+  name_ = FusionGuard::getCurFusion()->registerExpr(this);
+}
+
+Sync::Sync(const Sync* src, IrCloner* ir_cloner) : Expr(src, ir_cloner) {}
 
 GridReduction::GridReduction(ReductionOp* reduction_op)
     : Expr(ExprType::GridReduction), reduction_op_(reduction_op) {
