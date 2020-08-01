@@ -24,27 +24,32 @@ namespace cuda {
 
 // [ Note -- cache level ]
 //
-// 2 level cache behind PyTorch IR node `prim::CudaFusionGroup`:
-//     1. GraphCache
-//     2. FusionExecutorCache
+// 2 level hierarchical cache behind PyTorch IR node `prim::CudaFusionGroup`:
+//     a. GraphCache
+//        cache on graph computation and (ideally) contiguity / broadcast;
+//     b. FusionExecutorCache
+//        cache on input sizes -> heuristic cache?;
 //
-// The node stores:
-//     1. a PyTorch IR in `attr::Subgraph`
-//     2. an int in `attr::cache_id`, which is a hashed value from stringified
-//        `attr::Subgraph`.
+// CudaFusionManager holds the cache and handles interfacing to CudaFusionGroup
+// node, including selection, construction and execution of FusionExecutors.
+// 
+// CudaFusionManager bridges CudaFusionGroup to GraphCache.
+// Therefore, we want to cache on stringified graph. But it is expensive to
+// stringify and hash on a computational graph, we cache the hash of a
+// stringified graph on node via cache_id.
 //
-// We have 2 unordered_map:
-//   std::unordered_map<std::string, int32_t> graph_cache_id_;
-//   std::unordered_map<int64_t, std::unique_ptr<FusionExecutor>> graph_cache_;
+// CudaFusionGroup node stores:
+//     i.  a PyTorch IR in `attr::Subgraph`
+//     ii. an int in `attr::cache_id`, (a cached hash value of `attr::Subgraph`)
 //
-// CudaFusionManager holds a FusionExecutor and handles all interfacing
-// including compilation and execution.
+// We have 2 unordered_map at CudaFusionGroup:
+//   std::unordered_map<std::string, int32_t> graph_cache_ids_;
+//   std::unordered_map<int64_t, std::unique_ptr<GraphCache>> graph_caches_;
 //
-// We cache two maps here:
-//   a. string of graph -> kernel_id
-//   b. kernel_id -> FusionExecutor
-//
-// This allows FusionExecutor reuse across nodes;
+// Mapping from std::string to graph_cache_id ensures that we assign the same 
+// cache_id to CudaFusionGroup with identical computational grah, allowing
+// kernel reuse; Direct mapping from cache_id to GraphCache allows efficient
+// graph_cache indexing;
 
 namespace {
 c10::Device getDevice(const at::ArrayRef<IValue>& inputs) {
@@ -83,12 +88,12 @@ class CudaFusionManager {
     Canonicalize(graph, false);
     auto repr = graph->toString(false);
 
-    // create new graph_cache_ entry;
-    if (graph_cache_.count(repr) == 0) {
+    // create new graph_cache_ids_ entry if none existed yet;
+    if (graph_cache_ids_.count(repr) == 0) {
       int32_t kernel_id = getNextUniqueID();
-      graph_cache_[repr] = kernel_id;
+      graph_cache_ids_[repr] = kernel_id;
     }
-    return graph_cache_[repr];
+    return graph_cache_ids_[repr];
   };
 
   std::vector<at::Tensor> runFusionNode(
@@ -384,8 +389,9 @@ class CudaFusionManager {
     return next_unique_id_++;
   };
 
-  std::unordered_map<std::string, int32_t> graph_cache_;
-  std::unordered_map<int64_t, std::unique_ptr<FusionExecutor>> kernel_cache_;
+  std::unordered_map<std::string, int32_t> graph_cache_ids_;
+  //std::unordered_map<int64_t, std::unique_ptr<FusionExecutor>> kernel_cache_;
+  std::unordered_map<int64_t, std::unique_ptr<GraphCache>> graph_caches_;
 
   int32_t next_unique_id_ = 0;
 };

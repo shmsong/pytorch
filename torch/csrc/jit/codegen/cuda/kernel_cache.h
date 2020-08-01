@@ -11,6 +11,7 @@ namespace jit {
 namespace fuser {
 namespace cuda {
 
+
 // Given a particular torchscript string produced by std::string
 // Graph::toString(bool print_source_locations) const; cache a kernel that can
 // run it. Assume contiguity information is included in the string.
@@ -21,6 +22,7 @@ namespace cuda {
 // TODO: Figure out how we want to cache based on heuristics, should probably
 // use something similar. Heuristics may also return a LaunchParams object.
 // TODO: Validate it is included in the string.
+
 class FusionExecutorCache {
  public:
   FusionExecutor* getExecutor() const {
@@ -31,6 +33,19 @@ class FusionExecutorCache {
 
  private:
   FusionExecutor* entry = nullptr;
+};
+
+class GraphCache {
+ public:
+  GraphCache(std::shared_ptr<Graph> graph);
+
+ private:
+  // Computation graph;
+  std::shared_ptr<Graph> graph_;
+
+  // TODO: we should really hash instead of iterative check. Optimize later...
+  std::vector<InputStack> input_stacks_;
+  std::vector<std::unique_ptr<FusionExecutorCache>> fusion_executor_caches_;
 };
 
 } // namespace cuda
