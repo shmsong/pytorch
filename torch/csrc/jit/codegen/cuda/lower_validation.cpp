@@ -104,13 +104,20 @@ void IrBuildSizesMap(Fusion* fusion) {
     size_t dim = 0;
     for (auto id : root_td) {
       // Output sizes could have reduction axes, which isn't what gets output.
-      if (id->isReduction())
-        continue;
 
       Val* orig_size = id->extent();
 
-      if (orig_size->isConstScalar())
+      if (id->isReduction()) {
         continue;
+      } else if (id->getIterType() == IterType::BroadcastWithoutStride) {
+        continue;
+      } else if (id->getIterType() == IterType::BroadcastWithStride) {
+        dim++;
+        continue;
+      } else if (orig_size->isConstScalar()) {
+        dim++;
+        continue;
+      }
 
       std::stringstream ss;
       ss << "T" << tv->name() << ".size[" << dim++ << "]";
