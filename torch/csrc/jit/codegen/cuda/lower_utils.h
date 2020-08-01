@@ -55,6 +55,27 @@ Expr* firstInnerMostScope(Expr* scope);
 
 namespace ir_utils {
 
+// Somtimes we want to temporarily view a tensorview with another tensordomain.
+// This isn't a permanent transformation, but in indexing we want to index
+// producers with a consumer set of indices, so we need to view the producer
+// transformed like consumer while we index. This will set the tv with td for
+// the life of this context guard.
+class TVDomainGuard {
+ public:
+  TensorView* tv_;
+  TensorDomain* prev_domain;
+
+  // Set the active fusion so it can be manipulated.
+  explicit TVDomainGuard(TensorView* _tv, TensorDomain* td)
+      : tv_(_tv), prev_domain(tv_->domain()) {
+    tv_->setDomain(td);
+  }
+
+  ~TVDomainGuard() {
+    tv_->setDomain(prev_domain);
+  }
+};
+
 // Return inputs of provided IterDomains that are IterDomains
 std::vector<IterDomain*> iterDomainInputsOf(const std::vector<IterDomain*>&);
 
@@ -144,30 +165,40 @@ namespace loop_utils {
 // tv->getComputeAtAxis(...), map from the IterDomain in
 // tv->getComputeAtAxis(...) to its corresponding loop. If there are reduction
 // axes in the loops, assume we need to match reduction axes, otherwise assume
-// we ignore them.
+// we ignore them. Provided map (if needed) maps iteration domains in
+// tv->getComputeAtAxes(...) to those in loops[...]->iter_domain. This map is
+// typically needed if tv is a producer.
 std::unordered_map<IterDomain*, kir::ForLoop*> computeAtToLoopMap(
     TensorView* tv,
-    const std::vector<kir::ForLoop*>& loops);
+    const std::vector<kir::ForLoop*>& loops,
+    const std::unordered_map<IterDomain*, IterDomain*>& ca_id_map =
+        std::unordered_map<IterDomain*, IterDomain*>());
 
-// Return inverse map of computeAtToLoopMap
+// Return inverse map of computeAtToLoopMap.
 std::unordered_map<kir::ForLoop*, IterDomain*> loopToComputeAtMap(
     TensorView* tv,
-    const std::vector<kir::ForLoop*>& loops);
+    const std::vector<kir::ForLoop*>& loops,
+    const std::unordered_map<IterDomain*, IterDomain*>& ca_id_map =
+        std::unordered_map<IterDomain*, IterDomain*>());
 
-// Return an ordered set of ForLoops found in
-// computeAtToLoopMap/loopToComputeAtMap
-// TODO: Check if I needed this function?
-std::vector<kir::ForLoop*> getNeededLoops(
-    TensorView* tv,
-    const std::vector<kir::ForLoop*>& loops);
+// Given producer with producer->domain() replayed like consumer, map
+// producer->getComputeAtAxis(...) to consumer->getComputeAtAxis(...) for all
+// IterDomain's in producer->domain().
+std::unordered_map<IterDomain*, IterDomain*> mapIdPtoC(
+    TensorView* producer,
+    TensorView* consumer);
 
 // Run through loops which should have all indices needed to index into tv.
-// Validate these indices, and potentially modify them for use with tv.
-// We need to know the allocation point, because any indices outside it should
-// be 0 if we're not global memory.
-std::vector<Val*> getIndices(
+// Validate these indices, and potentially modify them for use with the tv. Take
+// into consideration allocation point and memory type. tv->domain() is expected
+// to match the loop structure in loops. Provided map (if needed) maps iteration
+// domains in tv->getComputeAtAxes(...) to those in loops[...]->iter_domain.
+// This map is typically needed if tv is a producer.
+std::vector<Val*> getIndicesForTV(
     TensorView* tv,
-    const std::vector<kir::ForLoop*>& loops);
+    const std::vector<kir::ForLoop*>& loops,
+    const std::unordered_map<IterDomain*, IterDomain*>& ca_id_map =
+        std::unordered_map<IterDomain*, IterDomain*>());
 
 // Figure out which loop the allocation needs to be in. Returns nullptr if
 // outside the first loop in loops. Also find out which index in tv the

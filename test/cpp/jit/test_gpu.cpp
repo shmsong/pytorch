@@ -3050,50 +3050,112 @@ void testGPU_FusionSimpleBCast() {
 }
 
 void testGPU_FusionComplexBCast() {
-  Fusion fusion;
-  FusionGuard fg(&fusion);
+  // {
+  //   Fusion fusion;
+  //   FusionGuard fg(&fusion);
 
-  int x = 2, y = 3, z = 4;
+  //   int x = 2, y = 3, z = 4;
 
-  auto tv0 = makeConcreteTensor({y});
-  auto tv1 = broadcast(tv0, {false, true});
-  auto tv2 = makeConcreteTensor({y, z});
-  auto tv3 = mul(tv1, tv2);
-  auto tv4 = broadcast(tv3, {true, false, false});
-  auto tv5 = makeConcreteTensor({x, y, z});
-  auto tv6 = add(tv4, tv5);
+  //   auto tv0 = makeConcreteTensor({y});
+  //   auto tv1 = div(tv0, new Float(2.0));
+  //   auto tv2 = broadcast(tv1, {false, true});
+  //   auto tv3 = makeConcreteTensor({y, z});
+  //   auto tv4 = mul(tv2, tv3);
+  //   auto tv5 = broadcast(tv4, {true, false, false});
+  //   auto tv6 = makeConcreteTensor({x, y, z});
+  //   auto tv7 = add(tv5, tv6);
 
-  // tv0[    i1    ]
-  // tv1[    i1, b2]
-  // tv2[    i1, i2]
-  // tv3[    i1, i2]
-  // tv4[b0, i1, i2]
-  // tv5[i0, i1, i2]
-  // tv6[i0, i1, i2]
+  //   // tv0[    i1    ] = input
+  //   // tv1[    i1    ] = tv0/2.0
+  //   // tv2[    i1, b2] = bcast(tv1)
+  //   // tv3[    i1, i2] = input
+  //   // tv4[    i1, i2] = tv2 * tv3
+  //   // tv5[b0, i1, i2] = bcast(tv4)
+  //   // tv6[i0, i1, i2] = input
+  //   // tv7[i0, i1, i2] = tv5 + tv6
 
-  // tv3 = bcast(tv0) * tv2
-  // tv6 = bcast(tv3) + tv5
+  //   // tv4 = bcast(tv1) * tv3
+  //   // tv7 = bcast(tv4) + tv6
 
-  fusion.addInput(tv0);
-  fusion.addInput(tv2);
-  fusion.addInput(tv5);
+  //   fusion.addInput(tv0);
+  //   fusion.addInput(tv3);
+  //   fusion.addInput(tv6);
 
-  fusion.addOutput(tv6);
+  //   fusion.addOutput(tv7);
 
-  auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
+  //   tv7->merge(0);
+  //   tv7->merge(0);
+  //   tv0->computeAt(tv7, -1);
 
-  at::Tensor t0 = at::randn({y}, options);
-  at::Tensor t2 = at::randn({y, z}, options);
-  at::Tensor t5 = at::randn({x, y, z}, options);
+  //   fusion.printMath();
 
-  auto t3 = t0.unsqueeze(-1).expand({y, z}) * t2;
-  auto t6 = t3.unsqueeze(0).expand({x, y, z}) + t5;
+  //   auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA,
+  //   0);
 
-  torch::jit::fuser::cuda::FusionExecutor fe;
-  fe.compileFusion(&fusion);
-  auto outputs = fe.runFusion({t0, t2, t5});
+  //   at::Tensor t0 = at::randn({y}, options);
+  //   at::Tensor t3 = at::randn({y, z}, options);
+  //   at::Tensor t6 = at::randn({x, y, z}, options);
 
-  TORCH_CHECK(t6.allclose(outputs[0]));
+  //   auto t4 = t0.div(2.0).unsqueeze(-1).expand({y, z}) * t3;
+  //   auto t7 = t4.unsqueeze(0).expand({x, y, z}) + t6;
+
+  //   torch::jit::fuser::cuda::FusionExecutor fe;
+  //   fe.compileFusion(&fusion);
+  //   auto outputs = fe.runFusion({t0, t3, t6});
+
+  //   TORCH_CHECK(t7.allclose(outputs[0]));
+  // }
+
+  {
+    Fusion fusion;
+    FusionGuard fg(&fusion);
+
+    int x = 2, y = 3, z = 4;
+
+    auto tv0 = makeConcreteTensor({y, z});
+    auto tv1 = div(tv0, new Float(2.0));
+    auto tv2 = sum(tv1, {1});
+    auto tv3 = broadcast(tv2, {true, false});
+    auto tv4 = makeConcreteTensor({x, y});
+    auto tv5 = add(tv3, tv4);
+
+    // tv0[    i1, i2] = input
+    // tv1[    i1, i2] = tv0/2.0
+    // tv2[    i1    ] = sum(tv1, 1)
+    // tv3[b0, i1    ] = bcast(tv2)
+    // tv4[i0, i1    ] = input
+    // tv5[i0, i1    ] = tv3 + tv4
+
+    // tv2 = sum(tv0/2.0, 1)
+    // tv5 = bcast(tv2) + tv4
+
+    fusion.addInput(tv0);
+    fusion.addInput(tv4);
+
+    fusion.addOutput(tv5);
+
+    tv5->merge(0);
+    tv0->computeAt(tv5, -1);
+    tv1->computeAt(tv2, -1);
+
+    fusion.printMath();
+    fusion.printKernel();
+
+    auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
+
+    at::Tensor t0 = at::randn({y, z}, options);
+    auto t1 = t0.div(2.0);
+    auto t2 = t1.sum(1);
+    auto t3 = t2.unsqueeze(0).expand({x, y});
+    at::Tensor t4 = at::randn({x, y}, options);
+    auto t5 = t3.add(t4);
+
+    torch::jit::fuser::cuda::FusionExecutor fe;
+    fe.compileFusion(&fusion);
+    auto outputs = fe.runFusion({t0, t4});
+
+    TORCH_CHECK(t5.allclose(outputs[0]));
+  }
 }
 
 // Test a simple Gemm but also play around with fusion executor features

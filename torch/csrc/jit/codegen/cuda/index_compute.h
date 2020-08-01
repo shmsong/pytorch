@@ -93,28 +93,30 @@ class IndexCompute : public BackwardVisitor {
 };
 
 // Simple interface for IndexCompute
+// If getComputeAtAxis and more generally TensorView const model is fixed, we
+// can make the below tensorviews const.
 class Index {
  private:
   // Producer indexing if it's in shared or local memory
   static kir::TensorIndex* getProducerIndex_impl(
-      const TensorView* producer,
-      const TensorView* consumer,
+      TensorView* producer,
+      TensorView* consumer,
       const std::vector<kir::ForLoop*>& loops);
 
   // Consumer indexing if it's in shared or local memory
   static kir::TensorIndex* getConsumerIndex_impl(
-      const TensorView* consumer,
+      TensorView* consumer,
       const std::vector<kir::ForLoop*>& loops);
 
   // Producer if it's in global memory
   static kir::TensorIndex* getGlobalProducerIndex(
-      const TensorView* producer,
-      const TensorView* consumer,
+      TensorView* producer,
+      TensorView* consumer,
       const std::vector<kir::ForLoop*>& loops);
 
   // Consumer indexing if it's in global memory
   static kir::TensorIndex* getGlobalConsumerIndex(
-      const TensorView* consumer,
+      TensorView* consumer,
       const std::vector<kir::ForLoop*>& loops);
 
  public:
@@ -123,13 +125,13 @@ class Index {
   // i.e. T0 = T1... -> T0 is the consumer, T1 is the producer
   // Producer indexing dispatch
   static kir::TensorIndex* getProducerIndex(
-      const TensorView* producer,
-      const TensorView* consumer,
+      TensorView* producer,
+      TensorView* consumer,
       const std::vector<kir::ForLoop*>& loops);
 
   // Consumer index dispatch
   static kir::TensorIndex* getConsumerIndex(
-      const TensorView* consumer,
+      TensorView* consumer,
       const std::vector<kir::ForLoop*>& loops);
 };
 

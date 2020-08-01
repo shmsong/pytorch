@@ -473,8 +473,8 @@ class TORCH_CUDA_API TensorDomain : public Val {
   static bool hasBroadcast(const std::vector<IterDomain*>&);
   static bool hasReduction(const std::vector<IterDomain*>&);
 
-  // return pairs of producer axes and consumer axes that represent
-  // mapping between corresponding axies. Not all axes have
+  // return std::pair<producer_id, consumer_id> representing
+  // the mapping between corresponding axes. Not all axes have
   // corresponding mapping, e.g., broadcast axis in consumer
   // does not have any corresponding axis in producer.
   static std::vector<std::pair<int, int>> mapDomainPandC(

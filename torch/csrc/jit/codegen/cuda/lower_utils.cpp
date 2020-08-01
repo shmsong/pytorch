@@ -629,9 +629,10 @@ namespace loop_utils {
 
 std::unordered_map<IterDomain*, kir::ForLoop*> computeAtToLoopMap(
     TensorView* tv,
-    const std::vector<kir::ForLoop*>& loops) {
+    const std::vector<kir::ForLoop*>& loops,
+    const std::unordered_map<IterDomain*, IterDomain*>& ca_id_map) {
   // Map we're generating.
-  std::unordered_map<IterDomain*, kir::ForLoop*> map;
+  std::unordered_map<IterDomain*, kir::ForLoop*> ca_to_loop_map;
 
   // If we're initializing a reduction buffer, we won't have the reduction
   // loops. If we're actually performing the reduction, we will.
@@ -654,6 +655,11 @@ std::unordered_map<IterDomain*, kir::ForLoop*> computeAtToLoopMap(
     auto ca_view = ca_point.second;
     auto ca_id = ca_point.first;
 
+    // use ca_id map if we have it.
+    if (!ca_id_map.empty()) {
+      ca_id = ca_id_map.at(ca_id);
+    }
+
     while (!loops_copy.empty() && ca_id != loops_copy.front()->iter_domain()) {
       loops_copy.pop_front();
     }
@@ -661,17 +667,18 @@ std::unordered_map<IterDomain*, kir::ForLoop*> computeAtToLoopMap(
     TORCH_INTERNAL_ASSERT(
         !loops_copy.empty(), "Could not find all required axes for indexing.");
 
-    map[ca_id] = loops_copy.front();
+    ca_to_loop_map[ca_id] = loops_copy.front();
     loops_copy.pop_front();
   }
 
-  return map;
+  return ca_to_loop_map;
 }
 
 std::unordered_map<kir::ForLoop*, IterDomain*> loopToComputeAtMap(
     TensorView* tv,
-    const std::vector<kir::ForLoop*>& loops) {
-  auto inverse_map = computeAtToLoopMap(tv, loops);
+    const std::vector<kir::ForLoop*>& loops,
+    const std::unordered_map<IterDomain*, IterDomain*>& ca_id_map) {
+  auto inverse_map = computeAtToLoopMap(tv, loops, ca_id_map);
   std::unordered_map<kir::ForLoop*, IterDomain*> map;
   for (auto entry : inverse_map) {
     map[entry.second] = entry.first;
@@ -679,44 +686,107 @@ std::unordered_map<kir::ForLoop*, IterDomain*> loopToComputeAtMap(
   return map;
 }
 
-std::vector<kir::ForLoop*> getNeededLoops(
-    TensorView* tv,
-    const std::vector<kir::ForLoop*>& loops) {
-  std::vector<kir::ForLoop*> needed_loops;
+std::unordered_map<IterDomain*, IterDomain*> mapIdPtoC(
+    TensorView* producer,
+    TensorView* consumer) {
+  auto p2c_domain_ind_map = TensorDomain::mapDomainPandC(
+      producer->domain()->domain(), consumer->domain()->domain());
 
-  auto ca2loop = computeAtToLoopMap(tv, loops);
-
-  // Look at each axis individually in out's domain
-  for (int64_t tv_i = 0; tv_i < (int64_t)tv->nDims(); tv_i++) {
-    // Grab the axis information
-    auto ca_id = tv->getComputeAtAxis(tv_i).first;
-    auto it = ca2loop.find(ca_id);
-    if (it != ca2loop.end()) {
-      needed_loops.push_back(it->second);
-    }
+  std::unordered_map<IterDomain*, IterDomain*> p2c_id_map;
+  for (auto entry : p2c_domain_ind_map) {
+    auto p_i = entry.first;
+    auto c_i = entry.second;
+    p2c_id_map[producer->getComputeAtAxis(p_i).first] =
+        consumer->getComputeAtAxis(c_i).first;
   }
-
-  return needed_loops;
+  return p2c_id_map;
 }
 
-std::vector<Val*> getIndices(
+std::vector<Val*> getIndicesForTV(
     TensorView* tv,
-    const std::vector<kir::ForLoop*>& loops) {
-  std::vector<Val*> indices(tv->nDims(), nullptr);
+    const std::vector<kir::ForLoop*>& loops,
+    const std::unordered_map<IterDomain*, IterDomain*>& ca_id_map) {
+  Val* zero = new Int(0);
+  std::vector<Val*> indices(tv->nDims(), zero);
 
-  auto ca2loop = computeAtToLoopMap(tv, loops);
+  bool is_shared = tv->getMemoryType() == MemoryType::Shared;
+  bool is_local = tv->getMemoryType() == MemoryType::Local;
 
-  auto zero = new Int(0);
+  // Where is this TV allocated relative to the loop nest and its own axes?
+  auto alloc_point = loop_utils::getAllocPoint(tv, loops);
+  auto alloc_axis = alloc_point.second;
+  auto alloc_loop = alloc_point.first;
+
+  // Which loop is this axis associated with?
+  auto ca2loop = computeAtToLoopMap(tv, loops, ca_id_map);
 
   // Look at each axis individually in out's domain
   for (int64_t tv_i = 0; tv_i < (int64_t)tv->nDims(); tv_i++) {
     // Grab the axis information
-    auto ca_id = tv->getComputeAtAxis(tv_i).first;
+    auto tv_id = tv->axis(tv_i);
+
+    auto ca_id = tv_i < tv->getThisComputeAtAxis()
+        ? tv->getComputeAtAxis(tv_i).first
+        : tv->axis(tv_i);
+
+    if (!ca_id_map.empty()) {
+      ca_id = ca_id_map.at(ca_id);
+    }
+
     auto it = ca2loop.find(ca_id);
-    if (it != ca2loop.end()) {
-      indices[tv_i] = it->second->index();
+
+    // We may not have loops for reduction axes
+    if (it == ca2loop.end()) {
+      continue;
+    }
+
+    auto loop = it->second;
+
+    // Check if we need to index based on this axis
+    // If outside our allocation point, we don't need to
+    if (tv_i < alloc_axis) {
+      continue;
+    }
+
+    // If bound to a grid dimension and this tv is shared memory we don't need
+    // to
+    if (tv_id->isBlockDim() && is_shared) {
+      continue;
+    }
+
+    // If bound to any thread and this is local memory we don't need to
+    if (tv_id->isThread() && is_local) {
+      continue;
+    }
+
+    // Check if tv_id had a broadcast merged that ca_id had an extent for, or
+    // tv_id didn't have an iter domain that ca_id has merged into it. If this
+    // is the case, we need to modulo the index of that loop by tv_id's extent.
+    auto tv_id_inputs = ir_utils::iterDomainInputsOf({tv_id});
+    int tv_id_inputs_n_bcast = std::count_if(
+        tv_id_inputs.begin(), tv_id_inputs.end(), [](IterDomain* id) {
+          return id->isBroadcast();
+        });
+
+    // If no broadcasts were in the input to tv_id no modulo necessary
+    if (tv_id_inputs_n_bcast > 0) {
+      indices[tv_i] = loop->index();
     } else {
-      indices[tv_i] = zero;
+      auto ca_id_inputs = ir_utils::iterDomainInputsOf({ca_id});
+      int ca_id_inputs_n_bcast = std::count_if(
+          ca_id_inputs.begin(), ca_id_inputs.end(), [](IterDomain* id) {
+            return id->isBroadcast();
+          });
+
+      // tv_id has broadcasts in their input, but so does the ca_id. Also
+      // shouldn't need modulo. Can't merge a braodcast/iteration domain with a
+      // reduction domain, so ca_id inputs should strictly be >= tv_id's
+      if (ca_id_inputs.size() == tv_id_inputs.size() &&
+          ca_id_inputs_n_bcast == tv_id_inputs_n_bcast) {
+        indices[tv_i] = loop->index();
+      } else {
+        indices[tv_i] = mod(loop->index(), tv_id->extent());
+      }
     }
   }
 

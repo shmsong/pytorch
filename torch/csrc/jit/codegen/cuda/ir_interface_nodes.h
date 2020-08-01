@@ -176,22 +176,29 @@ class OptOutMutator;
 class LoopNestGenerator;
 class GPULower;
 
-/*
- * TensorView is our primitive Tensor Type used in code generation. It can be
- * thought of as representing physical memory, however, its dimensionality is
- * modifed as split/merge/computeAt functions are called. The history of
- * these transformations are kept and used for generating actual code referncing
- * physical memory. Generally when users are thinking of code generation in
- * reference to a Tensor, this is the class they should be interacting with.
- *
- * The reason we need both TensorView and TensorDomain is that we need to have a
- * record of both what is being computed and how it is being computed. For
- * Example we may have the operation: TV3[I, J, K] = TV2[I, J, K] + TV1[I, J, K]
- * The mathematical operations here are on the tensor views TV1, TV2, and TV3.
- * This operation is a pointwise operation. To compute this pointwise operation
- * we iterate over the 3D TensorDomain [I, J, K], where K is the fastest
- * changing dimension.
- */
+namespace ir_utils {
+class TVDomainGuard;
+}
+
+// TensorView is our primitive Tensor Type used in code generation. It can be
+// thought of as representing physical memory, however, its dimensionality is
+// modifed as split/merge/computeAt functions are called. The history of
+// these transformations are kept and used for generating actual code referncing
+// physical memory. Generally when users are thinking of code generation in
+// reference to a Tensor, this is the class they should be interacting with.
+//
+// The reason we need both TensorView and TensorDomain is that we need to have a
+// record of both what is being computed and how it is being computed. For
+// Example we may have the operation: TV3[I, J, K] = TV2[I, J, K] + TV1[I, J, K]
+// The mathematical operations here are on the tensor views TV1, TV2, and TV3.
+// This operation is a pointwise operation. To compute this pointwise operation
+// we iterate over the 3D TensorDomain [I, J, K], where K is the fastest
+// changing dimension.
+//
+// TODO: Need to work on the const model for TensorView, making all functions
+// that should be const, const. Gave this a try but expanded really quickly.
+// getComputeAtAxis not being const because it can return a TV that some expect
+// to be non-const is the biggest headache.
 class TORCH_CUDA_API TensorView : public Val {
  public:
   ~TensorView() = default;
@@ -345,6 +352,7 @@ class TORCH_CUDA_API TensorView : public Val {
   friend ComputeAt;
   friend void IrFixComputeAt(Fusion*);
   friend void IrAdjustMemoryTypes(Fusion* fusion);
+  friend class ir_utils::TVDomainGuard;
 
  protected:
   // Make an exact copy of this tensor (similar to clone()), however, also grabs
