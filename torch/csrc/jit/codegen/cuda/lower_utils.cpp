@@ -820,6 +820,11 @@ std::pair<kir::ForLoop*, int64_t> getAllocPoint(
       loops_copy.pop_front();
     }
 
+    if (loops_copy.front()->iter_domain()->getParallelType() ==
+        ParallelType::Unroll) {
+      return std::make_pair(alloc_loop, tv_i);
+    }
+
     TORCH_INTERNAL_ASSERT(
         !loops_copy.empty(), "Could not find all required axes for indexing.");
 
