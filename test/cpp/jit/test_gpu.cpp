@@ -3404,6 +3404,60 @@ void testGPU_FusionSoftmax2DNormalized() {
   */
 }
 
+void testGPU_Fusion2DReductionUnroll() {
+  torch::jit::fuser::cuda::CudaKernel prog;
+  Fusion& fusion = *prog.fusion_;
+  FusionGuard fg(&fusion);
+
+  // block size in x to do parallel reduce
+  const int tidx = 256;
+
+  // tensor dim. dimy is being reduced
+  const int dimx = 4096;
+  const int dimy = 2048;
+  const int unroll = 4;
+
+  // Set up your input tensor views
+  TensorView* input_tv0 = makeDummyTensor(2);
+  fusion.addInput(input_tv0);
+
+  TensorView* exp_tv1 = unaryOp(UnaryOpType::Exp, input_tv0);
+  TensorView* max_val_tv2 =
+      reductionOp(BinaryOpType::Max, {-1}, new Float(0), exp_tv1);
+  fusion.addOutput(max_val_tv2);
+
+  // last split last dim binding to threadIdx.x
+  max_val_tv2->split(-1, tidx);
+  max_val_tv2->split(-2, unroll);
+  // split thread/block reduction
+  TensorView* max_val_rf = max_val_tv2->rFactor({-3, -2});
+
+  // how I think exp should be inline
+  exp_tv1->computeAt(max_val_rf, -1);
+
+  TensorView* tensors_to_parallelize[] = {max_val_tv2, max_val_rf};
+  for (auto tv : tensors_to_parallelize) {
+    tv->axis(0)->parallelize(ParallelType::BIDx);
+    tv->axis(-1)->parallelize(ParallelType::TIDx);
+  }
+  // add unroll to rf tvs
+  max_val_rf->axis(-2)->parallelize(ParallelType::Unroll);
+
+  prog.device_ = 0;
+  prog.grid(dimx);
+  prog.block(tidx);
+
+  auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
+  at::Tensor t0 = at::randn({dimx, dimy}, options);
+  at::Tensor cg_output = at::empty({dimx}, options);
+  torch::jit::fuser::cuda::compileKernel(&prog);
+
+  torch::jit::fuser::cuda::runTestKernel(&prog, {t0}, {cg_output});
+  cudaDeviceSynchronize();
+
+}
+
+
 void testGPU_FusionSoftmax2DNormalizedwarp() {
   torch::jit::fuser::cuda::CudaKernel prog;
   Fusion& fusion = *prog.fusion_;
