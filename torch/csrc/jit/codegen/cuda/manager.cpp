@@ -32,7 +32,7 @@ namespace cuda {
 //
 // CudaFusionManager holds the cache and handles interfacing to CudaFusionGroup
 // node, including selection, construction and execution of FusionExecutors.
-// 
+//
 // CudaFusionManager bridges CudaFusionGroup to GraphCache.
 // Therefore, we want to cache on stringified graph. But it is expensive to
 // stringify and hash on a computational graph, we cache the hash of a
@@ -44,9 +44,9 @@ namespace cuda {
 //
 // We have 2 unordered_map at CudaFusionGroup:
 //   std::unordered_map<std::string, int32_t> graph_cache_ids_;
-//   std::unordered_map<int64_t, std::unique_ptr<GraphCache>> graph_caches_;
+//   std::unordered_map<int64_t, std::unique_ptr<GraphCache>> graph_cache_;
 //
-// Mapping from std::string to graph_cache_id ensures that we assign the same 
+// Mapping from std::string to graph_cache_id ensures that we assign the same
 // cache_id to CudaFusionGroup with identical computational grah, allowing
 // kernel reuse; Direct mapping from cache_id to GraphCache allows efficient
 // graph_cache indexing;
@@ -92,6 +92,7 @@ class CudaFusionManager {
     if (graph_cache_ids_.count(repr) == 0) {
       int32_t kernel_id = getNextUniqueID();
       graph_cache_ids_[repr] = kernel_id;
+      graph_cache_[kernel_id] = std::make_unique<GraphCache>(graph);
     }
     return graph_cache_ids_[repr];
   };
@@ -101,33 +102,35 @@ class CudaFusionManager {
       std::shared_ptr<Graph>& graph,
       const at::ArrayRef<IValue> inputs) {
     std::lock_guard<std::mutex> guard(mutex_);
+#if 0
+      auto inputs_vec = dimSortInputs(graph, inputs);
+      const at::ArrayRef<IValue> inputs_ref = inputs_vec;
 
-    auto inputs_vec = dimSortInputs(graph, inputs);
-    const at::ArrayRef<IValue> inputs_ref = inputs_vec;
+      FusionExecutor* fe;
+      if (kernel_cache_.find(kernel_id) == kernel_cache_.end()) {
+        // search kernel cache failed, we need to codegen new kernel for given
+        // inputs;
 
-    FusionExecutor* fe;
-    if (kernel_cache_.find(kernel_id) == kernel_cache_.end()) {
-      // search kernel cache failed, we need to codegen new kernel for given
-      // inputs;
+        // we still need to permute input tensor type in the graph properly.
+        auto copy = dimSortGraph(graph);
+        auto fusion = parseJitIR(copy);
 
-      // we still need to permute input tensor type in the graph properly.
-      auto copy = dimSortGraph(graph);
-      auto fusion = parseJitIR(copy);
+        // TODO: update the API to let `scheduleFusion` consume & return a fusion
+        // magic scheduler updates fusion instance via transformation and setup
+        // launch configurations;
+        scheduleFusion(fusion.get(), inputs_ref);
 
-      // TODO: update the API to let `scheduleFusion` consume & return a fusion
-      // magic scheduler updates fusion instance via transformation and setup
-      // launch configurations;
-      scheduleFusion(fusion.get(), inputs_ref);
+        CompileOptions options;
+        options.device = getDevice(inputs_ref);
 
-      CompileOptions options;
-      options.device = getDevice(inputs_ref);
+        kernel_cache_[kernel_id] = std::make_unique<FusionExecutor>();
+        kernel_cache_[kernel_id]->compileFusion(fusion.get(), options);
+      }
 
-      kernel_cache_[kernel_id] = std::make_unique<FusionExecutor>();
-      kernel_cache_[kernel_id]->compileFusion(fusion.get(), options);
-    }
-
-    fe = kernel_cache_[kernel_id].get();
-    return dimSortOutputs(graph, fe->runFusion(inputs_ref));
+      fe = kernel_cache_[kernel_id].get();
+      return dimSortOutputs(graph, fe->runFusion(inputs_ref));
+#endif
+    return graph_cache_[kernel_id]->runGraphWithInputs(inputs);
   }
 
  private:
@@ -390,8 +393,8 @@ class CudaFusionManager {
   };
 
   std::unordered_map<std::string, int32_t> graph_cache_ids_;
-  //std::unordered_map<int64_t, std::unique_ptr<FusionExecutor>> kernel_cache_;
-  std::unordered_map<int64_t, std::unique_ptr<GraphCache>> graph_caches_;
+  std::unordered_map<int64_t, std::unique_ptr<FusionExecutor>> kernel_cache_;
+  std::unordered_map<int64_t, std::unique_ptr<GraphCache>> graph_cache_;
 
   int32_t next_unique_id_ = 0;
 };

@@ -6,11 +6,12 @@
 #include <c10/util/ArrayRef.h>
 #include <torch/csrc/WindowsTorchApiMacro.h>
 
+#include <type_traits>
+
 namespace torch {
 namespace jit {
 namespace fuser {
 namespace cuda {
-
 
 // Given a particular torchscript string produced by std::string
 // Graph::toString(bool print_source_locations) const; cache a kernel that can
@@ -25,27 +26,58 @@ namespace cuda {
 
 class FusionExecutorCache {
  public:
-  FusionExecutor* getExecutor() const {
-    return entry;
-  }
+  //FusionExecutorCache(Fusion* fusion, CompileOptions options);
+  FusionExecutorCache(std::unique_ptr<Fusion>&& fusion, at::Device device);
 
-  FusionExecutorCache(Fusion* fusion, CompileOptions options);
+  std::vector<at::Tensor> runFusionWithInputs(
+      const at::ArrayRef<IValue>& inputs);
 
  private:
-  FusionExecutor* entry = nullptr;
+  at::Device device_;
+  std::unique_ptr<Fusion> fusion_;
+  std::vector<std::unique_ptr<FusionExecutor>> fusion_executor_cache_;
 };
 
 class GraphCache {
  public:
   GraphCache(std::shared_ptr<Graph> graph);
 
+  std::vector<at::Tensor> runGraphWithInputs(
+      const at::ArrayRef<IValue>& inputs);
+
  private:
+  // TODO: place holder with naive implementation for now.
+  struct InputsRequirement {
+    c10::optional<at::Device> device_;
+    at::DimVector input_permutation_;
+    at::DimVector output_permutation_;
+    // TODO: TensorTypePtr is not very easy to work with.
+    // c10::nullopt to take place of non-tensor type;
+    std::vector<c10::optional<at::TensorTypePtr>> vec_optional_ttp;
+
+    InputsRequirement(const std::shared_ptr<Graph>& graph);
+    InputsRequirement(const at::ArrayRef<IValue>& inputs);
+
+    //bool operator==(const InputsRequirement& other);
+    bool complyWith(const InputsRequirement& expect);
+
+    bool requiresPermutation();
+  };
+
+  template <
+      typename T,
+      std::enable_if_t<std::is_constructible<GraphCache::InputsRequirement, T>::value, int> = 0>
+  FusionExecutorCache* createFusionExecutorCache(
+      const T& meta_input_stack);
+
   // Computation graph;
   std::shared_ptr<Graph> graph_;
+  bool has_reduction_;
 
   // TODO: we should really hash instead of iterative check. Optimize later...
-  std::vector<InputStack> input_stacks_;
-  std::vector<std::unique_ptr<FusionExecutorCache>> fusion_executor_caches_;
+  //       unordered_map<InputsRequirement, FusionExecutorCache>;
+  std::vector<InputsRequirement> input_stacks_;
+  std::vector<std::unique_ptr<FusionExecutorCache>> fec_cache_;
 };
 
 } // namespace cuda
