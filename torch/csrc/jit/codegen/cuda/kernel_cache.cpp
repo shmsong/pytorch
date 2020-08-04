@@ -271,15 +271,18 @@ GraphCache::InputsRequirement::InputsRequirement(
     // only check tensor types;
     if (input.isTensor()) {
       // TensorType::create populates stride properties;
-      auto input_type = TensorType::create(input.toTensor());
-      vec_optional_ttp.emplace_back(input_type);
+      //auto input_type = TensorType::create(input.toTensor());
+      //vec_optional_ttp.emplace_back(input_type);
+      vec_optional_ttp.emplace_back(TensorType::create(input.toTensor()));
+      printf("\ndebug print.....");
+      debugPrint(vec_optional_ttp.back().value());
       if (acc_type->dim().has_value()) {
         // TODO: I think merge cannot handle broadcast - Go verify it later;
         // TODO: Since we are only handling permutation here, we should just
         //       merge the stride_index_;
-        acc_type = acc_type->merge(input_type);
+        acc_type = acc_type->merge(vec_optional_ttp.back().value());
       } else {
-        acc_type = input_type;
+        acc_type = vec_optional_ttp.back().value();
       }
     } else {
       vec_optional_ttp.emplace_back(c10::nullopt);
@@ -293,7 +296,18 @@ GraphCache::InputsRequirement::InputsRequirement(
 }
 
 bool GraphCache::InputsRequirement::requiresPermutation() {
-  return input_permutation_ != output_permutation_;
+  size_t input_rank = input_permutation_.size();
+  for (size_t i = 0; i < input_rank; i++) {
+    if (input_permutation_[i] != input_rank - i - 1) {
+      return true;
+    }
+  }
+  // Check if output agrees
+  size_t output_rank = output_permutation_.size();
+  for (size_t i = 0; i < output_rank; i++) {
+    TORCH_INTERNAL_ASSERT(output_permutation_[i] == output_rank - i - 1, "permutation of output and input is not consistent");
+  }
+  return false;
 }
 
 // TODO: tests!
@@ -374,8 +388,7 @@ FusionExecutorCache* GraphCache::createFusionExecutorCache(
   for (size_t i = 0; i < input_stack.vec_optional_ttp.size(); i++) {
     // skip scalar inputs;
     if (input_stack.vec_optional_ttp[i].has_value()) {
-      parsing_graph->inputs()[i]->setType(
-          input_stack.vec_optional_ttp[i].value());
+      parsing_graph->inputs()[i]->setType(input_stack.vec_optional_ttp[i].value());
     }
   }
 
@@ -430,8 +443,6 @@ FusionExecutorCache* GraphCache::createFusionExecutorCache(
           type->requires_grad());
     };
 
-    // copy `graph_` as `parsing_graph`
-    parsing_graph = graph_->copy();
     std::cout << "\nannotated graph\n" << *parsing_graph << std::endl;
     for (auto input : parsing_graph->inputs()) {
       if (auto input_type = input->type()->cast<TensorType>()) {
