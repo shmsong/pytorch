@@ -128,9 +128,24 @@ Val* IterDomain::extent() const {
   return extent_;
 }
 
-TensorDomain::TensorDomain(const fuser::TensorDomain* domain)
-    : Val(ValType::KirTensorDomain, DataType::Null, true, true) {
-  // TODO
+TensorDomain::TensorDomain(const fuser::TensorDomain* tensor_domain)
+    : Val(ValType::KirTensorDomain, DataType::Null, true, true),
+    contiguity_(tensor_domain->contiguity()) {
+
+  const auto lowerIterDomains =
+      [](const std::vector<fuser::IterDomain*>& domains) {
+        std::vector<IterDomain*> lowered_domains;
+        for (const auto iter_domain : domains) {
+          lowered_domains.push_back(new IterDomain(iter_domain));
+        }
+        return lowered_domains;
+      };
+
+  root_domain_ = lowerIterDomains(tensor_domain->rootDomain());
+  domain_ = lowerIterDomains(tensor_domain->domain());
+  no_bcast_domain_ = lowerIterDomains(tensor_domain->noBroadcasts());
+  no_reduction_domain_ = lowerIterDomains(tensor_domain->noReductions());
+  rfactor_domain_ = lowerIterDomains(tensor_domain->rfactorDomain());
 }
 
 TensorDomain::TensorDomain(const TensorDomain* src, IrCloner* ir_cloner)

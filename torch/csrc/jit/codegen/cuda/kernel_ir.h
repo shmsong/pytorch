@@ -219,7 +219,7 @@ class TORCH_CUDA_API IterDomain : public Val {
 
 class TORCH_CUDA_API TensorDomain : public Val {
  public:
-  explicit TensorDomain(const fuser::TensorDomain* domain);
+  explicit TensorDomain(const fuser::TensorDomain* tensor_domain);
 
   TensorDomain(const TensorDomain* src, IrCloner* ir_cloner);
 
@@ -284,11 +284,11 @@ class TORCH_CUDA_API TensorDomain : public Val {
   std::pair<TensorDomain*, TensorDomain*> rFactor(const std::vector<int>& axes);
 
  private:
-  const std::vector<IterDomain*> root_domain_;
+  std::vector<IterDomain*> root_domain_;
   std::vector<IterDomain*> domain_;
   std::vector<IterDomain*> no_bcast_domain_;
   std::vector<IterDomain*> no_reduction_domain_;
-  const std::vector<IterDomain*> rfactor_domain_;
+  std::vector<IterDomain*> rfactor_domain_;
   const std::vector<bool> contiguity_;
 };
 
