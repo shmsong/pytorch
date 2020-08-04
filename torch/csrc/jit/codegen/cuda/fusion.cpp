@@ -432,7 +432,7 @@ void Fusion::printTransforms() {
 }
 
 StmtNameType Fusion::registerVal(Val* val) {
-  TORCH_CHECK(!inKernelIr(val));
+  //TORCH_CHECK(!inKernelIr(val));
 
   if (val->fusion()) {
     if (val->fusion() != this) {
@@ -448,7 +448,7 @@ StmtNameType Fusion::registerVal(Val* val) {
 }
 
 StmtNameType Fusion::registerExpr(Expr* expr) {
-  TORCH_CHECK(!inKernelIr(expr));
+  //TORCH_CHECK(!inKernelIr(expr));
 
   if (expr->fusion()) {
     if (expr->fusion() != this) {
@@ -461,7 +461,7 @@ StmtNameType Fusion::registerExpr(Expr* expr) {
 
   for (Val* input : expr->inputs()) {
     assertInFusion(input, "Input to expr is invalid, ");
-    TORCH_CHECK(!inKernelIr(input));
+    //TORCH_CHECK(!inKernelIr(input));
     if (uses_.find(input) == uses_.end()) {
       uses_[input] = {expr};
     } else {
@@ -471,7 +471,7 @@ StmtNameType Fusion::registerExpr(Expr* expr) {
 
   for (Val* output : expr->outputs()) {
     assertInFusion(output, "Output to expr is invalid, ");
-    TORCH_CHECK(!inKernelIr(output));
+    //TORCH_CHECK(!inKernelIr(output));
     auto it = origin_.find(output);
     if (it != origin_.end()) {
       removeExpr(it->second); // will also remove origin entry
@@ -514,13 +514,13 @@ StmtNameType Fusion::registerLoweredExpr(Expr* expr) {
   TORCH_INTERNAL_ASSERT(!inKernelIr(expr));
 
   for (Val* input : expr->inputs()) {
-    TORCH_CHECK(inKernelIr(input));
-    //assertInFusion(input);
+    //TORCH_CHECK(inKernelIr(input));
+    assertInFusion(input);
   }
 
   for (Val* output : expr->outputs()) {
-    TORCH_CHECK(inKernelIr(output));
-    //assertInFusion(output);
+    //TORCH_CHECK(inKernelIr(output));
+    assertInFusion(output);
     TORCH_CHECK(origin_.insert({output, expr}).second);
   }
 
