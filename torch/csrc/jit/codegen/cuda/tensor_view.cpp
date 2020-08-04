@@ -31,7 +31,6 @@ TensorView::TensorView(const std::shared_ptr<c10::TensorType>& tensor_type)
           aten_opt_type_map(tensor_type->scalarType()),
           false) {
   std::vector<IterDomain*> sizes;
-  std::vector<bool> contig_info;
 
   TORCH_CHECK(
       tensor_type->dim().has_value(), "Requires static rank for Tensor");
@@ -52,21 +51,37 @@ TensorView::TensorView(const std::shared_ptr<c10::TensorType>& tensor_type)
     }
   }
 
+  // default to non_contiguous;
+  std::vector<bool> contig_info(tensor_type->dim().value(), false);
+
+  // we iterate through stride_index_, which goes from fastest changing dimension to slowest, instead of iterating through sizes. This allows easier contiguity check;
   for (decltype(tensor_type->dim().value()) i = 0;
        i < tensor_type->dim().value();
        i++) {
-    // TODO: this is a temporary WAR to avoid contiguous_ flag on broadcasted
-    // dim, which results in wrong indexing math.
-    if (sizes[i]->isBroadcast() ||
-        (i != tensor_type->dim().value() - 1 && sizes[i + 1]->isBroadcast())) {
-      contig_info.push_back(false);
-    } else {
-      if (tensor_type->stride_properties()[i].has_value() &&
-          tensor_type->stride_properties()[i]->contiguous_.has_value() &&
-          tensor_type->stride_properties()[i]->contiguous_.value() == true) {
-        contig_info.push_back(true);
+    // if we don't have contiguous dimension at current stride index, don't bother;
+    if (tensor_type->stride_properties()[i].has_value() &&
+        tensor_type->stride_properties()[i]->stride_index_.has_value() &&
+        tensor_type->stride_properties()[i]->contiguous_.has_value() &&
+        tensor_type->stride_properties()[i]->contiguous_.value() == true) {
+      size_t index = tensor_type->stride_properties()[i]->stride_index_.value();
+      // TODO: this is a temporary WAR to avoid contiguous_ flag on broadcasted
+      //       dim, which results in wrong indexing math. issue #230
+      if (sizes[index]->isBroadcast()) {
+        continue;
+      }
+      if (i == 0) {
+        // mark fastest changing dimension collapsible only when it's the last dim;
+        contig_info[index] = (index == tensor_type->dim().value()-1);
       } else {
-        contig_info.push_back(false);
+        // check the neighboring faster dimension;
+        if (auto left_index_opt = tensor_type->stride_properties()[i-1]->stride_index_) {
+          // TODO: `isBroadcast` -> issue #230
+          if (sizes[left_index_opt.value()]->isBroadcast()) {
+            continue;
+          }
+          // collapse if two axes are neighboring in both sizes & stride_index;
+          contig_info[index] = (left_index_opt.value() == (index - 1));
+        }
       }
     }
   }

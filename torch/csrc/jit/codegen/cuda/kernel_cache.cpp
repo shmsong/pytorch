@@ -13,25 +13,88 @@ namespace cuda {
 
 namespace {
 
+void debugPrint(const TensorTypePtr& type) {
+  printf("\nsizes:");
+  if (auto sizes = type->symbolic_sizes().sizes()) {
+    // for (const auto& shape_symbol : sizes.value()) {
+    int rank = static_cast<int>(sizes->size());
+    for (int i = 0; i < rank; i++) {
+      const auto& shape_symbol = sizes.value()[i];
+      if (shape_symbol.is_static()) {
+        printf("%ld, ", shape_symbol.static_size());
+      } else {
+        printf("s(%ld), ", *reinterpret_cast<const int64_t*>(&shape_symbol));
+      }
+    }
+  } else {
+    printf("no size available\n");
+  }
+  if (const auto& stride_properties = type->stride_properties().sizes()) {
+    int rank = static_cast<int>(stride_properties->size());
+    printf("\nstride: ");
+    for (int i = 0; i < rank; i++) {
+      if ((*stride_properties)[i].has_value() &&
+          (*stride_properties)[i]->stride_.has_value()) {
+        printf("%ld, ", (*stride_properties)[i]->stride_.value());
+      } else {
+        printf("?, ");
+      }
+    }
+    printf("\nstride index: ");
+    for (int i = 0; i < rank; i++) {
+      if ((*stride_properties)[i].has_value() &&
+          (*stride_properties)[i]->stride_index_.has_value()) {
+        printf("%ld, ", (*stride_properties)[i]->stride_index_.value());
+      } else {
+        printf("?, ");
+      }
+    }
+    printf("\ncontiguous: ");
+    for (int i = 0; i < rank; i++) {
+      if ((*stride_properties)[i].has_value() &&
+          (*stride_properties)[i]->contiguous_.has_value()) {
+        printf("%d, ", (*stride_properties)[i]->contiguous_.value());
+      } else {
+        printf("?, ");
+      }
+    }
+  } else {
+    printf("no stride properties available\n");
+  }
+}
+
 // Dimension collapsing only applicable to profiling executor at this moment
-bool graphHasReduction(const std::shared_ptr<Graph>& graph) {
+at::DimVector graphReductionAxes(const std::shared_ptr<Graph>& graph) {
+  at::DimVector reduction_axes;
   for (const auto& n : graph->nodes()) {
     if (isReductionNode(n)) {
-      return true;
+      // TODO: I think this is enough to detect reduction that's not the output as well. Since we go in topological order, we would run into intermediate reduction, if there's any.
+      TORCH_INTERNAL_ASSERT(graph->outputs().size() == 1 && graph->outputs()[0] == n->output(), "support for graph with reduction is limited to single output from reduction node");
+      
+      auto dims_list = constant_as<c10::List<int64_t>>(n->input(1));
+      TORCH_INTERNAL_ASSERT(
+          dims_list.has_value(),"reduction axes should be constant");
+      for (const auto dim : dims_list->vec()) {
+        reduction_axes.emplace_back(static_cast<int>(dim));
+      }
+      return reduction_axes;
     }
   }
-  return false;
+  return reduction_axes;
 }
 
 at::DimVector getPermutationPerSortedStride(const TensorTypePtr& type) {
   // `permute_seq` is the returned permutation to achieve sorted stride;
   at::DimVector permute_seq;
+  printf("\ndebug print permutation type");
+  debugPrint(type);
 
   auto stride_properties = type->stride_properties().sizes();
 
-  TORCH_INTERNAL_ASSERT(
-      stride_properties.has_value(),
-      "unknown sizes or stride_properties, collapsing shouldn't happen");
+  // no consistent permutation available, we just don't do it;
+  if (!stride_properties.has_value()) {
+    return permute_seq;
+  }
 
   // TODO: reuse this;
   const int rank = static_cast<int>(stride_properties->size());
@@ -62,6 +125,10 @@ at::DimVector getPermutationPerSortedStride(const TensorTypePtr& type) {
       }
       permute_seq.emplace_back(unallocated_axis++);
     }
+  }
+  printf("\npermutation axes:");
+  for (auto axis : permute_seq) {
+    printf(" %d, ", static_cast<int>(axis));
   }
   return permute_seq;
 }
@@ -158,7 +225,7 @@ GraphCache::InputsRequirement::InputsRequirement(const at::ArrayRef<IValue>& inp
 }
 
 bool GraphCache::InputsRequirement::requiresPermutation() {
-  return input_permutation_ == output_permutation_;
+  return input_permutation_ != output_permutation_;
 }
 
 bool GraphCache::InputsRequirement::complyWith(const InputsRequirement& expect) {
@@ -221,6 +288,9 @@ FusionExecutorCache* GraphCache::createFusionExecutorCache(
   // permute inputs on `Graph` to sort dimensions on common stride order;
   if (input_stacks_.back().requiresPermutation()) {
     auto input_permutation = input_stacks_.back().input_permutation_;
+
+    // TODO: lambda is a bad idea, the logic in this function is too tricky and
+    //       should be properly tested to ensure correctness.
     // lambda to permute `TensorType` axes per `input_permutation`
     auto type_permute_fn = [&input_permutation](const TensorTypePtr& type) {
         // std::vector<c10::ShapeSymbol> vec_shape_symbol =
@@ -236,8 +306,23 @@ FusionExecutorCache* GraphCache::createFusionExecutorCache(
         std::vector<c10::optional<c10::Stride>> permuted_vec_optional_stride;
         for (int i = 0; i < rank; i++) {
           permuted_vec_ss.emplace_back(vec_shape_symbol[input_permutation[i]]);
-          permuted_vec_optional_stride.emplace_back(
-              vec_optional_stride[input_permutation[i]]);
+          // permutation doesn't change contiguity info, nor does it change stride; The only thing affected is stride_index_;
+          if (vec_optional_stride[i].has_value()) {
+            c10::optional<size_t> index = vec_optional_stride[i]->stride_index_;
+            if (index.has_value()) {
+              for (size_t j = 0; j < rank; j++) {
+                // follow the permutation to resolve the new stride_index;
+                if (input_permutation[j] == index.value()) {
+                  index = j;
+                  break;
+                }
+              }
+            }
+            permuted_vec_optional_stride.emplace_back(
+                c10::Stride(/*stride_index=*/index, /*contiguous=*/vec_optional_stride[i]->contiguous_, /*stride=*/vec_optional_stride[i]->stride_));
+          } else {
+            permuted_vec_optional_stride.emplace_back(c10::nullopt);
+          }
         }
       
         return TensorType::create(
@@ -251,7 +336,11 @@ FusionExecutorCache* GraphCache::createFusionExecutorCache(
     parsing_graph = graph_->copy();
     for (auto input : parsing_graph->inputs()) {
       if (auto input_type = input->type()->cast<TensorType>()) {
+        printf("\nprior to permutation");
+        debugPrint(input_type);
         input->setType(type_permute_fn(input_type));
+        printf("\nafter permutation");
+        debugPrint(input->type()->cast<TensorType>());
       }
     }
   } else {
@@ -267,7 +356,7 @@ FusionExecutorCache* GraphCache::createFusionExecutorCache(
 GraphCache::GraphCache(std::shared_ptr<Graph> graph)
     : graph_(std::move(graph)) {
   // compile a kernel if we have enough information from graph.
-  has_reduction_ = graphHasReduction(graph_);
+  reduction_axes_ = graphReductionAxes(graph_);
 
   // only compile graph when we have profiling record;
   std::shared_ptr<Graph> parsing_graph = graph_;

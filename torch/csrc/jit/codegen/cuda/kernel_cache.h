@@ -72,7 +72,7 @@ class GraphCache {
 
   // Computation graph;
   std::shared_ptr<Graph> graph_;
-  bool has_reduction_;
+  at::DimVector reduction_axes_;
 
   // TODO: we should really hash instead of iterative check. Optimize later...
   //       unordered_map<InputsRequirement, FusionExecutorCache>;
