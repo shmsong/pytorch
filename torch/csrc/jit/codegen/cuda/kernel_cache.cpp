@@ -150,17 +150,15 @@ at::DimVector reversePermutation(
     const at::DimVector& permuted,
     const std::vector<size_t>& reduction_axes) {
   int rank = static_cast<int>(permuted.size());
-  at::DimVector permutation(rank, -1);
-  for (int i = 0; i < rank; i++) {
-    permutation[permuted[i]] = i;
-  }
 
   if (!reduction_axes.empty()) {
+    int red_rank = rank - static_cast<int>(reduction_axes.size());
+
     // see [ NOTE - reduction in graph ] part 1.
     // a. we skip axes that were eliminated by reduction;
     // b. we adjust axes index that were affected by reduction;
     at::DimVector adjusted_permutation;
-    for (const auto& dim : permutation) {
+    for (const auto& dim : permuted) {
       printf("\nexisting perm %ld", dim);
       int adjusted_offset = 0;
       for (const auto& red_dim : reduction_axes) {
@@ -176,10 +174,19 @@ at::DimVector reversePermutation(
         printf("\n\tadjusted perm %ld", dim - adjusted_offset);
       }
     }
-    return adjusted_permutation;
-  }
 
-  return permutation;
+    at::DimVector permutation(red_rank, -1);
+    for (int i = 0; i < red_rank; i++) {
+      permutation[adjusted_permutation[i]] = i;
+    }
+    return permutation;
+  } else {
+    at::DimVector permutation(rank, -1);
+    for (int i = 0; i < rank; i++) {
+      permutation[permuted[i]] = i;
+    }
+    return permutation;
+  }
 }
 
 } // namespace
