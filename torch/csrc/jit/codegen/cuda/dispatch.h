@@ -148,6 +148,10 @@ class TORCH_CUDA_API OptOutConstDispatch {
   virtual void handle(const kir::Int*) {}
   virtual void handle(const kir::NamedScalar*) {}
 
+  virtual void handle(const kir::IterDomain*) {}
+  virtual void handle(const kir::TensorDomain*) {}
+  virtual void handle(const kir::TensorView*) {}
+
   virtual void handle(const kir::UnaryOp*) {}
   virtual void handle(const kir::BinaryOp*) {}
   virtual void handle(const kir::TernaryOp*) {}
@@ -203,6 +207,10 @@ class TORCH_CUDA_API OptOutDispatch {
   virtual void handle(kir::Half*) {}
   virtual void handle(kir::Int*) {}
   virtual void handle(kir::NamedScalar*) {}
+
+  virtual void handle(kir::IterDomain*) {}
+  virtual void handle(kir::TensorDomain*) {}
+  virtual void handle(kir::TensorView*) {}
 
   virtual void handle(kir::UnaryOp*) {}
   virtual void handle(kir::BinaryOp*) {}
@@ -302,6 +310,16 @@ class TORCH_CUDA_API OptInConstDispatch {
   }
   virtual void handle(const kir::NamedScalar*) {
     TORCH_INTERNAL_ASSERT(false, "Handle not overriden for NamedScalar.");
+  }
+
+  virtual void handle(const kir::IterDomain*) {
+    TORCH_INTERNAL_ASSERT(false, "Handle not overriden for IterDomain.");
+  }
+  virtual void handle(const kir::TensorDomain*) {
+    TORCH_INTERNAL_ASSERT(false, "Handle not overriden for TensorDomain.");
+  }
+  virtual void handle(const kir::TensorView*) {
+    TORCH_INTERNAL_ASSERT(false, "Handle not overriden for TensorView.");
   }
 
   virtual void handle(const kir::UnaryOp*) {
@@ -428,6 +446,16 @@ class TORCH_CUDA_API OptInDispatch {
   }
   virtual void handle(kir::TensorIndex*) {
     TORCH_INTERNAL_ASSERT(false, "Handle not overriden for TensorIndex.");
+  }
+
+  virtual void handle(kir::IterDomain*) {
+    TORCH_INTERNAL_ASSERT(false, "Handle not overriden for IterDomain.");
+  }
+  virtual void handle(kir::TensorDomain*) {
+    TORCH_INTERNAL_ASSERT(false, "Handle not overriden for TensorDomain.");
+  }
+  virtual void handle(kir::TensorView*) {
+    TORCH_INTERNAL_ASSERT(false, "Handle not overriden for TensorView.");
   }
 
   virtual void handle(kir::UnaryOp*) {

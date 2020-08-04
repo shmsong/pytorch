@@ -116,7 +116,7 @@ IterDomain::IterDomain(const IterDomain* src, IrCloner* ir_cloner)
       iter_type_(src->iter_type_),
       is_rfactor_domain_(src->is_rfactor_domain_) {}
 
-// TODO: get rid of the extent/rawExtent duplication
+// TODO: eliminate the extent/rawExtent duplication
 Val* IterDomain::extent() const {
   if (isThread()) {
     if (extent_->getValType() == ValType::Scalar)
@@ -132,6 +132,15 @@ TensorDomain::TensorDomain(const fuser::TensorDomain* domain)
     : Val(ValType::KirTensorDomain, DataType::Null, true, true) {
   // TODO
 }
+
+TensorDomain::TensorDomain(const TensorDomain* src, IrCloner* ir_cloner)
+    : Val(src, ir_cloner),
+      root_domain_(ir_cloner->clone(src->root_domain_)),
+      domain_(ir_cloner->clone(src->domain_)),
+      no_bcast_domain_(ir_cloner->clone(src->no_bcast_domain_)),
+      no_reduction_domain_(ir_cloner->clone(src->no_reduction_domain_)),
+      rfactor_domain_(ir_cloner->clone(src->rfactor_domain_)),
+      contiguity_(src->contiguity()) {}
 
 bool TensorDomain::hasReduction() const {
   return no_reduction_domain_.size() != domain_.size();
@@ -162,20 +171,16 @@ IterDomain* TensorDomain::axis(int i) const {
   return domain_[i];
 }
 
-TensorDomain::TensorDomain(const TensorDomain* src, IrCloner* ir_cloner)
-    : Val(src, ir_cloner),
-      root_domain_(ir_cloner->clone(src->root_domain_)),
-      domain_(ir_cloner->clone(src->domain_)),
-      no_bcast_domain_(ir_cloner->clone(src->no_bcast_domain_)),
-      no_reduction_domain_(ir_cloner->clone(src->no_reduction_domain_)),
-      rfactor_domain_(ir_cloner->clone(src->rfactor_domain_)),
-      contiguity_(src->contiguity()) {}
-
 TensorView::TensorView(const fuser::TensorView* tv)
     : Val(ValType::KirTensorView, tv->getDataType().value(), true, true) {
-  // domain_ = new TensorDomain(tv->domain()); TODO
+  domain_ = new TensorDomain(tv->domain());
   memory_type_ = tv->getMemoryType();
 }
+
+TensorView::TensorView(const TensorView* src, IrCloner* ir_cloner)
+    : Val(src, ir_cloner),
+      domain_(ir_cloner->clone(src->domain_)),
+      memory_type_(src->memory_type_) {}
 
 UnaryOp::UnaryOp(UnaryOpType type, Val* out, Val* in)
     : Expr(ExprType::KirUnaryOp), unary_op_type_{type}, out_{out}, in_{in} {
