@@ -699,15 +699,15 @@ class TORCH_CUDA_API GridReduction : public Expr {
 Val* lowerValue(const Val* val);
 
 // A minimal builder interface
-Val* andExpr(Val* a, Val* b);
-Val* eqExpr(Val* a, Val* b);
-Val* ltExpr(Val* a, Val* b);
-Val* addExpr(Val* a, Val* b);
-Val* subExpr(Val* a, Val* b);
-Val* mulExpr(Val* a, Val* b);
-Val* divExpr(Val* a, Val* b);
-Val* ceilDivExpr(Val* a, Val* b);
-Val* modExpr(Val* a, Val* b);
+Val* andExpr(Val* lhs, Val* rhs);
+Val* eqExpr(Val* lhs, Val* rhs);
+Val* ltExpr(Val* lhs, Val* rhs);
+Val* addExpr(Val* lhs, Val* rhs);
+Val* subExpr(Val* lhs, Val* rhs);
+Val* mulExpr(Val* lhs, Val* rhs);
+Val* divExpr(Val* lhs, Val* rhs);
+Val* ceilDivExpr(Val* lhs, Val* rhs);
+Val* modExpr(Val* lhs, Val* rhs);
 
 } // namespace kir
 } // namespace fuser

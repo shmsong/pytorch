@@ -413,7 +413,7 @@ kir::TensorIndex* Index::getProducerIndex_impl(
       loops_adjusted.end(),
       indices.begin(),
       [](kir::ForLoop* fl) {
-        return fl->iter_domain()->isBroadcast() ? new Int(0) : fl->index();
+        return fl->iter_domain()->isBroadcast() ? new kir::Int(0) : fl->index();
       });
 
   std::vector<Val*> used_inds;
@@ -439,12 +439,14 @@ kir::TensorIndex* Index::getProducerIndex_impl(
 
   for (size_t i = 0; i < used_inds.size(); i++) {
     Val* ind = used_inds[i];
-    for (size_t j = i + 1; j < used_ranges.size(); j++)
-      ind = mul(ind, used_ranges[j]->extent());
+    for (size_t j = i + 1; j < used_ranges.size(); j++) {
+      ind = kir::mulExpr(ind, used_ranges[j]->extent());
+    }
     used_inds[i] = ind;
   }
-  if (used_inds.size() == 0)
-    used_inds.push_back(new Int(0));
+  if (used_inds.size() == 0) {
+    used_inds.push_back(new kir::Int(0));
+  }
 
   return new kir::TensorIndex(producer, used_inds);
 }
@@ -526,14 +528,15 @@ kir::TensorIndex* Index::getGlobalConsumerIndex(
     } else {
       std::stringstream ss;
       ss << "T" << consumer->name() << ".stride[" << i << "]";
-      strided_inds.push_back(
-          mul(computed_inds[i], new NamedScalar(ss.str(), DataType::Int)));
+      strided_inds.push_back(kir::mulExpr(
+          computed_inds[i], new kir::NamedScalar(ss.str(), DataType::Int)));
     }
   }
 
   // Probably shouldn't ever hit this
-  if (strided_inds.size() == 0)
-    strided_inds.push_back(new Int(0));
+  if (strided_inds.size() == 0) {
+    strided_inds.push_back(new kir::Int(0));
+  }
 
   return new kir::TensorIndex(consumer, strided_inds);
 }

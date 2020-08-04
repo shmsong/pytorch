@@ -10,6 +10,52 @@ namespace jit {
 namespace fuser {
 namespace kir {
 
+namespace {
+
+bool isLoweredScalar(const Val* val) {
+  switch (val->getValType().value()) {
+    case ValType::KirNamedScalar:
+    case ValType::KirScalar:
+      return true;
+    default:
+      return false;
+  }
+}
+
+Val* newResult(const Val* lhs, const Val* rhs) {
+  TORCH_CHECK(isLoweredScalar(lhs));
+  TORCH_CHECK(isLoweredScalar(rhs));
+  TORCH_CHECK(lhs->getDataType() == rhs->getDataType());
+
+  // Allocate a compatible result value
+  switch (lhs->getDataType().value()) {
+    case DataType::Bool:
+      return new Bool(c10::nullopt);
+    case DataType::Float:
+      return new Float(c10::nullopt);
+    case DataType::Half:
+      return new Half(c10::nullopt);
+    case DataType::Int:
+      return new Int(c10::nullopt);
+    default:
+      TORCH_CHECK(false, "Unexpected data type");
+  }
+}
+
+Val* newArithmeticExpr(BinaryOpType op_type, Val* lhs, Val* rhs) {
+  auto result = newResult(lhs, rhs);
+  new BinaryOp(op_type, result, lhs, rhs);
+  return result;
+}
+
+Val* newLogicExpr(BinaryOpType op_type, Val* lhs, Val* rhs) {
+  auto result = new Bool(c10::nullopt);
+  new BinaryOp(op_type, result, lhs, rhs);
+  return result;
+}
+
+} // namespace
+
 NamedScalar* NamedScalar::getParallelDim(ParallelType p_type) {
   std::string parallel_dim = stringifyThreadSize(p_type);
   return new NamedScalar(parallel_dim, DataType::Int);
@@ -321,9 +367,8 @@ ForLoop::ForLoop(
       index_{index},
       iter_domain_{iter_domain},
       parent_scope_{parent_scope} {
-  TORCH_INTERNAL_ASSERT(
-      index->isAnInt(),
-      "Cannot create a for loop with an index that is not an int.");
+  TORCH_INTERNAL_ASSERT(index->isAnInt());
+  TORCH_INTERNAL_ASSERT(isLoweredScalar(index));
   addInput(index);
   addInput(iter_domain);
   name_ = FusionGuard::getCurFusion()->registerLoweredExpr(this);
@@ -455,52 +500,6 @@ std::string GridReduction::getPredicateFlagName(const fuser::TensorView* val) {
   return ss.str();
 }
 
-namespace {
-
-bool isScalar(const Val* val) {
-  switch (val->getValType().value()) {
-    case ValType::KirNamedScalar:
-    case ValType::KirScalar:
-      return true;
-    default:
-      return false;
-  }
-}
-
-Val* newResult(const Val* a, const Val* b) {
-  TORCH_CHECK(a->isScalar());
-  TORCH_CHECK(b->isScalar());
-  TORCH_CHECK(a->getDataType() == b->getDataType());
-
-  // Allocate a compatible result value
-  switch (a->getDataType().value()) {
-    case DataType::Bool:
-      return new Bool(c10::nullopt);
-    case DataType::Float:
-      return new Float(c10::nullopt);
-    case DataType::Half:
-      return new Half(c10::nullopt);
-    case DataType::Int:
-      return new Int(c10::nullopt);
-    default:
-      TORCH_CHECK(false, "Unexpected data type");
-  }
-}
-
-Val* newArithmeticExpr(BinaryOpType op_type, Val* a, Val* b) {
-  auto result = newResult(a, b);
-  new BinaryOp(op_type, result, a, b);
-  return result;
-}
-
-Val* newLogicExpr(BinaryOpType op_type, Val* a, Val* b) {
-  auto result = new Bool(c10::nullopt);
-  new BinaryOp(op_type, result, a, b);
-  return result;
-}
-
-} // namespace
-
 Val* lowerValue(const Val* val) {
   switch (val->getValType().value()) {
     case ValType::TensorDomain: {
@@ -538,40 +537,40 @@ Val* lowerValue(const Val* val) {
   }
 }
 
-Val* andExpr(Val* a, Val* b) {
-  return newLogicExpr(BinaryOpType::And, a, b);
+Val* andExpr(Val* lhs, Val* rhs) {
+  return newLogicExpr(BinaryOpType::And, lhs, rhs);
 }
 
-Val* eqExpr(Val* a, Val* b) {
-  return newLogicExpr(BinaryOpType::Eq, a, b);
+Val* eqExpr(Val* lhs, Val* rhs) {
+  return newLogicExpr(BinaryOpType::Eq, lhs, rhs);
 }
 
-Val* ltExpr(Val* a, Val* b) {
-  return newLogicExpr(BinaryOpType::LT, a, b);
+Val* ltExpr(Val* lhs, Val* rhs) {
+  return newLogicExpr(BinaryOpType::LT, lhs, rhs);
 }
 
-Val* addExpr(Val* a, Val* b) {
-  return newArithmeticExpr(BinaryOpType::Add, a, b);
+Val* addExpr(Val* lhs, Val* rhs) {
+  return newArithmeticExpr(BinaryOpType::Add, lhs, rhs);
 }
 
-Val* subExpr(Val* a, Val* b) {
-  return newArithmeticExpr(BinaryOpType::Sub, a, b);
+Val* subExpr(Val* lhs, Val* rhs) {
+  return newArithmeticExpr(BinaryOpType::Sub, lhs, rhs);
 }
 
-Val* mulExpr(Val* a, Val* b) {
-  return newArithmeticExpr(BinaryOpType::Mul, a, b);
+Val* mulExpr(Val* lhs, Val* rhs) {
+  return newArithmeticExpr(BinaryOpType::Mul, lhs, rhs);
 }
 
-Val* divExpr(Val* a, Val* b) {
-  return newArithmeticExpr(BinaryOpType::Div, a, b);
+Val* divExpr(Val* lhs, Val* rhs) {
+  return newArithmeticExpr(BinaryOpType::Div, lhs, rhs);
 }
 
-Val* ceilDivExpr(Val* a, Val* b) {
-  return newArithmeticExpr(BinaryOpType::CeilDiv, a, b);
+Val* ceilDivExpr(Val* lhs, Val* rhs) {
+  return newArithmeticExpr(BinaryOpType::CeilDiv, lhs, rhs);
 }
 
-Val* modExpr(Val* a, Val* b) {
-  return newArithmeticExpr(BinaryOpType::Mod, a, b);
+Val* modExpr(Val* lhs, Val* rhs) {
+  return newArithmeticExpr(BinaryOpType::Mod, lhs, rhs);
 }
 
 } // namespace kir
