@@ -10,11 +10,14 @@ namespace fuser {
 
 /* ITER VISITOR */
 
-std::vector<Statement*> IterVisitor::next(Statement* statement) {
-  if (statement->isVal())
-    return next(statement->as<Val>());
-  else if (statement->isExpr())
-    return next(statement->as<Expr>());
+std::vector<Statement*> IterVisitor::next(Statement* stmt) {
+  if(termination_stmts.find(stmt) != termination_stmts.end()){
+    return std::vector<Statement*>();
+  }
+  if (stmt->isVal())
+    return next(stmt->as<Val>());
+  else if (stmt->isExpr())
+    return next(stmt->as<Expr>());
   else
     TORCH_INTERNAL_ASSERT(
         false, "IterVisitor could not detect type in next_dispatch.");
@@ -54,47 +57,84 @@ void remove_visited(
 
 } // namespace
 
+// Implementation details:
+// We start with an entry in stmt_stack that is the outputs we want to
+// process. We cannot process these outputs untill all Stmts in their history
+// have been processed, as those Stmts contain all dependencies to produce
+// these values. What we will do is traverse towards inputs until we hit a
+// leaf node. Once we hit a leaf node that node will be visited, then we will
+// take them off the stack. Once a stack entry is empty, know everything
+// needed to be visited to visit stmt_stack.back().back(). We then visit that
+// node, make it as visisted and remove it from the stack.
+//
+// To prevent traversing all paths through a DAG (unless we want to) we have a
+// function to remove visited nodes from being re-added to the stack
+// (remove_visited).
 void IterVisitor::traverseFrom(
     Fusion* fusion,
     const std::vector<Val*>& from,
-    bool traverseAllPaths) {
+    bool traverseAllPaths,
+    const std::unordered_set<Statement*>& to) {
+
   FusionGuard fg(fusion);
+
+  // Set any type of statement we want to stop traversal on.
+  termination_stmts = std::unordered_set<Statement*>(to);
+  
   std::unordered_set<Statement*> visited;
+
   stmt_stack.clear();
   stmt_stack.emplace_back(from.rbegin(), from.rend());
-  // true when returning to a node after vistiting all its input
-  // nodes. Nodes are only visited when this is true.
+
   bool all_inputs_visited = false;
 
   while (!stmt_stack.empty()) {
+
     auto& current_inputs = stmt_stack.back();
-    // When current_inputs is empty, all the input nodes have been
-    // visited. Return to the output node by popping the stack. Record
-    // all inputs are visited.
+
+    // If current_inputs is empty, pop a level of the stmt_stack, mark the level we
+    // pop to as having all inputs processed, the layer we processed were all
+    // added inputs required for that Stmt.
     if (current_inputs.empty()) {
       stmt_stack.pop_back();
       all_inputs_visited = true;
       continue;
     }
+    
+    // Get the very last entry in the stack to process
     const auto& stmt = current_inputs.back();
-    // Visit stmt when all_inputs_visited is true.
+
+    // If we just poped a stmt_stack level, we can finally visit it!
     if (all_inputs_visited) {
+    
       // Mark visited
       visited.insert(stmt);
-      // Handle
+    
+      // Actually visit stmt
       handle(stmt);
+    
+      // Remove last value just visited
       current_inputs.pop_back();
+
+      // Mark that we need to visit a new Stmt's.
       all_inputs_visited = false;
     } else {
-      // Visit input nodes.
+      // We're not ready to process this node, so add all its inputs to be
+      // checked Visit input nodes.
       auto next_stmts = next(stmt);
+      // We may want to retraverse nodes, in that case revisit everything!
       if (!traverseAllPaths) {
+        // If we don't want to retraverse, remove nodes we already visisted.
         remove_visited(next_stmts, visited);
       }
       if (next_stmts.empty()) {
+        // If there's nothing to visit because it was all already visited, mark
+        // to process
         all_inputs_visited = true;
       } else {
+        // Add all these new stmts to visit to the stack.
         stmt_stack.emplace_back(next_stmts.rbegin(), next_stmts.rend());
+        // We have new things to visit,
         all_inputs_visited = false;
       }
     }
@@ -173,6 +213,8 @@ class AllVals : public IterVisitor {
   }
 
  public:
+
+  // Return all values in history of all values in from
   static std::unordered_set<Val*> get(
       Fusion* fusion,
       const std::vector<Val*>& from) {
