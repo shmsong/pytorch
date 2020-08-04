@@ -63,7 +63,6 @@ void debugPrint(const TensorTypePtr& type) {
   }
 }
 
-// Dimension collapsing only applicable to profiling executor at this moment
 at::DimVector graphReductionAxes(const std::shared_ptr<Graph>& graph) {
   at::DimVector reduction_axes;
   for (const auto& n : graph->nodes()) {
@@ -77,7 +76,11 @@ at::DimVector graphReductionAxes(const std::shared_ptr<Graph>& graph) {
       for (const auto dim : dims_list->vec()) {
         reduction_axes.emplace_back(static_cast<int>(dim));
       }
-      return reduction_axes;
+      // we should return here, but we don't!
+      // We continue the traversal and check for other reduction node. Because
+      // our permutation doesn't really support intermediate reduction; Continue
+      // traversal would trigger the `TORCH_INTERNAL_ASSERT`, it's not ideal but
+      // at least it's not silent error.
     }
   }
   return reduction_axes;
@@ -151,12 +154,26 @@ FusionExecutorCache::FusionExecutorCache(std::unique_ptr<Fusion>&& fusion, at::D
 std::vector<at::Tensor> FusionExecutorCache::runFusionWithInputs(
     const at::ArrayRef<IValue>& inputs) {
   if (fusion_executor_cache_.empty()) {
-    scheduleFusion(fusion_.get(), inputs);
+    if (fusion_->hasReduction()) {
+      TensorView* red_tv = nullptr;
+      FusionGuard(fusion_.get());
+      for (auto expr : fusion_->exprs()) {
+        if (expr->getExprType().has_value() &&
+            expr->getExprType().value() == ExprType::ReductionOp) {
+        	red_tv = expr->outputs()[0]->as<TensorView>();
+          break;
+        }
+      }
+      scheduleReduction(fusion_.get(), inputs, red_tv);
+    } else {
+      scheduleFusion(fusion_.get(), inputs);
+    }
     fusion_executor_cache_.emplace_back(std::make_unique<FusionExecutor>());
     CompileOptions options;
     options.device = device_;
     fusion_executor_cache_.back()->compileFusion(fusion_.get(), options);
   }
+  printf("test\n");
   return fusion_executor_cache_.back()->runFusion(inputs);
 }
 
