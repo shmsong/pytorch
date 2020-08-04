@@ -13,6 +13,12 @@ namespace cuda {
 
 namespace {
 
+// TODO: temporary hack to resolve my is_constructible issue;
+std::vector<size_t> toVector(const at::DimVector& small_vec) {
+  std::vector<size_t> std_vec(small_vec.begin(), small_vec.end());
+  return std_vec;
+}
+
 void debugPrint(const TensorTypePtr& type) {
   printf("\nsizes:");
   if (auto sizes = type->symbolic_sizes().sizes()) {
@@ -70,6 +76,7 @@ at::DimVector graphReductionAxes(const std::shared_ptr<Graph>& graph) {
       // TODO: I think this is enough to detect reduction that's not the output as well. Since we go in topological order, we would run into intermediate reduction, if there's any.
       TORCH_INTERNAL_ASSERT(graph->outputs().size() == 1 && graph->outputs()[0] == n->output(), "support for graph with reduction is limited to single output from reduction node");
       
+      // TODO: we should return empty when `keepdim` is True?
       auto dims_list = constant_as<c10::List<int64_t>>(n->input(1));
       TORCH_INTERNAL_ASSERT(
           dims_list.has_value(),"reduction axes should be constant");
@@ -136,12 +143,37 @@ at::DimVector getPermutationPerSortedStride(const TensorTypePtr& type) {
   return permute_seq;
 }
 
-at::DimVector reversePermutation(at::DimVector permuted) {
+at::DimVector reversePermutation(const at::DimVector& permuted, const std::vector<size_t>& reduction_axes) {
   int rank = static_cast<int>(permuted.size());
   at::DimVector permutation(rank, -1);
   for (int i = 0; i < rank; i++) {
     permutation[permuted[i]] = i;
   }
+
+  if (!reduction_axes.empty()) {
+    // see [ NOTE - reduction in graph ] part 1.
+    // a. we skip axes that were eliminated by reduction;
+    // b. we adjust axes index that were affected by reduction;
+    at::DimVector adjusted_permutation;
+    for (const auto& dim : permutation) {
+      printf("\nexisting perm %ld", dim);
+      int adjusted_offset = 0;
+      for (const auto& red_dim : reduction_axes) {
+        if (red_dim < dim) {
+          adjusted_offset++; // 1.b
+        } else if (red_dim == dim) {
+          adjusted_offset = -1; // 1.a
+          break;
+        }
+      }
+      if (adjusted_offset >= 0) {
+        adjusted_permutation.emplace_back(dim - adjusted_offset);
+        printf("\n\tadjusted perm %ld", dim - adjusted_offset);
+      }
+    }
+    return adjusted_permutation;
+  }
+
   return permutation;
 }
 
@@ -173,7 +205,6 @@ std::vector<at::Tensor> FusionExecutorCache::runFusionWithInputs(
     options.device = device_;
     fusion_executor_cache_.back()->compileFusion(fusion_.get(), options);
   }
-  printf("test\n");
   return fusion_executor_cache_.back()->runFusion(inputs);
 }
 
@@ -187,7 +218,7 @@ std::vector<at::Tensor> FusionExecutorCache::runFusionWithInputs(
 //   entry->compileFusion(fusion, options);
 // }
 
-GraphCache::InputsRequirement::InputsRequirement(const std::shared_ptr<Graph>& graph) {
+GraphCache::InputsRequirement::InputsRequirement(const std::shared_ptr<Graph>& graph, const std::vector<size_t>& reduction_axes) {
   // run over inputs to extract common types;
   TensorTypePtr acc_type = TensorType::get();
   for (const auto& input : graph->inputs()) {
@@ -207,13 +238,13 @@ GraphCache::InputsRequirement::InputsRequirement(const std::shared_ptr<Graph>& g
     }
   }
   input_permutation_ = getPermutationPerSortedStride(acc_type);
-  output_permutation_ = reversePermutation(input_permutation_);
+  output_permutation_ = reversePermutation(input_permutation_, reduction_axes);
   TORCH_CHECK(acc_type->device().has_value(),
       "requires fixed device for all inputs");
   device_ = acc_type->device();
 }
 
-GraphCache::InputsRequirement::InputsRequirement(const at::ArrayRef<IValue>& inputs) {
+GraphCache::InputsRequirement::InputsRequirement(const at::ArrayRef<IValue>& inputs, const std::vector<size_t>& reduction_axes) {
   // run over inputs to extract common types;
   TensorTypePtr acc_type = TensorType::get();
   for (const auto& input : inputs) {
@@ -235,7 +266,7 @@ GraphCache::InputsRequirement::InputsRequirement(const at::ArrayRef<IValue>& inp
     }
   }
   input_permutation_ = getPermutationPerSortedStride(acc_type);
-  output_permutation_ = reversePermutation(input_permutation_);
+  output_permutation_ = reversePermutation(input_permutation_, reduction_axes);
   TORCH_CHECK(acc_type->device().has_value(),
       "requires fixed device for all inputs");
   device_ = acc_type->device();
@@ -295,12 +326,9 @@ bool GraphCache::InputsRequirement::complyWith(const InputsRequirement& expect) 
   return true;
 }
 
-template <
-    typename T,
-    std::enable_if_t<std::is_constructible<GraphCache::InputsRequirement, T>::value, int> = 0>
 FusionExecutorCache* GraphCache::createFusionExecutorCache(
-    const T& meta_input_stack) {
-  input_stacks_.emplace_back(meta_input_stack);
+    const InputsRequirement& input_stack) {
+  input_stacks_.emplace_back(input_stack);
   std::shared_ptr<Graph> parsing_graph;
   // permute inputs on `Graph` to sort dimensions on common stride order;
   if (input_stacks_.back().requiresPermutation()) {
@@ -349,8 +377,10 @@ FusionExecutorCache* GraphCache::createFusionExecutorCache(
             permuted_vec_optional_stride,
             type->requires_grad());
     };
+
     // copy `graph_` as `parsing_graph`
     parsing_graph = graph_->copy();
+    std::cout << "\noriginal\n" << *parsing_graph << std::endl;
     for (auto input : parsing_graph->inputs()) {
       if (auto input_type = input->type()->cast<TensorType>()) {
         printf("\nprior to permutation");
@@ -360,6 +390,35 @@ FusionExecutorCache* GraphCache::createFusionExecutorCache(
         debugPrint(input->type()->cast<TensorType>());
       }
     }
+
+    if (!reduction_axes_.empty()) {
+      // see [ NOTE - reduction in graph ] part 2.
+      for (auto n : parsing_graph->nodes()) {
+        if (isReductionNode(n)) {
+          // TODO: this is mostly redundant check, but it's compile time, we
+          //       leave it here to be safe;
+          TORCH_INTERNAL_ASSERT(parsing_graph->outputs().size() == 1 && parsing_graph->outputs()[0] == n->output(), "supporfor graph with reduction is limited to single output from reduction node");
+          auto dims_list = constant_as<c10::List<int64_t>>(n->input(1));
+          TORCH_INTERNAL_ASSERT(
+              dims_list.has_value(),"reduction axes should be constant");
+          std::vector<int64_t> adjusted_reduction_axes;
+          for (const auto dim : dims_list->vec()) {
+            // adjust reduction axis to be the permuted axis;
+            for (size_t j = 0; j < input_permutation.size(); j++) {
+              // follow the permutation to resolve the new reduction axes;
+              if (input_permutation[j] == dim) {
+                adjusted_reduction_axes.emplace_back(j);
+                break;
+              }
+            }
+          }
+          parsing_graph->setInsertPoint(n);
+          auto const_ival_axes = parsing_graph->insertConstant(IValue(adjusted_reduction_axes));
+          n->replaceInput(1, const_ival_axes);
+        }
+      }
+    }
+    std::cout << "\npermuted\n" << *parsing_graph << std::endl;
   } else {
     parsing_graph = graph_;
   }
@@ -372,19 +431,27 @@ FusionExecutorCache* GraphCache::createFusionExecutorCache(
 
 GraphCache::GraphCache(std::shared_ptr<Graph> graph)
     : graph_(std::move(graph)) {
-  // compile a kernel if we have enough information from graph.
+  // [ NOTE - reduction in graph ]
+  //
+  // reduction complicates our permutation in integration, it addes two things:
+  // 1. we need to adjust output_permutation_;
+  //    because of dimension elimination during permutation (not necessarily,
+  //    given the `keepdim` argument.) this needs to be accommodated later when
+  //    we added the support.
+  // 2. adjust reduction axes for the permutation;
+  //    permute changes the semantics of axes, we need to update the reduction
+  //    axes in the graph in order to match the behavior;
   reduction_axes_ = graphReductionAxes(graph_);
 
-  // only compile graph when we have profiling record;
-  std::shared_ptr<Graph> parsing_graph = graph_;
+  // compile a kernel if we have enough information from graph (profiling record)
   if (IsNewExecutorEnabled()) {
-    createFusionExecutorCache(graph_);
+    createFusionExecutorCache(InputsRequirement(graph_, toVector(reduction_axes_)));
   }
 }
 
 std::vector<at::Tensor> GraphCache::runGraphWithInputs(
     const at::ArrayRef<IValue>& inputs) {
-  InputsRequirement input_stack(inputs);
+  InputsRequirement input_stack(inputs, toVector(reduction_axes_));
   FusionExecutorCache* fusion_executor_cache = nullptr;
 
   // TODO: hash indexing;

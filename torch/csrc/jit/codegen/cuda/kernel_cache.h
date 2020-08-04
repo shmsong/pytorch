@@ -55,8 +55,8 @@ class GraphCache {
     // c10::nullopt to take place of non-tensor type;
     std::vector<c10::optional<at::TensorTypePtr>> vec_optional_ttp;
 
-    InputsRequirement(const std::shared_ptr<Graph>& graph);
-    InputsRequirement(const at::ArrayRef<IValue>& inputs);
+    InputsRequirement(const std::shared_ptr<Graph>& graph, const std::vector<size_t>& reduction_axes);
+    InputsRequirement(const at::ArrayRef<IValue>& inputs, const std::vector<size_t>& reduction_axes);
 
     //bool operator==(const InputsRequirement& other);
     bool complyWith(const InputsRequirement& expect);
@@ -64,14 +64,11 @@ class GraphCache {
     bool requiresPermutation();
   };
 
-  template <
-      typename T,
-      std::enable_if_t<std::is_constructible<GraphCache::InputsRequirement, T>::value, int> = 0>
-  FusionExecutorCache* createFusionExecutorCache(
-      const T& meta_input_stack);
+  FusionExecutorCache* createFusionExecutorCache(const InputsRequirement& input_stack);
 
   // Computation graph;
   std::shared_ptr<Graph> graph_;
+  // TODO: poor name, we should use `eliminated_axes_` instead;
   at::DimVector reduction_axes_;
 
   // TODO: we should really hash instead of iterative check. Optimize later...
