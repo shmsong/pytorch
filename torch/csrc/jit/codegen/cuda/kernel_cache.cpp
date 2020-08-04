@@ -186,7 +186,9 @@ FusionExecutorCache::FusionExecutorCache(std::unique_ptr<Fusion>&& fusion, at::D
 std::vector<at::Tensor> FusionExecutorCache::runFusionWithInputs(
     const at::ArrayRef<IValue>& inputs) {
   if (fusion_executor_cache_.empty()) {
-    if (fusion_->hasReduction()) {
+    // TODO: enable Kevin's scheduleReduction, right now it's breaking CI tests
+    //if (fusion_->hasReduction()) {
+    if (false) {
       TensorView* red_tv = nullptr;
       FusionGuard(fusion_.get());
       for (auto expr : fusion_->exprs()) {
@@ -276,6 +278,7 @@ bool GraphCache::InputsRequirement::requiresPermutation() {
   return input_permutation_ != output_permutation_;
 }
 
+// TODO: tests!
 bool GraphCache::InputsRequirement::complyWith(const InputsRequirement& expect) {
   if (device_ != expect.device_ ||
       input_permutation_ != expect.input_permutation_ ||
@@ -329,7 +332,18 @@ bool GraphCache::InputsRequirement::complyWith(const InputsRequirement& expect) 
 FusionExecutorCache* GraphCache::createFusionExecutorCache(
     const InputsRequirement& input_stack) {
   input_stacks_.emplace_back(input_stack);
-  std::shared_ptr<Graph> parsing_graph;
+  std::shared_ptr<Graph> parsing_graph = graph_->copy();
+  std::cout << "\noriginal\n" << *parsing_graph << std::endl;
+  // assign inputs on parsing_graph to accommodate legacy executor, where input
+  // type might be missing/incomplete;
+  // This is purely overhead for profiling executor;
+  for (size_t i = 0; i < input_stack.vec_optional_ttp.size(); i++) {
+    // skip scalar inputs;
+    if (input_stack.vec_optional_ttp[i].has_value()) {
+      parsing_graph->inputs()[i]->setType(input_stack.vec_optional_ttp[i].value());
+    }
+  }
+
   // permute inputs on `Graph` to sort dimensions on common stride order;
   if (input_stacks_.back().requiresPermutation()) {
     auto input_permutation = input_stacks_.back().input_permutation_;
@@ -380,7 +394,7 @@ FusionExecutorCache* GraphCache::createFusionExecutorCache(
 
     // copy `graph_` as `parsing_graph`
     parsing_graph = graph_->copy();
-    std::cout << "\noriginal\n" << *parsing_graph << std::endl;
+    std::cout << "\nannotated graph\n" << *parsing_graph << std::endl;
     for (auto input : parsing_graph->inputs()) {
       if (auto input_type = input->type()->cast<TensorType>()) {
         printf("\nprior to permutation");
@@ -419,8 +433,6 @@ FusionExecutorCache* GraphCache::createFusionExecutorCache(
       }
     }
     std::cout << "\npermuted\n" << *parsing_graph << std::endl;
-  } else {
-    parsing_graph = graph_;
   }
 
   TORCH_INTERNAL_ASSERT(input_stacks_.back().device_.has_value(), "device is not set for fusion executor, something went wrong in NvFuser");
