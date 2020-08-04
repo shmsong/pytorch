@@ -43,6 +43,7 @@ TensorView* makeContigTensor(int nDims, DataType dtype = DataType::Float) {
 }
 
 TensorView* makeDummyTensor(int nDims, DataType dtype = DataType::Float) {
+  return makeContigTensor(nDims, dtype);
   // We can uncomment the below statement to test all tests with contiguous
   // tensors. return makeContigTensor(nDims, dtype);
   std::vector<IterDomain*> dom;
@@ -3269,6 +3270,8 @@ void testGPU_FusionSoftmax1D() {
 
   fusion.addOutput(output_tv4);
 
+  bcast_sum_tv3->split(0, tidx);
+
   sum_exp_tv2->split(-1, tidx);
   TensorView* sum_exp_rf_tv5 = sum_exp_tv2->rFactor({-2});
 
@@ -3329,6 +3332,8 @@ void testGPU_FusionSoftmax1DNormalized() {
   TensorView* output_tv7 = div(exp_tv4_copy, bcast_sum_tv6);
 
   fusion.addOutput(output_tv7);
+  bcast_max_tv2->split(0, tidx);
+  bcast_sum_tv6->split(0, tidx);
 
   max_val_tv1->split(-1, tidx);
   TensorView* max_val_rf_tv8 = max_val_tv1->rFactor({-2});
@@ -3395,6 +3400,8 @@ void testGPU_FusionSoftmax3D() {
 
   fusion.addOutput(output_tv4);
 
+  bcast_sum_tv3->split(-1, tidx);
+
   sum_exp_tv2->split(-1, tidx);
   TensorView* sum_exp_rf_tv5 = sum_exp_tv2->rFactor({-2});
 
@@ -3458,6 +3465,9 @@ void testGPU_FusionSoftmax3DNormalized() {
   TensorView* output_tv7 = div(exp_tv4_copy, bcast_sum_tv6);
 
   fusion.addOutput(output_tv7);
+
+  bcast_max_tv2->split(-1, tidx);
+  bcast_sum_tv6->split(-1, tidx);
 
   max_val_tv1->split(-1, tidx);
   TensorView* max_val_rf_tv8 = max_val_tv1->rFactor({-2});
