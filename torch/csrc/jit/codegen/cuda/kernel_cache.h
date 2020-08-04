@@ -26,7 +26,7 @@ namespace cuda {
 
 class FusionExecutorCache {
  public:
-  //FusionExecutorCache(Fusion* fusion, CompileOptions options);
+  // FusionExecutorCache(Fusion* fusion, CompileOptions options);
   FusionExecutorCache(std::unique_ptr<Fusion>&& fusion, at::Device device);
 
   std::vector<at::Tensor> runFusionWithInputs(
@@ -55,16 +55,21 @@ class GraphCache {
     // c10::nullopt to take place of non-tensor type;
     std::vector<c10::optional<at::TensorTypePtr>> vec_optional_ttp;
 
-    InputsRequirement(const std::shared_ptr<Graph>& graph, const std::vector<size_t>& reduction_axes);
-    InputsRequirement(const at::ArrayRef<IValue>& inputs, const std::vector<size_t>& reduction_axes);
+    InputsRequirement(
+        const std::shared_ptr<Graph>& graph,
+        const std::vector<size_t>& reduction_axes);
+    InputsRequirement(
+        const at::ArrayRef<IValue>& inputs,
+        const std::vector<size_t>& reduction_axes);
 
-    //bool operator==(const InputsRequirement& other);
+    // bool operator==(const InputsRequirement& other);
     bool complyWith(const InputsRequirement& expect);
 
     bool requiresPermutation();
   };
 
-  FusionExecutorCache* createFusionExecutorCache(const InputsRequirement& input_stack);
+  FusionExecutorCache* createFusionExecutorCache(
+      const InputsRequirement& input_stack);
 
   // Computation graph;
   std::shared_ptr<Graph> graph_;

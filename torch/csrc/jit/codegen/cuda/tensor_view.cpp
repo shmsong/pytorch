@@ -54,11 +54,14 @@ TensorView::TensorView(const std::shared_ptr<c10::TensorType>& tensor_type)
   // default to non_contiguous;
   std::vector<bool> contig_info(tensor_type->dim().value(), false);
 
-  // we iterate through stride_index_, which goes from fastest changing dimension to slowest, instead of iterating through sizes. This allows easier contiguity check;
+  // we iterate through stride_index_, which goes from fastest changing
+  // dimension to slowest, instead of iterating through sizes. This allows
+  // easier contiguity check;
   for (decltype(tensor_type->dim().value()) i = 0;
        i < tensor_type->dim().value();
        i++) {
-    // if we don't have contiguous dimension at current stride index, don't bother;
+    // if we don't have contiguous dimension at current stride index, don't
+    // bother;
     if (tensor_type->stride_properties()[i].has_value() &&
         tensor_type->stride_properties()[i]->stride_index_.has_value() &&
         tensor_type->stride_properties()[i]->contiguous_.has_value() &&
@@ -70,11 +73,13 @@ TensorView::TensorView(const std::shared_ptr<c10::TensorType>& tensor_type)
         continue;
       }
       if (i == 0) {
-        // mark fastest changing dimension collapsible only when it's the last dim;
-        contig_info[index] = (index == tensor_type->dim().value()-1);
+        // mark fastest changing dimension collapsible only when it's the last
+        // dim;
+        contig_info[index] = (index == tensor_type->dim().value() - 1);
       } else {
         // check the neighboring faster dimension;
-        if (auto left_index_opt = tensor_type->stride_properties()[i-1]->stride_index_) {
+        if (auto left_index_opt =
+                tensor_type->stride_properties()[i - 1]->stride_index_) {
           // TODO: `isBroadcast` -> issue #230
           if (sizes[left_index_opt.value()]->isBroadcast()) {
             continue;
