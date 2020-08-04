@@ -38,14 +38,14 @@ std::vector<kir::Bool*> PredicateCompute::computePredicates(
       preds.push_back(new kir::Bool(true));
     } else if (zero_ind) {
       if (extent == nullptr) {
-        extent = root[i]->extent();
+        extent = kir::lowerValue(root[i]->extent());
       } else {
-        extent = mul(extent, root[i]->extent());
+        extent = kir::mulExpr(extent, kir::lowerValue(root[i]->extent()));
       }
     } else {
-      auto local_extent = root[i]->extent();
+      auto local_extent = kir::lowerValue(root[i]->extent());
       if (extent != nullptr) {
-        local_extent = mul(extent, local_extent);
+        local_extent = kir::mulExpr(extent, local_extent);
       }
       auto pred = kir::ltExpr(indices[i], local_extent);
       extent = nullptr;

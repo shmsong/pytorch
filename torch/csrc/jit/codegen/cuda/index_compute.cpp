@@ -136,7 +136,8 @@ void IndexCompute::handle(Split* split) {
   auto outer_ind = outer_it->second;
   auto inner_ind = inner_it->second;
 
-  auto ind = add(mul(outer_ind, split->factor()), inner_ind);
+  auto ind = kir::addExpr(
+      kir::mulExpr(outer_ind, kir::lowerValue(split->factor())), inner_ind);
   index_map_[in_id] = ind;
 }
 
@@ -357,14 +358,15 @@ kir::TensorIndex* Index::getGlobalProducerIndex(
     } else {
       std::stringstream ss;
       ss << "T" << producer->name() << ".stride[" << i << "]";
-      strided_inds.push_back(
-          mul(p_inds[i], new NamedScalar(ss.str(), DataType::Int)));
+      strided_inds.push_back(kir::mulExpr(
+          p_inds[i], new kir::NamedScalar(ss.str(), DataType::Int)));
     }
   }
 
   // Probably shouldn't ever hit this
-  if (strided_inds.size() == 0)
-    strided_inds.push_back(new Int(0));
+  if (strided_inds.size() == 0) {
+    strided_inds.push_back(new kir::Int(0));
+  }
 
   return new kir::TensorIndex(producer, strided_inds);
 }
@@ -602,7 +604,7 @@ kir::TensorIndex* Index::getConsumerIndex_impl(
         continue;
       }
 
-      used_inds.push_back(indices[l_i]);
+      used_inds.push_back(kir::lowerValue(indices[l_i]));
       used_ranges.push_back(ranges[l_i]);
       l_i++;
       c_i++;
@@ -611,13 +613,15 @@ kir::TensorIndex* Index::getConsumerIndex_impl(
 
   for (size_t i = 0; i < used_inds.size(); i++) {
     Val* ind = used_inds[i];
-    for (size_t j = i + 1; j < used_ranges.size(); j++)
-      ind = mul(ind, used_ranges[j]->extent());
+    for (size_t j = i + 1; j < used_ranges.size(); j++) {
+      ind = kir::mulExpr(ind, used_ranges[j]->extent());
+    }
     used_inds[i] = ind;
   }
 
-  if (used_inds.size() == 0)
-    used_inds.push_back(new Int(0));
+  if (used_inds.size() == 0) {
+    used_inds.push_back(new kir::Int(0));
+  }
 
   return new kir::TensorIndex(consumer, used_inds);
 }

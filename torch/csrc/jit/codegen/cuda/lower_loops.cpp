@@ -189,7 +189,7 @@ void LoopNestGenerator::initReduction(
           new kir::NamedScalar(ss.str(), DataType::Int), id, {}, inner_fl);
     } else {
       // Otherwise it's just a new int-
-      new_fl = new kir::ForLoop(new kir::Int(), id, {}, inner_fl);
+      new_fl = new kir::ForLoop(new kir::Int(c10::nullopt), id, {}, inner_fl);
     }
 
     if (init_loop_nest == nullptr) {

@@ -386,7 +386,7 @@ Allocate::Allocate(Val* buffer, MemoryType memory_type, Val* size)
       const auto domain = buffer_->as<TensorView>()->domain();
       size_ = domain->nDims() == 0 ? new Int(1) : domain->axis(0)->extent();
       for (size_t i = 1; i < domain->nDims(); i++) {
-        auto result = new Int();
+        auto result = new Int(c10::nullopt);
         new BinaryOp(
             BinaryOpType::Mul, result, size_, domain->axis(i)->extent());
         size_ = result;
@@ -455,22 +455,123 @@ std::string getPredicateFlagName(const fuser::TensorView* val) {
   return ss.str();
 }
 
-Val* andExpr(Val* v1, Val* v2) {
-  auto result = new Bool();
-  new BinaryOp(BinaryOpType::And, result, v1, v2);
+namespace {
+
+bool isScalar(const Val* val) {
+  switch (val->getValType().value()) {
+    case ValType::KirNamedScalar:
+    case ValType::KirScalar:
+      return true;
+    default:
+      return false;
+  }
+}
+
+Val* newResult(const Val* a, const Val* b) {
+  TORCH_CHECK(a->isScalar());
+  TORCH_CHECK(b->isScalar());
+  TORCH_CHECK(a->getDataType() == b->getDataType());
+
+  // Allocate a compatible result value
+  switch (a->getDataType().value()) {
+    case DataType::Bool:
+      return new Bool(c10::nullopt);
+    case DataType::Float:
+      return new Float(c10::nullopt);
+    case DataType::Half:
+      return new Half(c10::nullopt);
+    case DataType::Int:
+      return new Int(c10::nullopt);
+    default:
+      TORCH_CHECK(false, "Unexpected data type");
+  }
+}
+
+Val* newArithmeticExpr(BinaryOpType op_type, Val* a, Val* b) {
+  auto result = newResult(a, b);
+  new BinaryOp(op_type, result, a, b);
   return result;
 }
 
-Val* eqExpr(Val* v1, Val* v2) {
-  auto result = new Bool();
-  new BinaryOp(BinaryOpType::Eq, result, v1, v2);
+Val* newLogicExpr(BinaryOpType op_type, Val* a, Val* b) {
+  auto result = new Bool(c10::nullopt);
+  new BinaryOp(op_type, result, a, b);
   return result;
 }
 
-Val* ltExpr(Val* v1, Val* v2) {
-  auto result = new Bool();
-  new BinaryOp(BinaryOpType::LT, result, v1, v2);
-  return result;
+} // namespace
+
+Val* lowerValue(const Val* val) {
+  switch (val->getValType().value()) {
+    case ValType::TensorDomain: {
+      const auto tensor_domain = val->as<fuser::TensorDomain>();
+      return new TensorDomain(tensor_domain);
+    }
+    case ValType::IterDomain: {
+      const auto iter_domain = val->as<fuser::IterDomain>();
+      return new IterDomain(iter_domain);
+    }
+    case ValType::TensorView: {
+      const auto tv = val->as<fuser::TensorView>();
+      return new TensorView(tv);
+    }
+    case ValType::Scalar: {
+      switch (val->getDataType().value()) {
+        case DataType::Bool:
+          return new Bool(val->as<fuser::Bool>()->value());
+        case DataType::Float:
+          return new Float(val->as<fuser::Float>()->value());
+        case DataType::Half:
+          return new Half(val->as<fuser::Half>()->value());
+        case DataType::Int:
+          return new Int(val->as<fuser::Int>()->value());
+        default:
+          TORCH_CHECK(false, "Unexpected data type");
+      }
+    }
+    case ValType::NamedScalar: {
+      const auto ns = val->as<fuser::NamedScalar>();
+      return new NamedScalar(ns->name(), ns->getDataType().value());
+    }
+    default:
+      TORCH_CHECK(false, "Unexpected Fusion IR value type");
+  }
+}
+
+Val* andExpr(Val* a, Val* b) {
+  return newLogicExpr(BinaryOpType::And, a, b);
+}
+
+Val* eqExpr(Val* a, Val* b) {
+  return newLogicExpr(BinaryOpType::Eq, a, b);
+}
+
+Val* ltExpr(Val* a, Val* b) {
+  return newLogicExpr(BinaryOpType::LT, a, b);
+}
+
+Val* addExpr(Val* a, Val* b) {
+  return newArithmeticExpr(BinaryOpType::Add, a, b);
+}
+
+Val* subExpr(Val* a, Val* b) {
+  return newArithmeticExpr(BinaryOpType::Sub, a, b);
+}
+
+Val* mulExpr(Val* a, Val* b) {
+  return newArithmeticExpr(BinaryOpType::Mul, a, b);
+}
+
+Val* divExpr(Val* a, Val* b) {
+  return newArithmeticExpr(BinaryOpType::Div, a, b);
+}
+
+Val* ceilDivExpr(Val* a, Val* b) {
+  return newArithmeticExpr(BinaryOpType::CeilDiv, a, b);
+}
+
+Val* modExpr(Val* a, Val* b) {
+  return newArithmeticExpr(BinaryOpType::Mod, a, b);
 }
 
 } // namespace kir

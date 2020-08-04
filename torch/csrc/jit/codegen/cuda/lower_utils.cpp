@@ -346,7 +346,7 @@ kir::ForLoop* openFor(Expr* scope, IterDomain* id) {
     new_scope = new kir::ForLoop(
         new kir::NamedScalar(ss.str(), DataType::Int), kir_id, {}, scope);
   } else {
-    new_scope = new kir::ForLoop(new kir::Int(), kir_id, {}, scope);
+    new_scope = new kir::ForLoop(new kir::Int(c10::nullopt), kir_id, {}, scope);
   }
   if (scope != nullptr)
     pushBack(scope, new_scope);

@@ -53,11 +53,7 @@ class TORCH_CUDA_API NamedScalar : public Val {
 
 class TORCH_CUDA_API Bool : public Val {
  public:
-  Bool()
-      : Val(ValType::KirScalar, DataType::Bool, true, true),
-        maybe_value_(c10::nullopt) {}
-
-  explicit Bool(bool value)
+  explicit Bool(const c10::optional<bool>& value)
       : Val(ValType::KirScalar, DataType::Bool, true, true),
         maybe_value_(value) {}
 
@@ -82,11 +78,7 @@ class TORCH_CUDA_API Float : public Val {
  public:
   using ScalarType = double;
 
-  Float()
-      : Val(ValType::KirScalar, DataType::Float, true, true),
-        maybe_value_(c10::nullopt) {}
-
-  explicit Float(ScalarType value)
+  explicit Float(const c10::optional<ScalarType>& value)
       : Val(ValType::KirScalar, DataType::Float, true, true),
         maybe_value_(value) {}
 
@@ -109,11 +101,7 @@ class TORCH_CUDA_API Float : public Val {
 
 class TORCH_CUDA_API Half : public Val {
  public:
-  Half()
-      : Val(ValType::KirScalar, DataType::Half, true, true),
-        maybe_value_(c10::nullopt) {}
-
-  explicit Half(float value)
+  explicit Half(const c10::optional<float>& value)
       : Val(ValType::KirScalar, DataType::Half, true, true),
         maybe_value_(value) {}
 
@@ -138,11 +126,7 @@ class TORCH_CUDA_API Int : public Val {
  public:
   using ScalarType = int64_t;
 
-  Int()
-      : Val(ValType::KirScalar, DataType::Int, true, true),
-        maybe_value_(c10::nullopt) {}
-
-  explicit Int(ScalarType value)
+  explicit Int(const c10::optional<ScalarType>& value)
       : Val(ValType::KirScalar, DataType::Int, true, true),
         maybe_value_(value) {}
 
@@ -711,11 +695,20 @@ class TORCH_CUDA_API GridReduction : public Expr {
 std::string getPredicateFlagName(const TensorView* val);
 std::string getPredicateFlagName(const fuser::TensorView* val);
 
-// A minimal builder interface
 
-Val* andExpr(Val* v1, Val* v2);
-Val* eqExpr(Val* v1, Val* v2);
-Val* ltExpr(Val* v1, Val* v2);
+// Converts a Fusion IR value into the Kernel IR equivalent
+Val* lowerValue(const Val* val);
+
+// A minimal builder interface
+Val* andExpr(Val* a, Val* b);
+Val* eqExpr(Val* a, Val* b);
+Val* ltExpr(Val* a, Val* b);
+Val* addExpr(Val* a, Val* b);
+Val* subExpr(Val* a, Val* b);
+Val* mulExpr(Val* a, Val* b);
+Val* divExpr(Val* a, Val* b);
+Val* ceilDivExpr(Val* a, Val* b);
+Val* modExpr(Val* a, Val* b);
 
 } // namespace kir
 } // namespace fuser

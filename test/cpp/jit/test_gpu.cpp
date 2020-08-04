@@ -1090,7 +1090,7 @@ void testGPU_FusionForLoop() {
   BinaryOp* op = static_cast<BinaryOp*>(TV2->getOrigin());
   fusion.addOutput(TV2);
 
-  auto fl = new kir::ForLoop(new kir::Int(), ID0, {op});
+  auto fl = new kir::ForLoop(new kir::Int(c10::nullopt), ID0, {op});
 
   std::stringstream result;
   std::stringstream ref;
