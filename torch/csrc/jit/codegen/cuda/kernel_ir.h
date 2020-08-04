@@ -687,16 +687,13 @@ class TORCH_CUDA_API GridReduction : public Expr {
   }
 
   static std::string getPredicateFlagName(const TensorView* val);
+  static std::string getPredicateFlagName(const fuser::TensorView* val);
 
  private:
   ReductionOp* reduction_op_ = nullptr;
   Allocate* reduction_buffer_ = nullptr;
   Allocate* sync_buffer_ = nullptr;
 };
-
-std::string getPredicateFlagName(const TensorView* val);
-std::string getPredicateFlagName(const fuser::TensorView* val);
-
 
 // Converts a Fusion IR value into the Kernel IR equivalent
 Val* lowerValue(const Val* val);

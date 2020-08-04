@@ -449,7 +449,7 @@ std::string GridReduction::getPredicateFlagName(const TensorView* val) {
   return ss.str();
 }
 
-std::string getPredicateFlagName(const fuser::TensorView* val) {
+std::string GridReduction::getPredicateFlagName(const fuser::TensorView* val) {
   std::stringstream ss;
   ss << "T" << val->name() << "pred";
   return ss.str();
