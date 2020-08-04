@@ -141,6 +141,10 @@ class TORCH_CUDA_API IRPrinter : public OptInConstDispatch {
   void handle(const kir::Int*) override;
   void handle(const kir::NamedScalar*) override;
 
+  void handle(const kir::IterDomain*) override;
+  void handle(const kir::TensorDomain*) override;
+  void handle(const kir::TensorView*) override;
+
   void handle(const kir::UnaryOp*) override;
   void handle(const kir::BinaryOp*) override;
   void handle(const kir::TernaryOp*) override;

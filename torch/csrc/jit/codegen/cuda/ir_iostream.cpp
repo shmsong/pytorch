@@ -342,6 +342,18 @@ void IRPrinter::handle(const kir::NamedScalar* i) {
   os << i->name();
 }
 
+void IRPrinter::handle(const kir::IterDomain*) {
+  TORCH_INTERNAL_ASSERT(false, "Unreachable");
+}
+
+void IRPrinter::handle(const kir::TensorDomain*) {
+  TORCH_INTERNAL_ASSERT(false, "Unreachable");
+}
+
+void IRPrinter::handle(const kir::TensorView*) {
+  TORCH_INTERNAL_ASSERT(false, "Unreachable");
+}
+
 static bool isTV(const Val* val) {
   return val->getValType().value() == ValType::TensorView ||
       val->getValType().value() == ValType::TensorIndex;
