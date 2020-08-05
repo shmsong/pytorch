@@ -79,7 +79,8 @@ TensorView::TensorView(const std::shared_ptr<c10::TensorType>& tensor_type)
       } else {
         // check the neighboring faster dimension;
         if (auto left_index_opt =
-                tensor_type->stride_properties()[static_cast<int>(i) - 1]->stride_index_) {
+                tensor_type->stride_properties()[static_cast<int>(i) - 1]
+                    ->stride_index_) {
           // TODO: `isBroadcast` -> issue #230
           if (sizes[left_index_opt.value()]->isBroadcast()) {
             continue;
