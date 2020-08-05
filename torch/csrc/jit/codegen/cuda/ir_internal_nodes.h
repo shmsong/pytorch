@@ -507,10 +507,15 @@ class TORCH_CUDA_API TensorDomain : public Val {
       const TensorDomain* producer,
       const TensorDomain* consumer,
       const std::unordered_set<IterDomain*>& producer_root_dims_to_map);
+
   static std::unordered_map<IterDomain*, IterDomain*> mapRootPtoC(
       const TensorDomain* producer,
       const TensorDomain* consumer) {
-    return mapRootPtoC(producer, consumer, {});
+    auto p_root = producer->rootDomain();
+    return mapRootPtoC(
+        producer,
+        consumer,
+        std::unordered_set<IterDomain*>(p_root.begin(), p_root.end()));
   }
 
   // pair is in order where second is the consumer of first

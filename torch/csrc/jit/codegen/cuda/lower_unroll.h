@@ -70,7 +70,7 @@ class TORCH_CUDA_API UnrollPass : public OptOutDispatch {
   const ThreadPredicateMap& thread_predicates_;
 
   // keep track if we're within an unrolled loop
-  bool within_unroll = false;
+  bool look_for_unroll = true;
 
   // Custom dispatch for Expr, want to find out of it's a TV op
   void handle(Expr*) final;

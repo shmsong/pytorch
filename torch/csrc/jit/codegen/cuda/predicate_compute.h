@@ -1,5 +1,6 @@
 #pragma once
 
+#include <torch/csrc/jit/codegen/cuda/arith.h>
 #include <torch/csrc/jit/codegen/cuda/ir_all_nodes.h>
 
 /*
@@ -45,6 +46,27 @@ class PredicateCompute {
       Expr* expr,
       const std::vector<kir::ForLoop*>& loops,
       kir::Bool* thread_pred);
+};
+
+class TORCH_CUDA_API UnrollPredicate {
+ public:
+  static kir::Bool* get(
+      const std::vector<kir::ForLoop*>& outer_loops,
+      kir::ForLoop* unrolled_loop);
+
+ private:
+  UnrollPredicate(
+      const std::vector<kir::ForLoop*>& outer_loops,
+      kir::ForLoop* unrolled_loop);
+
+  void predicateOn(Expr*);
+
+  void openLoop(kir::ForLoop*);
+
+  std::unordered_map<IterDomain*, kir::Bool*> predicates;
+  std::vector<kir::ForLoop*> for_loops;
+  // root map from all exprs traversing producer->consumer direction
+  std::unordered_map<IterDomain*, IterDomain*> forward_root_map;
 };
 
 } // namespace fuser

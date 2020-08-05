@@ -860,6 +860,69 @@ std::vector<Val*> getIndicesForTV(
   return indices;
 }
 
+std::vector<Val*> getUnrollPredIndicesForTV(
+    TensorView* consumer_tv,
+    const std::vector<kir::ForLoop*>& loops) {
+  Val* zero = new Int(0);
+  Val* one = new Int(1);
+
+  std::vector<Val*> indices(consumer_tv->nDims(), zero);
+
+  std::unordered_set<kir::ForLoop*> loops_within_unroll;
+
+  {
+    bool within_unroll = false;
+    for (auto loop : loops) {
+      if (loop->iter_domain()->getParallelType() == ParallelType::Unroll) {
+        within_unroll = true;
+      }
+      if (within_unroll) {
+        loops_within_unroll.emplace(loop);
+      }
+    }
+  }
+
+  // Which loop is this axis associated with?
+  auto ca2loop = computeAtToLoopMap(consumer_tv, loops);
+  bool need_reduction_axes = loopsHasReductions(consumer_tv, loops);
+
+  // Look at each axis individually in out's domain
+  for (int64_t tv_i = 0; tv_i < (int64_t)consumer_tv->nDims(); tv_i++) {
+    // Grab the axis information
+    auto tv_id = consumer_tv->axis(tv_i);
+
+    auto ca_id = tv_i < consumer_tv->getThisComputeAtAxis()
+        ? consumer_tv->getComputeAtAxis(tv_i).first
+        : consumer_tv->axis(tv_i);
+
+    if (consumer_tv->axis(tv_i)->isReduction() && !need_reduction_axes) {
+      continue;
+    }
+
+    auto it = ca2loop.find(ca_id);
+
+    // We may not have loops for reduction axes
+    if (it == ca2loop.end()) {
+      continue;
+    }
+
+    auto loop = it->second;
+
+    auto ind = loop->index();
+    if (loops_within_unroll.find(loop) != loops_within_unroll.end() &&
+        !ca_id->isThread()) {
+      ind = sub(ca_id->extent(), one);
+    }
+
+    indices[tv_i] = ind;
+    // Normally we'd be worried about meerged axes in the compute at (see
+    // getIndicesforTV), but this should be picked up by an expr later in the
+    // unrolled loop, shouldn't have to worry about it here.
+  }
+
+  return indices;
+}
+
 std::vector<Val*> getRangesForTV(
     TensorView* tv,
     const std::vector<kir::ForLoop*>& loops,

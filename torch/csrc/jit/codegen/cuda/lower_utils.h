@@ -218,6 +218,12 @@ std::vector<Val*> getIndicesForTV(
     const std::unordered_map<IterDomain*, IterDomain*>& ca_id_map =
         std::unordered_map<IterDomain*, IterDomain*>());
 
+// Similar to get indices for tv, but within unroll loop, will return
+// loop->extent() - 1. Only callable on a consumer.
+std::vector<Val*> getUnrollPredIndicesForTV(
+    TensorView* consumer_tv,
+    const std::vector<kir::ForLoop*>& loops);
+
 // Run through loops, match which ones are used for indexing tv, return the
 // extents of these loops. Take into consideration allocation point and memory
 // type. tv->domain() is expected to match the loop structure in loops. Provided
