@@ -31,14 +31,14 @@ void UnrollPass::handle(Expr* expr) {
 
 namespace {
 
-kir::Bool* getPredicate(
+kir::Bool* getUnrollPredicate(
     const std::vector<Expr*>& tv_ops,
     const std::vector<Val*>& inds_,
     kir::Bool* thread_pred,
     const std::unordered_set<Expr*>& init_exprs) {
   TORCH_INTERNAL_ASSERT(
       !tv_ops.empty() && !inds_.empty(),
-      "Provided empty values to getPredicate.");
+      "Provided empty values to getUnrollPredicate.");
 
   std::vector<kir::Bool*> all_preds;
 
@@ -61,12 +61,12 @@ kir::Bool* getPredicate(
         TORCH_INTERNAL_ASSERT(
             inds_.size() == consumer_tv->nDims() ||
                 inds_.size() == consumer_tv->domain()->noReductions().size(),
-            "Invalid indices vector provided for getPredicate");
+            "Invalid indices vector provided for getUnrollPredicate");
 
         TORCH_INTERNAL_ASSERT(
             consumer_tv->domain()->contiguity().size() ==
                 overall_contiguity.size(),
-            "Invalid expressions in getPredicate, their out domains don't match up,",
+            "Invalid expressions in getUnrollPredicate, their out domains don't match up,",
             " they shouldn't be in the same loop nest together.");
 
         overall_contiguity = IndexCompute::contiguityAnd(
@@ -114,6 +114,77 @@ kir::Bool* getPredicate(
         IndexCompute::get(
             consumer_tv->domain(), inds, overall_contiguity, true)));
   }
+
+  // If we have thread predicates, add those
+  if (thread_pred != nullptr) {
+    all_preds.push_back(thread_pred);
+  }
+
+  std::vector<kir::Bool*> preds;
+
+  for (auto pred : all_preds)
+    if (!(pred->isConst()) || !(pred->isConst() && pred->value().value()))
+      preds.push_back(pred);
+
+  if (preds.empty()) {
+    return new kir::Bool(true);
+  }
+
+  Val* cond = preds[0];
+
+  for (decltype(preds.size()) i{1}; i < preds.size(); i++) {
+    cond = kir::andExpr(cond, preds[i]);
+  }
+
+  TORCH_INTERNAL_ASSERT(
+      cond->getValType().value() == ValType::KirScalar &&
+          cond->getDataType().value() == DataType::Bool,
+      "Error computing predicate, should be returning a Bool, but returning ",
+      cond->getDataType().value());
+
+  return cond->as<kir::Bool>();
+}
+
+kir::Bool* getInlinePredicate(
+    Expr* expr,
+    const std::vector<kir::ForLoop*>& loops,
+    kir::Bool* thread_pred) {
+  if (loops.empty())
+    return new kir::Bool(true);
+
+  TORCH_INTERNAL_ASSERT(
+      ir_utils::isTVOp(expr),
+      "Cannot generate predicate based on operation without a TensorView.");
+
+  auto out_tv = ir_utils::getTVOutput(expr);
+
+  bool is_init_op = !loop_utils::loopsHasReductions(out_tv, loops);
+
+  auto pred_contiguity = out_tv->domain()->contiguity();
+
+  for (auto inp : expr->inputs()) {
+    if (!ir_utils::isTV(inp)) {
+      continue;
+    }
+    auto inp_tv = inp->as<TensorView>();
+    if (inp_tv->domain()->hasRFactor()) {
+      continue;
+    } else if (
+        inp_tv->getMemoryType() == MemoryType::Shared ||
+        inp_tv->getMemoryType() == MemoryType::Local) {
+      continue;
+    } else {
+      pred_contiguity = IndexCompute::contiguityAnd(
+          pred_contiguity,
+          IndexCompute::contiguityPasC(inp_tv->domain(), out_tv->domain()));
+    }
+  }
+
+  auto domain_indices = loop_utils::getIndicesForTV(out_tv, loops, true);
+  auto root_indices = IndexCompute::get(
+      out_tv->domain(), domain_indices, pred_contiguity, true);
+  auto pred_ti = new kir::TensorIndex(out_tv, root_indices);
+  auto all_preds = PredicateCompute::computePredicates(pred_ti);
 
   // If we have thread predicates, add those
   if (thread_pred != nullptr) {
@@ -203,7 +274,7 @@ void UnrollPass::handle(kir::ForLoop* fl) {
     }
 
     // Make predicates for the unrolling, and the epilogue
-    kir::Bool* unroll_predicate = getPredicate(
+    kir::Bool* unroll_predicate = getUnrollPredicate(
         tv_ops,
         unroll_pred_inds,
         getThreadPredicate(ir_utils::getTVOutput(tv_ops[0])),
@@ -234,11 +305,8 @@ void UnrollPass::handle(kir::ForLoop* fl) {
         continue;
 
       // Setup the expressions that need predicates around them.
-      auto inline_predicate = getPredicate(
-          {expr},
-          ir_utils::indices(for_loops),
-          getThreadPredicate(ir_utils::getTVOutput(expr)),
-          incoming_init_exprs_);
+      auto inline_predicate = getInlinePredicate(
+          expr, for_loops, getThreadPredicate(ir_utils::getTVOutput(expr)));
 
       kir::IfThenElse* inline_ite = new kir::IfThenElse(
           inline_predicate, {expr}, {}, inner_most_inlined_loop);
@@ -258,11 +326,8 @@ void UnrollPass::handle(kir::ForLoop* fl) {
 
       TensorView* out = ir_utils::asTV(ir_utils::asExpr(expr)->outputs()[0]);
 
-      auto pred = getPredicate(
-          {expr},
-          ir_utils::indices(for_loops),
-          getThreadPredicate(ir_utils::getTVOutput(expr)),
-          incoming_init_exprs_);
+      auto pred = getInlinePredicate(
+          expr, for_loops, getThreadPredicate(ir_utils::getTVOutput(expr)));
 
       // If we need a predicate, put expr inside an if then else
       if (!(pred->isConst()) || !(pred->isConst() && pred->value().value())) {

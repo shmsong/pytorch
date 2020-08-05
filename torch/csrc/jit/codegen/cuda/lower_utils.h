@@ -167,6 +167,16 @@ namespace loop_utils {
 // there) then into lower_loops where we sort exprs.
 // TODO: We should fix this when we have some time.
 
+// If we're initializing a reduction buffer, we won't have the reduction
+// loops. If we're actually performing the reduction, we will. Grab a reduction
+// root dimension in tv and see if it maps to any loop, returns if it maps or
+// not.
+bool loopsHasReductions(
+    TensorView* tv,
+    const std::vector<kir::ForLoop*>& loops,
+    const std::unordered_map<IterDomain*, IterDomain*>& ca_id_map =
+        std::unordered_map<IterDomain*, IterDomain*>());
+
 // Go through the iter domains in loops, and (in order) grab the ones that match
 // tv->getComputeAtAxis(...), map from the IterDomain in
 // tv->getComputeAtAxis(...) to its corresponding loop. If there are reduction

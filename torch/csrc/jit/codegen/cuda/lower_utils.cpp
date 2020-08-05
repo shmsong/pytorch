@@ -768,7 +768,6 @@ std::vector<Val*> getIndicesForTV(
   // Where is this TV allocated relative to the loop nest and its own axes?
   auto alloc_point = loop_utils::getAllocPoint(tv, loops);
   auto alloc_axis = alloc_point.second;
-  auto alloc_loop = alloc_point.first;
 
   // Which loop is this axis associated with?
   auto ca2loop = computeAtToLoopMap(tv, loops, ca_id_map);
@@ -801,9 +800,9 @@ std::vector<Val*> getIndicesForTV(
 
     auto loop = it->second;
 
-    // Check if we need to index based on this axis
-    // If outside our allocation point, we don't need to
-    if (tv_i < alloc_axis) {
+    // Check if we need to index based on this axis. If outside our allocation
+    // point, we don't need to unless we're generating a predicate
+    if (tv_i < alloc_axis && !for_predicates) {
       continue;
     }
 
