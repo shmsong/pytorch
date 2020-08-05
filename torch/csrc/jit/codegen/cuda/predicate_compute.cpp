@@ -286,7 +286,9 @@ UnrollPredicate::UnrollPredicate(
       for (auto entry : root_p2c) {
         auto p_id = entry.first;
         auto c_id = entry.second;
-        forward_root_map[p_id] = c_id;
+        if (p_id != c_id) {
+          forward_root_map[p_id] = c_id;
+        }
       }
     }
   }

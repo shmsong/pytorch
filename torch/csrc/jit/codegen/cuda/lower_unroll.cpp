@@ -59,15 +59,13 @@ void UnrollPass::handle(kir::ForLoop* fl) {
   if (!is_unroll || !look_for_unroll) {
     for_loops.push_back(fl);
 
-    // replacing exprs inplace with handle, keep updating calls into exprs
-    // otherwise can hit segfault
-    size_t expr_i = 0;
-    while (expr_i < fl->body().exprs().size()) {
-      handle(fl->body().exprs()[expr_i]);
-      expr_i++;
+    std::vector<Expr*> exprs_copy = fl->body().exprs();
+    // Make copy of exprs because we replace them inplace in fl
+    for (auto expr : exprs_copy) {
+      handle(expr);
     }
-
     for_loops.pop_back();
+
     return;
   }
 
