@@ -427,22 +427,18 @@ class TestCudaFuser(JitTestCase):
             print("inp2   : ", b[index])
         return close
 
-    def _reduction_helper(self, sizes, reduction_axis, dtype, device):
-        class MyReduction(torch.nn.Module):
-            __constants__ = ['reduction_axis']
-
-            def __init__(self):
-                super(MyReduction, self).__init__()
-                self.reduction_axis = reduction_axis
-
+    def _permutation_helper(self, sizes, broadcast_axis, dtype, device, perm0, perm1):
+        class MyBinaryOps(torch.nn.Module):
             def forward(self, x: torch.Tensor, y: torch.Tensor):
                 o = torch.add(x, y)
-                o = torch.sum(o, dim=self.reduction_axis)
+                o = torch.relu(o)
                 return o
 
-        t = MyReduction()
-        x = torch.randn(sizes, dtype=dtype, device=device)
-        y = torch.randn(sizes, dtype=dtype, device=device)
+        t = MyBinaryOps()
+
+        x = torch.randn([sizes[i] for i in perm0], dtype=dtype, device=device).permute([perm0.index(i) for i in range(len(sizes))])
+        sizes[broadcast_axis] = 1
+        y = torch.randn([sizes[i] for i in perm1], dtype=dtype, device=device).permute([perm1.index(i) for i in range(len(sizes))])
         t_jit = torch.jit.script(t)
         jit_o = t_jit(x, y)
         jit_o = t_jit(x, y)
@@ -458,13 +454,74 @@ class TestCudaFuser(JitTestCase):
     @unittest.skipIf(GRAPH_EXECUTOR != ProfilingMode.PROFILING and GRAPH_EXECUTOR !=
                      ProfilingMode.LEGACY, "Requires fusion optimization pass to be effective")
     @skipIfRocm
+    def test_binary_ops_permutation(self):
+        # note that num_dim is exclusive from len(x), so we are not reducing
+        # to single element (codegen limitation at this moment)
+        x = [7, 8, 12]
+        for b_axis in range(0, len(x)):
+            for perm0 in itertools.permutations(range(len(x))):
+                for perm1 in itertools.permutations(range(len(x))):
+                    x = [7, 8, 12]
+                    self._permutation_helper(x, b_axis, torch.float32, "cuda", perm0, perm1)
+
+    def _reduction_helper(self, sizes, reduction_axis, dtype, device, perm0, perm1):
+        class MyReduction(torch.nn.Module):
+            __constants__ = ['reduction_axis']
+
+            def __init__(self):
+                super(MyReduction, self).__init__()
+                self.reduction_axis = reduction_axis
+
+            def forward(self, x: torch.Tensor, y: torch.Tensor):
+                o = torch.add(x, y)
+                o = torch.sum(o, dim=self.reduction_axis)
+                return o
+
+        t = MyReduction()
+        
+        x = torch.randn([sizes[i] for i in perm0], dtype=dtype, device=device).permute([perm0.index(i) for i in range(len(sizes))])
+        y = torch.randn([sizes[i] for i in perm1], dtype=dtype, device=device).permute([perm1.index(i) for i in range(len(sizes))])
+        print("set: ", x.size(), " at: ",  x.stride(), " & ", y.size(), " at: ", y.stride(), " reduction: ", reduction_axis)
+        '''
+        t_jit = torch.jit.script(t)
+        jit_o = t_jit(x, y)
+        jit_o = t_jit(x, y)
+        o = t(x, y)
+        for oo, jit_oo in zip(o, jit_o):
+            self.assertEqual(oo.dtype, jit_oo.dtype)
+            # numerical issues here due to our scheduling.
+            # can't use `self.assertEqual(oo, jit_oo)`
+            self.assertTrue(self._compare("comparing output failed", oo, jit_oo, 1e-4))
+        self.assertGraphContains(t_jit.graph_for(x, y), FUSION_GROUP)
+        '''
+
+    @unittest.skipIf(not RUN_CUDA, "requires CUDA")
+    @unittest.skipIf(GRAPH_EXECUTOR != ProfilingMode.PROFILING and GRAPH_EXECUTOR !=
+                     ProfilingMode.LEGACY, "Requires fusion optimization pass to be effective")
+    @skipIfRocm
     def test_reduction(self):
         for x in ([7, 8, 12], [12, 8, 7, 9, 15], [128, 16, 8, 32]):
             # note that num_dim is exclusive from len(x), so we are not reducing
             # to single element (codegen limitation at this moment)
             for num_reduce_dim in range(1, len(x)):
                 for axes in itertools.combinations(range(len(x)), num_reduce_dim):
-                    self._reduction_helper(x, axes, torch.float32, "cuda")
+                    perm0 = range(len(x))
+                    perm1 = range(len(x))
+                    self._reduction_helper(x, axes, torch.float32, "cuda", perm0, perm1)
+
+    @unittest.skipIf(not RUN_CUDA, "requires CUDA")
+    @unittest.skipIf(GRAPH_EXECUTOR != ProfilingMode.PROFILING and GRAPH_EXECUTOR !=
+                     ProfilingMode.LEGACY, "Requires fusion optimization pass to be effective")
+    @skipIfRocm
+    def test_reduction_permutation(self):
+        x = [7, 8, 12]
+        # note that num_dim is exclusive from len(x), so we are not reducing
+        # to single element (codegen limitation at this moment)
+        for num_reduce_dim in range(1, len(x)):
+            for axes in itertools.combinations(range(len(x)), num_reduce_dim):
+                for perm0 in itertools.permutations(range(len(x))):
+                    for perm1 in itertools.permutations(range(len(x))):
+                        self._reduction_helper(x, axes, torch.float32, "cuda", perm0, perm1)
 
     @unittest.skipIf(not RUN_CUDA, "requires CUDA")
     @unittest.skipIf(GRAPH_EXECUTOR != ProfilingMode.PROFILING and GRAPH_EXECUTOR !=
