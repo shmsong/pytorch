@@ -274,8 +274,8 @@ GraphCache::InputsRequirement::InputsRequirement(
     // only check tensor types;
     if (input.isTensor()) {
       // TensorType::create populates stride properties;
-      //auto input_type = TensorType::create(input.toTensor());
-      //vec_optional_ttp.emplace_back(input_type);
+      // auto input_type = TensorType::create(input.toTensor());
+      // vec_optional_ttp.emplace_back(input_type);
       vec_optional_ttp.emplace_back(TensorType::create(input.toTensor()));
       printf("\ndebug print.....");
       debugPrint(vec_optional_ttp.back().value());
@@ -308,7 +308,9 @@ bool GraphCache::InputsRequirement::requiresPermutation() {
   // Check if output agrees
   size_t output_rank = output_permutation_.size();
   for (size_t i = 0; i < output_rank; i++) {
-    TORCH_INTERNAL_ASSERT(output_permutation_[i] == i, "permutation of output and input is not consistent");
+    TORCH_INTERNAL_ASSERT(
+        output_permutation_[i] == i,
+        "permutation of output and input is not consistent");
   }
   return false;
 }
@@ -391,7 +393,8 @@ FusionExecutorCache* GraphCache::createFusionExecutorCache(
   for (size_t i = 0; i < input_stack.vec_optional_ttp.size(); i++) {
     // skip scalar inputs;
     if (input_stack.vec_optional_ttp[i].has_value()) {
-      parsing_graph->inputs()[i]->setType(input_stack.vec_optional_ttp[i].value());
+      parsing_graph->inputs()[i]->setType(
+          input_stack.vec_optional_ttp[i].value());
     }
   }
 

@@ -781,7 +781,8 @@ void testGPU_FusionTensor() {
     TORCH_CHECK(fuser_tensor->domain() != nullptr);
     for (int i = 0; i < static_cast<int>(fuser_tensor->nDims()); i++) {
       // size 1 dimension are makred as broadcast
-      TORCH_CHECK(fuser_tensor->axis(i)->isBroadcast() == (tensor.sizes()[i] == 1));
+      TORCH_CHECK(
+          fuser_tensor->axis(i)->isBroadcast() == (tensor.sizes()[i] == 1));
       // check contiguity information;
       TORCH_CHECK(fuser_tensor->domain()->contiguity()[i]);
     }
@@ -796,12 +797,14 @@ void testGPU_FusionTensor() {
     TORCH_CHECK(fuser_tensor->domain() != nullptr);
     for (int i = 0; i < static_cast<int>(fuser_tensor->nDims()); i++) {
       // size 1 dimension are makred as broadcast
-      TORCH_CHECK(fuser_tensor->axis(i)->isBroadcast() == (tensor.sizes()[i] == 1));
+      TORCH_CHECK(
+          fuser_tensor->axis(i)->isBroadcast() == (tensor.sizes()[i] == 1));
     }
     TORCH_CHECK(fuser_tensor->domain()->contiguity()[2]);
 
     // temporary WAR to disable contig & bcast; issue # 230
-    // TODO: insert the check where broadcast & contiguous cannot be marked together
+    // TODO: insert the check where broadcast & contiguous cannot be marked
+    // together
     TORCH_CHECK(!fuser_tensor->domain()->contiguity()[0]);
     TORCH_CHECK(!fuser_tensor->domain()->contiguity()[1]);
   }
@@ -815,12 +818,14 @@ void testGPU_FusionTensor() {
     TORCH_CHECK(fuser_tensor->domain() != nullptr);
     for (int i = 0; i < static_cast<int>(fuser_tensor->nDims()); i++) {
       // size 1 dimension are makred as broadcast
-      TORCH_CHECK(fuser_tensor->axis(i)->isBroadcast() == (tensor.sizes()[i] == 1));
+      TORCH_CHECK(
+          fuser_tensor->axis(i)->isBroadcast() == (tensor.sizes()[i] == 1));
     }
     TORCH_CHECK(fuser_tensor->domain()->contiguity()[0]);
 
     // temporary WAR to disable contig & bcast; issue # 230
-    // TODO: insert the check where broadcast & contiguous cannot be marked together
+    // TODO: insert the check where broadcast & contiguous cannot be marked
+    // together
     TORCH_CHECK(!fuser_tensor->domain()->contiguity()[1]);
     TORCH_CHECK(!fuser_tensor->domain()->contiguity()[2]);
   }
