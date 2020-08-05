@@ -478,11 +478,9 @@ class TestCudaFuser(JitTestCase):
                 return o
 
         t = MyReduction()
-        
+
         x = torch.randn([sizes[i] for i in perm0], dtype=dtype, device=device).permute([perm0.index(i) for i in range(len(sizes))])
         y = torch.randn([sizes[i] for i in perm1], dtype=dtype, device=device).permute([perm1.index(i) for i in range(len(sizes))])
-        print("set: ", x.size(), " at: ",  x.stride(), " & ", y.size(), " at: ", y.stride(), " reduction: ", reduction_axis)
-        '''
         t_jit = torch.jit.script(t)
         jit_o = t_jit(x, y)
         jit_o = t_jit(x, y)
@@ -493,7 +491,6 @@ class TestCudaFuser(JitTestCase):
             # can't use `self.assertEqual(oo, jit_oo)`
             self.assertTrue(self._compare("comparing output failed", oo, jit_oo, 1e-4))
         self.assertGraphContains(t_jit.graph_for(x, y), FUSION_GROUP)
-        '''
 
     @unittest.skipIf(not RUN_CUDA, "requires CUDA")
     @unittest.skipIf(GRAPH_EXECUTOR != ProfilingMode.PROFILING and GRAPH_EXECUTOR !=
