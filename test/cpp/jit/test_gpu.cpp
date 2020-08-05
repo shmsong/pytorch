@@ -4152,6 +4152,54 @@ void testGPU_FusionBCastAfterReduce() {
   TORCH_CHECK(t5.allclose(outputs[0], 1e-5, 1e-5));
 }
 
+void testGPU_FusionReductionSchedulerReductionOnBroadcastDim() {
+  constexpr int bid_x = 80;
+  constexpr int tid_x = 4096;
+  constexpr int red_dim = 0;
+
+  Fusion fusion;
+  FusionGuard fg(&fusion);
+
+  // Set up your input tensor views
+  TensorView* tv0 = makeDummyTensor(2);
+  TensorView* tv1 = makeDummyTensor(3);
+  fusion.addInput(tv0);
+  fusion.addInput(tv1);
+
+  TensorView* tv2 =
+      add(tv0, tv1);
+  TensorView* tv3 =
+      reductionOp(BinaryOpType::Add, {red_dim}, new Float(0), tv2);
+  fusion.addOutput(tv3);
+
+  const auto options =
+      at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
+  at::Tensor input0 = at::rand({bid_x, tid_x}, options);
+  at::Tensor input1 = at::rand({4, bid_x, tid_x}, options);
+
+  // Apply reduction heuristic
+  const at::ArrayRef<c10::IValue> inputs({input0, input1});
+
+  if (true) {
+  TORCH_CHECK(
+      cuda::scheduleReduction(&fusion, inputs, tv3),
+      "Reduction schedule was not generated!");
+  } else {
+      cuda::scheduleFusion(&fusion, inputs);
+  }
+
+  cuda::FusionExecutor fe;
+  fe.compileFusion(&fusion);
+  // no broadcasting needed, omitting the last optional argument;
+  auto outputs = fe.runFusion({input0, input1});
+  auto aten_output = input0.add(input1).sum({red_dim});
+
+  TORCH_CHECK(
+      aten_output.allclose(outputs[0]),
+      "Error of: ",
+      aten_output.sub(outputs[0]).abs().max());
+}
+
 void testGPU_FusionReductionScheduler() {
   constexpr int bid_x = 80;
   constexpr int tid_x = 4096;
