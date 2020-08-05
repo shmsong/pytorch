@@ -46,6 +46,7 @@ std::vector<kir::Bool*> PredicateCompute::computePredicates(
     if (root[i]->isBroadcast()) {
       continue;
     } else if (simple_ind && !zero_ind) {
+      extent = nullptr;
       continue;
     } else if (zero_ind) {
       if (root[i]->extent()->isOneInt())
