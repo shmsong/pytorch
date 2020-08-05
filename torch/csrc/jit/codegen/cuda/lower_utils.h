@@ -79,6 +79,12 @@ class TVDomainGuard {
 // Return inputs of provided IterDomains that are IterDomains
 std::vector<IterDomain*> iterDomainInputsOf(const std::vector<IterDomain*>&);
 
+// Return inputs of provided IterDomains that are IterDomains, order as the
+// second provided vector.
+std::vector<IterDomain*> iterDomainInputsOfOrderedAs(
+    const std::vector<IterDomain*>& of,
+    const std::vector<IterDomain*>& order);
+
 std::vector<Val*> indices(std::vector<kir::ForLoop*>);
 
 std::vector<IterDomain*> iterDomains(std::vector<kir::ForLoop*>);
@@ -158,8 +164,8 @@ namespace loop_utils {
 
 // I wanted to make the tv's in these util functions constant, but that started
 // a long const-ness project going into TensorView (making functions const
-// there) then into lower_loops where we sort exprs; TODO: We should fix this,
-// but at a later time.
+// there) then into lower_loops where we sort exprs.
+// TODO: We should fix this when we have some time.
 
 // Go through the iter domains in loops, and (in order) grab the ones that match
 // tv->getComputeAtAxis(...), map from the IterDomain in
@@ -193,8 +199,22 @@ std::unordered_map<IterDomain*, IterDomain*> mapIdPtoC(
 // into consideration allocation point and memory type. tv->domain() is expected
 // to match the loop structure in loops. Provided map (if needed) maps iteration
 // domains in tv->getComputeAtAxes(...) to those in loops[...]->iter_domain.
-// This map is typically needed if tv is a producer.
+// This map is typically needed if tv is a producer. If for_predicates is true
+// don't filter indices based on memory type.
 std::vector<Val*> getIndicesForTV(
+    TensorView* tv,
+    const std::vector<kir::ForLoop*>& loops,
+    bool for_predicates = false,
+    const std::unordered_map<IterDomain*, IterDomain*>& ca_id_map =
+        std::unordered_map<IterDomain*, IterDomain*>());
+
+// Run through loops, match which ones are used for indexing tv, return the
+// extents of these loops. Take into consideration allocation point and memory
+// type. tv->domain() is expected to match the loop structure in loops. Provided
+// map (if needed) maps iteration domains in tv->getComputeAtAxes(...) to those
+// in loops[...]->iter_domain. This map is typically needed if tv is a producer.
+// tv must be set to shared or local memory.
+std::vector<Val*> getRangesForTV(
     TensorView* tv,
     const std::vector<kir::ForLoop*>& loops,
     const std::unordered_map<IterDomain*, IterDomain*>& ca_id_map =

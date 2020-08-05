@@ -402,6 +402,24 @@ std::vector<IterDomain*> iterDomainInputsOf(
   return id_inputs;
 }
 
+std::vector<IterDomain*> iterDomainInputsOfOrderedAs(
+    const std::vector<IterDomain*>& of,
+    const std::vector<IterDomain*>& order) {
+  auto inputs_vec = iterDomainInputsOf(of);
+
+  std::unordered_set<IterDomain*> inputs_set(
+      inputs_vec.begin(), inputs_vec.end());
+
+  std::vector<IterDomain*> ordered_inputs;
+  for (auto id : order) {
+    if (inputs_set.find(id) != inputs_set.end()) {
+      ordered_inputs.push_back(id);
+    }
+  }
+
+  return ordered_inputs;
+}
+
 std::vector<Val*> indices(std::vector<kir::ForLoop*> loops) {
   std::vector<Val*> inds(loops.size());
   std::transform(
@@ -626,6 +644,44 @@ ParallelTypeBitmap getParallelBroadcastDomains(
 } // namespace ir_utils
 
 namespace loop_utils {
+bool loopsHasReductions(
+    TensorView* tv,
+    const std::vector<kir::ForLoop*>& loops,
+    const std::unordered_map<IterDomain*, IterDomain*>& ca_id_map) {
+  // If we're initializing a reduction buffer, we won't have the reduction
+  // loops. If we're actually performing the reduction, we will. Grab a root
+  // dimension in tv and see if it maps to any loop, if it does we need to map
+  // reductions, if not, assume we don't.
+  bool need_reduction_axes = false;
+
+  // Grab a reduction ID in the tensor, see if it maps to any loops.
+  if (tv->hasReduction()) {
+    size_t reduction_i = tv->nDims();
+    for (size_t tv_i = 0; tv_i < tv->nDims(); tv_i++) {
+      if (tv->axis(tv_i)->isReduction()) {
+        reduction_i = tv_i;
+        break;
+      }
+    }
+
+    // shouldn't be possible to hit this as isReduction should just check every
+    // ID in tv->domain() for ->isReduction
+    TORCH_INTERNAL_ASSERT(reduction_i != tv->nDims());
+
+    auto reduction_ca_id = tv->getComputeAtAxis(reduction_i).first;
+    if (ca_id_map.find(reduction_ca_id) != ca_id_map.end()) {
+      reduction_ca_id = ca_id_map.at(reduction_ca_id);
+    }
+
+    for (auto loop : loops) {
+      if (loop->iter_domain() == reduction_ca_id) {
+        need_reduction_axes = true;
+        break;
+      }
+    }
+  }
+  return need_reduction_axes;
+}
 
 std::unordered_map<IterDomain*, kir::ForLoop*> computeAtToLoopMap(
     TensorView* tv,
@@ -634,17 +690,11 @@ std::unordered_map<IterDomain*, kir::ForLoop*> computeAtToLoopMap(
   // Map we're generating.
   std::unordered_map<IterDomain*, kir::ForLoop*> ca_to_loop_map;
 
-  // If we're initializing a reduction buffer, we won't have the reduction
-  // loops. If we're actually performing the reduction, we will.
-
-  bool need_reduction_axes =
-      std::any_of(loops.begin(), loops.end(), [](kir::ForLoop* fl) {
-        return fl->iter_domain()->isReduction();
-      });
+  bool need_reduction_axes = loopsHasReductions(tv, loops, ca_id_map);
 
   std::deque<kir::ForLoop*> loops_copy(loops.begin(), loops.end());
 
-  // Look at each axis individually in out's domain
+  // Look at each axis individually in out's domain and find the matching loop
   for (int64_t tv_i = 0; tv_i < (int64_t)tv->nDims(); tv_i++) {
     if (!need_reduction_axes && tv->axis(tv_i)->isReduction()) {
       continue;
@@ -691,7 +741,6 @@ std::unordered_map<IterDomain*, IterDomain*> mapIdPtoC(
     TensorView* consumer) {
   auto p2c_domain_ind_map = TensorDomain::mapDomainPandC(
       producer->domain()->domain(), consumer->domain()->domain());
-
   std::unordered_map<IterDomain*, IterDomain*> p2c_id_map;
   for (auto entry : p2c_domain_ind_map) {
     auto p_i = entry.first;
@@ -699,18 +748,22 @@ std::unordered_map<IterDomain*, IterDomain*> mapIdPtoC(
     p2c_id_map[producer->getComputeAtAxis(p_i).first] =
         consumer->getComputeAtAxis(c_i).first;
   }
+
   return p2c_id_map;
 }
 
 std::vector<Val*> getIndicesForTV(
     TensorView* tv,
     const std::vector<kir::ForLoop*>& loops,
+    bool for_predicates,
     const std::unordered_map<IterDomain*, IterDomain*>& ca_id_map) {
   Val* zero = new Int(0);
   std::vector<Val*> indices(tv->nDims(), zero);
 
-  bool is_shared = tv->getMemoryType() == MemoryType::Shared;
-  bool is_local = tv->getMemoryType() == MemoryType::Local;
+  bool is_shared =
+      for_predicates ? false : tv->getMemoryType() == MemoryType::Shared;
+  bool is_local =
+      for_predicates ? false : tv->getMemoryType() == MemoryType::Local;
 
   // Where is this TV allocated relative to the loop nest and its own axes?
   auto alloc_point = loop_utils::getAllocPoint(tv, loops);
@@ -720,6 +773,8 @@ std::vector<Val*> getIndicesForTV(
   // Which loop is this axis associated with?
   auto ca2loop = computeAtToLoopMap(tv, loops, ca_id_map);
 
+  bool need_reduction_axes = loopsHasReductions(tv, loops, ca_id_map);
+
   // Look at each axis individually in out's domain
   for (int64_t tv_i = 0; tv_i < (int64_t)tv->nDims(); tv_i++) {
     // Grab the axis information
@@ -728,6 +783,10 @@ std::vector<Val*> getIndicesForTV(
     auto ca_id = tv_i < tv->getThisComputeAtAxis()
         ? tv->getComputeAtAxis(tv_i).first
         : tv->axis(tv_i);
+
+    if (tv->axis(tv_i)->isReduction() && !need_reduction_axes) {
+      continue;
+    }
 
     if (!ca_id_map.empty()) {
       ca_id = ca_id_map.at(ca_id);
@@ -750,12 +809,21 @@ std::vector<Val*> getIndicesForTV(
 
     // If bound to a grid dimension and this tv is shared memory we don't need
     // to
-    if (tv_id->isBlockDim() && is_shared) {
+    if (ca_id->isBlockDim() && is_shared) {
       continue;
     }
 
     // If bound to any thread and this is local memory we don't need to
-    if (tv_id->isThread() && is_local) {
+    if (ca_id->isThread() && is_local) {
+      continue;
+    }
+
+    // We're worried below about merged axes in the compute at that aren't in
+    // tv, however reduction domains can only merge in themselves, so if
+    // computeAt is a reduction domain it can't have a merged in dim tv doesn't
+    // have. If we don't short-cut this we can hit issues in rfactor.
+    if (ca_id->isReduction()) {
+      indices[tv_i] = loop->index();
       continue;
     }
 
@@ -791,6 +859,64 @@ std::vector<Val*> getIndicesForTV(
   }
 
   return indices;
+}
+
+std::vector<Val*> getRangesForTV(
+    TensorView* tv,
+    const std::vector<kir::ForLoop*>& loops,
+    const std::unordered_map<IterDomain*, IterDomain*>& ca_id_map) {
+  Val* zero = new Int(0);
+  std::vector<Val*> ranges(tv->nDims(), zero);
+
+  bool is_shared = tv->getMemoryType() == MemoryType::Shared;
+  bool is_local = tv->getMemoryType() == MemoryType::Local;
+
+  TORCH_INTERNAL_ASSERT(
+      is_shared || is_local,
+      " Cannot use this function for global memory, the ranges of root domains of global memory are simply rootIDs->extent()");
+
+  // Where is this TV allocated relative to the loop nest and its own axes?
+  auto alloc_axis = loop_utils::getAllocPoint(tv, loops).second;
+
+  // Look at each axis individually in out's domain
+  for (int64_t tv_i = 0; tv_i < (int64_t)tv->nDims(); tv_i++) {
+    // Grab the axis information
+    auto tv_id = tv->axis(tv_i);
+
+    // reduction axes don't have an extent
+    if (tv_id->isReduction()) {
+      continue;
+    }
+
+    // Check if we need to index based on this axis
+    // If outside our allocation point, we don't need to
+    if (tv_i < alloc_axis) {
+      continue;
+    }
+
+    auto ca_id = tv_i < tv->getThisComputeAtAxis()
+        ? tv->getComputeAtAxis(tv_i).first
+        : tv->axis(tv_i);
+
+    if (!ca_id_map.empty()) {
+      ca_id = ca_id_map.at(ca_id);
+    }
+
+    // If bound to a grid dimension and this tv is shared memory we don't need
+    // to
+    if (ca_id->isBlockDim() && is_shared) {
+      continue;
+    }
+
+    // If bound to any thread and this is local memory we don't need to
+    if (ca_id->isThread() && is_local) {
+      continue;
+    }
+
+    ranges[tv_i] = tv_id->extent();
+  }
+
+  return ranges;
 }
 
 std::pair<kir::ForLoop*, int64_t> getAllocPoint(

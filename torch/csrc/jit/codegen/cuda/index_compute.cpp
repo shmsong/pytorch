@@ -11,115 +11,328 @@ namespace fuser {
 
 namespace {
 
-struct ContigMergeInfo {
-  bool mergeable = false;
-  std::unordered_set<IterDomain*> zero_root_ids;
-  IterDomain* last_root_id = nullptr;
+// A merge is contiguous if:
+//   Inputs of outer are to the left in the root domain of the inputs of RHS.
+//   All inputs are contiguous in the root domain:
+//     - All marked as contiguous
+//     - Only gaps between inputs are broadcast or reductoin dims
+//   There are no split transformations performed on outer or inner
+//   All transformations on outer or inner are contiguous merges
+// If this criteria holds, then we can index the input root domains of this
+// merge with the indexing provided to the output of the merge in the backward
+// index pass
+
+class ContigIDs : public OptInDispatch {
+ private:
+  using OptInDispatch::handle;
+
+  // Mark if ids are result of contigous merges
+  std::unordered_set<IterDomain*> contig_ids;
+  const std::vector<IterDomain*>& root_domain_;
+  const std::vector<bool>& root_contiguity_;
+  std::unordered_map<IterDomain*, bool> is_contig_root;
+
+  ContigIDs() = delete;
+
+  ContigIDs(
+      const std::vector<IterDomain*>& ids,
+      const std::vector<IterDomain*>& _root_domain,
+      const std::vector<bool>& _root_contiguity)
+      : root_domain_(_root_domain), root_contiguity_(_root_contiguity) {
+    if (ids.empty()) {
+      return;
+    }
+
+    TORCH_INTERNAL_ASSERT(
+        root_domain_.size() == root_contiguity_.size(),
+        "Arguments don't match ",
+        root_domain_.size(),
+        " != ",
+        root_contiguity_.size());
+
+    for (size_t i = 0; i < root_domain_.size(); i++) {
+      if (root_contiguity_[i]) {
+        contig_ids.emplace(root_domain_[i]);
+      }
+      is_contig_root[root_domain_[i]] = root_contiguity_[i];
+    }
+
+    auto exprs = ExprSort::getExprs(ids[0]->fusion(), {ids.begin(), ids.end()});
+
+    for (auto expr : exprs) {
+      handle(expr);
+    }
+  }
+
+  bool inRoot(const std::vector<IterDomain*>& ids) {
+    return std::all_of(ids.begin(), ids.end(), [this](IterDomain* id) {
+      return is_contig_root.find(id) != is_contig_root.end();
+    });
+  }
+
+  bool isContig(IterDomain* id) {
+    return contig_ids.find(id) != contig_ids.end();
+  }
+
+  // Split outputs are not conitguous, don't need to do anything.
+  void handle(Split*) override {}
+
+  void handle(Merge* merge) override {
+    // If either input is non-contiguous so is output.
+    auto inner = merge->inner();
+    auto outer = merge->outer();
+    if (!isContig(inner) || !isContig(outer)) {
+      return;
+    }
+
+    // Grab inputs, make sure they're in root domain, check if they're
+    // contiguous.
+
+    auto lhs_inputs =
+        ir_utils::iterDomainInputsOfOrderedAs({outer}, root_domain_);
+    auto rhs_inputs =
+        ir_utils::iterDomainInputsOfOrderedAs({inner}, root_domain_);
+
+    TORCH_INTERNAL_ASSERT(
+        inRoot(lhs_inputs) && inRoot(rhs_inputs),
+        "Found an invalid merge operation, inputs of its arguments are not in the root domain.");
+
+    std::deque<IterDomain*> ordered_inputs(
+        lhs_inputs.begin(), lhs_inputs.end());
+    ordered_inputs.insert(
+        ordered_inputs.end(), rhs_inputs.begin(), rhs_inputs.end());
+
+    // If any root input is not contig, output is not contig
+    if (!(std::all_of(
+            ordered_inputs.begin(),
+            ordered_inputs.end(),
+            [this](IterDomain* id) { return is_contig_root.at(id); }))) {
+      return;
+    }
+
+    std::deque<IterDomain*> root_copy(root_domain_.begin(), root_domain_.end());
+
+    // Forward to first matching argument
+    while (!root_copy.empty() && !ordered_inputs.empty()) {
+      if (root_copy.front() != ordered_inputs.front()) {
+        root_copy.pop_front();
+      } else {
+        break;
+      }
+    }
+
+    // Forward through all matching arguments
+    while (!root_copy.empty() && !ordered_inputs.empty()) {
+      if (root_copy.front() == ordered_inputs.front()) {
+        root_copy.pop_front();
+        ordered_inputs.pop_front();
+        // We probably should be able to make access contiguous through
+        // reduction domains, however, for now it's causing issues in predicate
+        // generation. See test: ReductionSchedulerMultiDimNonFastest
+        //  } else if (
+        //     root_copy.front()->isReduction() ||
+        //     root_copy.front()->isBroadcast()) {
+        //   root_copy.pop_front();
+      } else {
+        break;
+      }
+    }
+
+    // If we matched all inputs, the output is contiguous
+    if (ordered_inputs.empty()) {
+      contig_ids.emplace(merge->out());
+    }
+  }
+
+ public:
+  // Check through thie history of ids whose inputs map to root_domain with
+  // contiguity root_contiguity. Return unordered_set of all merges that are
+  // contiguous.
+  static std::unordered_set<IterDomain*> find(
+      const std::vector<IterDomain*>& ids,
+      const std::vector<IterDomain*>& root_domain,
+      const std::vector<bool>& root_contiguity) {
+    ContigIDs finder(ids, root_domain, root_contiguity);
+    return finder.contig_ids;
+  }
 };
 
-ContigMergeInfo isContiguousMerge(
-    Merge* merge,
-    const std::vector<IterDomain*>& root_domain,
-    const std::vector<bool>& root_contiguity) {
-  // Check if all inputs to merge operation are contiguous in root domain
-  // (consecutive, and marked contiguous)
-  ContigMergeInfo contig_merge_info;
+// Take a set of ranges on a domain and backward proipagate them to figure out
+// the extent of the root domain axes.
+class RangeCompute : public BackwardVisitor {
+ private:
+  using BackwardVisitor::handle;
 
-  auto merge_inputs = IterVisitor::getInputsTo({merge->out()});
+  void handle(Split* split) override {
+    auto in_id = split->in();
+    auto outer_id = split->outer();
+    auto inner_id = split->inner();
 
-  std::unordered_set<IterDomain*> merge_input_ids;
-  for (auto inp : merge_inputs) {
-    if (inp->getValType().value() == ValType::IterDomain) {
-      merge_input_ids.emplace(inp->as<IterDomain>());
+    auto outer_it = range_map_.find(outer_id);
+    auto inner_it = range_map_.find(inner_id);
+    if (outer_it == range_map_.end() || inner_it == range_map_.end())
+      return;
+
+    auto outer_range = outer_it->second;
+    auto inner_range = inner_it->second;
+
+    Val* extent = nullptr;
+
+    bool has_zero = outer_range->isZeroInt() || inner_range->isZeroInt();
+
+    bool both_zero = outer_range->isZeroInt() && inner_range->isZeroInt();
+
+    bool zero_merged_in = has_zero ||
+        zero_merged_id.find(outer_id) != zero_merged_id.end() ||
+        zero_merged_id.find(inner_id) != zero_merged_id.end();
+
+    if (zero_merged_in) {
+      zero_merged_id.emplace(in_id);
+    }
+
+    if (both_zero) {
+      range_map_[in_id] = new Int(0);
+    } else if (has_zero) {
+      range_map_[in_id] = outer_range->isZeroInt() ? inner_range : outer_range;
+    } else if (zero_merged_in) {
+      range_map_[in_id] = mul(outer_range, inner_range);
     } else {
-      TORCH_INTERNAL_ASSERT(
-          inp->isAnInt(), "Found invalid input to merge heirarchy, ", inp, ".");
+      range_map_[in_id] = in_id->extent();
     }
   }
 
-  contig_merge_info.zero_root_ids = merge_input_ids;
+  void handle(Merge* merge) override {
+    auto out_id = merge->out();
+    auto outer_id = merge->outer();
+    auto inner_id = merge->inner();
 
-  bool contig_dims = true;
+    auto out_it = range_map_.find(out_id);
+    if (out_it == range_map_.end())
+      return;
 
-  IterDomain* start = nullptr;
-  for (size_t i = 0; i < root_domain.size(); i++) {
-    auto id = root_domain[i];
+    auto out_range = out_it->second;
 
-    if (merge_inputs.find(id) == merge_inputs.end()) {
-      if (start != nullptr) {
-        contig_dims = false;
+    if (contig_ids.find(out_id) != contig_ids.end()) {
+      auto input_ids =
+          ir_utils::iterDomainInputsOfOrderedAs({out_id}, td_->rootDomain());
+
+      // Shouldn't hit this, but don't want to segfault if somehow we do.
+      TORCH_INTERNAL_ASSERT(!input_ids.empty());
+
+      for (auto root_id : input_ids) {
+        range_map_[root_id] = new Int(0);
+      }
+
+      range_map_[*(input_ids.end() - 1)] = out_range;
+      return;
+    }
+
+    // If there was a 0 merged in here due to a split just move the extent to
+    // the right
+    if (zero_merged_id.find(out_id) != zero_merged_id.end()) {
+      range_map_[outer_id] = new Int(0);
+      range_map_[inner_id] = out_range;
+    } else {
+      range_map_[outer_id] = merge->outer()->extent();
+      range_map_[inner_id] = merge->inner()->extent();
+    }
+  }
+
+  void handle(Expr* e) override {
+    switch (e->getExprType().value()) {
+      case (ExprType::Split):
+      case (ExprType::Merge):
+        break;
+      default:
+        TORCH_INTERNAL_ASSERT(
+            false, "Invalid expr type found in transform traversal.");
+    }
+    BackwardVisitor::handle(e);
+  }
+
+  RangeCompute(
+      const TensorDomain* _td,
+      const std::vector<Val*>& ranges,
+      std::vector<bool> _root_contiguity)
+      : td_(_td) {
+    contig_ids =
+        ContigIDs::find(td_->domain(), td_->rootDomain(), _root_contiguity);
+
+    if (td_->nDims() == 0 || ranges.empty()) {
+      ranges_.push_back(new Int(0));
+      return;
+    }
+
+    // TODO: We will always provide reduction ranges, even though they may be 0
+
+    // We may or may not have ranges associated with reductions.
+    const bool exclude_reduction = td_->nDims() > ranges.size();
+
+    TORCH_INTERNAL_ASSERT(
+        td_->noReductions().size() == ranges.size() ||
+            td_->nDims() == ranges.size(),
+        "For IndexCompute the number of axes should match the number of dimensions in the TensorDomain.");
+
+    {
+      size_t i = 0;
+      for (auto id : td_->domain()) {
+        if (exclude_reduction && id->isReduction())
+          continue;
+        range_map_[id] = ranges[i++];
       }
     }
 
-    if (!root_contiguity[i]) {
-      contig_dims = false;
-    }
+    const std::vector<Val*> domain_vals(
+        td_->domain().begin(), td_->domain().end());
 
-    contig_merge_info.last_root_id = id;
+    // Run the split/merge operations backwards. This will modify the range_map_
+    // so it can be used to index the root TensorDomain. Each entry in the root
+    // TensorDomain should have an entry in range_map_ We might not want to run
+    // these ranges at the root of the domain, but actually at the rfactor
+    // root. Fortunately we can run them all the way back, but grab the ranges
+    // from the map at the rfactor IterDomains.
+    traverseFrom(ranges[0]->fusion(), domain_vals, false);
 
-    start = start == nullptr ? id : start;
-
-    if (start->getIterType() != id->getIterType()) {
-      break;
-    }
-
-    merge_input_ids.erase(root_domain[i]);
-  }
-
-  if (!(merge_input_ids.empty() && contig_dims)) {
-    contig_merge_info.zero_root_ids.clear();
-    contig_merge_info.last_root_id = nullptr;
-    return contig_merge_info;
-  }
-
-  contig_merge_info.zero_root_ids.erase(contig_merge_info.last_root_id);
-
-  auto exprs = ExprSort::getExprs(
-      merge->out()->fusion(), std::vector<Val*>({merge->out()}));
-  std::unordered_set<IterDomain*> expr_inputs;
-  std::unordered_set<IterDomain*> expr_outputs;
-
-  for (auto expr : exprs) {
-    if (expr->getExprType().value() == ExprType::Split) {
-      contig_merge_info.zero_root_ids.clear();
-      contig_merge_info.last_root_id = nullptr;
-      return contig_merge_info;
-    }
-
-    for (auto inp : expr->inputs()) {
-      if (inp->getValType().value() == ValType::IterDomain) {
-        expr_inputs.emplace(inp->as<IterDomain>());
-      }
-    }
-    for (auto out : expr->outputs()) {
-      if (out->getValType().value() == ValType::IterDomain) {
-        expr_outputs.emplace(out->as<IterDomain>());
+    // TODO: Don't exclude reduction axes
+    auto root_dom =
+        td_->hasRFactor() ? td_->rfactorDomain() : td_->rootDomain();
+    for (auto id : root_dom) {
+      if (exclude_reduction && id->isReduction()) {
+        continue;
+      } else if (id->getIterType() == IterType::BroadcastWithStride) {
+        // TODO: Why not do this for any broadcast dim? Would they be non-zero?
+        ranges_.push_back(new Int(1));
+      } else {
+        auto it = range_map_.find(id);
+        TORCH_INTERNAL_ASSERT(
+            it != range_map_.end(),
+            "Error during index compute, missed computing a value.");
+        ranges_.push_back(it->second);
       }
     }
   }
 
-  expr_outputs.erase(merge->out()->as<IterDomain>());
+  // Tensor domain we're mapping back to root
+  const TensorDomain* td_;
+  // Map we update as we propagate backward
+  std::unordered_map<IterDomain*, Val*> range_map_;
+  // Starting with input ranges, returning as root ranges
+  std::vector<Val*> ranges_;
+  // IDs that are result of contiguous merges
+  std::unordered_set<IterDomain*> contig_ids;
+  // IDs that have a 0 merged back into them, we can't map these dims back to
+  // the original id->extent.
+  std::unordered_set<IterDomain*> zero_merged_id;
 
-  for (auto val : root_domain) {
-    expr_inputs.erase(val->as<IterDomain>());
+ public:
+  static std::vector<Val*> get(
+      const TensorDomain* _td,
+      const std::vector<Val*>& _ranges,
+      const std::vector<bool>& _root_contiguity) {
+    RangeCompute rc(_td, _ranges, _root_contiguity);
+    return rc.ranges_;
   }
-
-  std::unordered_set<IterDomain*> inp_out_diff;
-  std::set_symmetric_difference(
-      expr_inputs.begin(),
-      expr_inputs.end(),
-      expr_outputs.begin(),
-      expr_outputs.end(),
-      std::inserter(inp_out_diff, inp_out_diff.begin()));
-
-  if (inp_out_diff.empty()) {
-    contig_merge_info.mergeable = true;
-  } else {
-    contig_merge_info.zero_root_ids.clear();
-    contig_merge_info.last_root_id = nullptr;
-  }
-  return contig_merge_info;
-}
+};
 
 } // namespace
 
@@ -136,8 +349,18 @@ void IndexCompute::handle(Split* split) {
   auto outer_ind = outer_it->second;
   auto inner_ind = inner_it->second;
 
-  auto ind = add(mul(outer_ind, split->factor()), inner_ind);
-  index_map_[in_id] = ind;
+  bool outer_zero = outer_ind->isZeroInt();
+  bool inner_zero = inner_ind->isZeroInt();
+
+  if (outer_zero && inner_zero) {
+    index_map_[in_id] = new Int(0);
+  } else if (outer_zero) {
+    index_map_[in_id] = inner_ind;
+  } else if (inner_zero) {
+    index_map_[in_id] = outer_ind;
+  } else {
+    index_map_[in_id] = add(mul(outer_ind, split->factor()), inner_ind);
+  }
 }
 
 void IndexCompute::handle(Merge* merge) {
@@ -151,14 +374,24 @@ void IndexCompute::handle(Merge* merge) {
 
   auto out_ind = out_it->second;
 
-  const auto mergable_info =
-      isContiguousMerge(merge, td_->rootDomain(), root_contiguity_);
+  if (out_ind->isZeroInt()) {
+    index_map_[outer_id] = new Int(0);
+    index_map_[inner_id] = new Int(0);
+    return;
+  }
 
-  if (mergable_info.mergeable) {
-    index_map_[mergable_info.last_root_id] = out_ind;
-    for (auto root_ind : mergable_info.zero_root_ids) {
-      index_map_[root_ind] = new Int(0);
+  if (contig_ids.find(out_id) != contig_ids.end()) {
+    auto input_ids =
+        ir_utils::iterDomainInputsOfOrderedAs({out_id}, td_->rootDomain());
+
+    // Shouldn't hit this, but don't want to segfault if somehow we do.
+    TORCH_INTERNAL_ASSERT(!input_ids.empty());
+
+    for (auto root_id : input_ids) {
+      index_map_[root_id] = new Int(0);
     }
+
+    index_map_[*(input_ids.end() - 1)] = out_ind;
     return;
   }
 
@@ -185,8 +418,11 @@ void IndexCompute::handle(Expr* e) {
 IndexCompute::IndexCompute(
     const TensorDomain* _td,
     const std::vector<Val*>& indices,
-    std::vector<bool> _root_contiguity)
-    : td_(_td), root_contiguity_(std::move(_root_contiguity)) {
+    std::vector<bool> root_contiguity,
+    bool ignore_rfactor)
+    : td_(_td) {
+  contig_ids =
+      ContigIDs::find(td_->domain(), td_->rootDomain(), root_contiguity);
   if (td_->nDims() == 0 || indices.empty()) {
     indices_.push_back(new Int(0));
     return;
@@ -223,7 +459,9 @@ IndexCompute::IndexCompute(
   traverseFrom(indices[0]->fusion(), domain_vals, false);
 
   // TODO: Don't exclude reduction axes
-  for (auto id : td_->rootDomain()) {
+  auto root_dom = td_->hasRFactor() && !ignore_rfactor ? td_->rfactorDomain()
+                                                       : td_->rootDomain();
+  for (auto id : root_dom) {
     if (exclude_reduction && id->isReduction()) {
       continue;
     } else if (id->getIterType() == IterType::BroadcastWithStride) {
@@ -242,8 +480,9 @@ IndexCompute::IndexCompute(
 std::vector<Val*> IndexCompute::get(
     const TensorDomain* td,
     const std::vector<Val*>& _indices,
-    const std::vector<bool>& _root_contiguity) {
-  IndexCompute ic(td, _indices, _root_contiguity);
+    const std::vector<bool>& _root_contiguity,
+    bool ignore_rfactor) {
+  IndexCompute ic(td, _indices, _root_contiguity, ignore_rfactor);
   return ic.indices_;
 }
 
@@ -265,6 +504,7 @@ std::vector<bool> IndexCompute::contiguityAnd(
 }
 
 // TODO: use new mapping functions
+// This mapping might need to go through rfactor, unclear
 std::vector<bool> IndexCompute::contiguityPasC(
     TensorDomain* producer,
     TensorDomain* consumer) {
@@ -299,119 +539,6 @@ std::vector<bool> IndexCompute::contiguityPasC(
   return as_consumer_contiguity;
 }
 
-namespace {
-// Note returned vector is relative to the producer root (rfactor domain is
-// taken here for producer if there is one as this is the root domain relative
-// to consumer)
-//
-// Consider: T3[ iS{( 1 * i5 )}, iS{i7} ] compute_at( 4, 1 )
-//                 = broadcast( T1[ iS{i5}, iS{i7} ] )
-// which could generate the loop nest:
-//   for(size_t i18 = 0; i18 < ( T4.size[0] * T4.size[1] ); ++i18 ) {
-//     float T3[T1.size[2]];
-//     for(size_t i19 = 0; i19 < T3.size[2]; ++i19 ) {
-//       T2[ 0 ]
-//         = T1[...];
-//
-// Here the first dimension to index T1 must be i18 % T4.size[1], because T3 has
-// a dimension being broadcasted to the extent of T4. This function is looking
-// for these types of cases: where there's a dimension merged into an entry into
-// consumer->domain(), but this dimension does not exist in producer_root.
-// Then we need these dimensions mapped to producer_root, so we know which ones
-// we need to access with modulo. We could go consumer->domain() =>
-// consumer->rootDomain() => producer_root however producer_root could =
-// producer->rfactorDomain() then we still might have to map to
-// producer->rootDomain(). Therefore we might as well go consumer->domain() =>
-// producer->domain() => producer->rootDomain().
-std::vector<bool> getBCastMergedIndices(
-    const TensorDomain* producer,
-    const TensorDomain* consumer) {
-  auto c_root = consumer->rootDomain();
-  auto p_root = producer->hasRFactor() ? producer->rfactorDomain()
-                                       : producer->rootDomain();
-
-  auto root_c2p_idmap = TensorDomain::mapRootCtoP(consumer, producer);
-
-  std::unordered_set<IterDomain*> bcast_not_in_P;
-  for (auto c_id : c_root) {
-    if (c_id->isBroadcast() &&
-        root_c2p_idmap.find(c_id) == root_c2p_idmap.end()) {
-      bcast_not_in_P.emplace(c_id);
-    }
-  }
-
-  // If there are no broadcasts in consumer_root that are not in producer_root,
-  // we have nothing to track here.
-  if (bcast_not_in_P.empty()) {
-    return std::vector<bool>(p_root.size(), false);
-  }
-
-  // We want to know what domains in consumer have a merged root broadcast
-  // domain not present in producer root. We then want to map that to the
-  // consumer_root axes impacted by this (the non-bcast axes merged with these
-  // bcast axes). Then we want to map this to producer_root.
-
-  std::vector<bool> c_bcast_merged(consumer->nDims(), false);
-
-  for (size_t c_i = 0; c_i < consumer->nDims(); c_i++) {
-    auto c_id = consumer->axis(c_i);
-    bool missing_bcast = false;
-    bool non_missing_bcast = false;
-
-    auto c_id_inps = ir_utils::iterDomainInputsOf({c_id});
-
-    for (auto inp : c_id_inps) {
-      if (bcast_not_in_P.find(inp) != bcast_not_in_P.end()) {
-        missing_bcast = true;
-      } else {
-        non_missing_bcast = true;
-      }
-    }
-
-    // this domain c_i is guilty.
-    c_bcast_merged[c_i] = missing_bcast && non_missing_bcast;
-  }
-
-  // If these missing axes aren't merged with non-missing axes, we have nothing
-  // to track here.
-  if (std::none_of(c_bcast_merged.begin(), c_bcast_merged.end(), [](bool b) {
-        return b;
-      })) {
-    return std::vector<bool>(p_root.size(), false);
-  }
-
-  // map c_bcast_merged to producer
-  std::vector<bool> p_bcast_merged(producer->nDims(), false);
-  std::vector<std::pair<int, int>> pc_map =
-      TensorDomain::mapDomainPandC(consumer->domain(), producer->domain());
-
-  for (std::pair<int, int> entry : pc_map) {
-    int p_i = entry.first;
-    int c_i = entry.second;
-    p_bcast_merged[p_i] = c_bcast_merged[c_i];
-  }
-
-  // map p_bcast_merged to producer->root
-  std::vector<bool> p_root_bcast_merged(producer->nDims(), false);
-  // map producer root IterDomain to it's position in producer->rootDomain()
-  std::unordered_map<IterDomain*, int> p_root_id_to_index;
-  for (size_t p_i = 0; p_i < producer->rootDomain().size(); p_i++) {
-    p_root_id_to_index[producer->rootDomain()[p_i]] = p_i;
-  }
-
-  for (size_t p_i = 0; p_i < p_bcast_merged.size(); p_i++) {
-    if (!p_bcast_merged[p_i])
-      continue;
-    IterDomain* id = producer->axis((int)p_i);
-    auto id_inps = ir_utils::iterDomainInputsOf({id});
-    for (auto inp : id_inps) {
-      p_root_bcast_merged[p_root_id_to_index.at(inp)] = true;
-    }
-  }
-
-  return p_root_bcast_merged;
-}
-} // namespace
 kir::TensorIndex* Index::getGlobalProducerIndex(
     TensorView* producer_tv,
     TensorView* consumer_tv,
@@ -426,16 +553,21 @@ kir::TensorIndex* Index::getGlobalProducerIndex(
   // indices. The guard will reset the domain when this scope ends.
   ir_utils::TVDomainGuard domain_guard(producer_tv, producerAsC);
   auto indices = loop_utils::getIndicesForTV(
-      producer_tv, loops, loop_utils::mapIdPtoC(producer_tv, consumer_tv));
+      producer_tv,
+      loops,
+      false,
+      loop_utils::mapIdPtoC(producer_tv, consumer_tv));
 
   // TODO: Remove contiguity entry from IndexCompute::get
-  std::vector<Val*> computed_inds = IndexCompute::get(
+  std::vector<Val*> root_indices = IndexCompute::get(
       producerAsC, indices, producer_tv->domain()->contiguity());
 
-  auto root_dom = producer_tv->getRootDomain();
+  auto root_dom = producer_tv->domain()->hasRFactor()
+      ? producer_tv->domain()->rfactorDomain()
+      : producer_tv->getRootDomain();
 
   TORCH_INTERNAL_ASSERT(
-      computed_inds.size() == root_dom.size(),
+      root_indices.size() == root_dom.size(),
       "Dimensionality error in code generator while computing indexing.");
 
   bool inner_most_dim_contig =
@@ -451,14 +583,14 @@ kir::TensorIndex* Index::getGlobalProducerIndex(
         root_dom[i]->getIterType() == IterType::BroadcastWithoutStride) {
       continue;
     } else if (i == root_dom.size() - 1 && inner_most_dim_contig) {
-      strided_inds.push_back(computed_inds[i]);
-    } else if (computed_inds[i]->isZeroInt()) {
+      strided_inds.push_back(root_indices[i]);
+    } else if (root_indices[i]->isZeroInt()) {
       stride_i++;
     } else {
       std::stringstream ss;
       ss << "T" << producer_tv->name() << ".stride[" << stride_i++ << "]";
       strided_inds.push_back(
-          mul(computed_inds[i], new NamedScalar(ss.str(), DataType::Int)));
+          mul(root_indices[i], new NamedScalar(ss.str(), DataType::Int)));
     }
   }
 
@@ -470,100 +602,104 @@ kir::TensorIndex* Index::getGlobalProducerIndex(
 
 // Producer index for either shared or local memory
 kir::TensorIndex* Index::getProducerIndex_impl(
-    TensorView* producer,
-    TensorView* consumer,
+    TensorView* producer_tv,
+    TensorView* consumer_tv,
     const std::vector<kir::ForLoop*>& loops) {
-  TORCH_INTERNAL_ASSERT(
-      loops.size() == consumer->nDims(),
-      "Dimensionality error in code generator while computing tensor indexes.");
+  // producer_tv->domain() is not replayed as the loop strucutre we were
+  // provided, so replay it to match consumer_tv which is.
+  auto producerAsC = TransformReplay::replayPasC(
+                         producer_tv->domain(), consumer_tv->domain(), -1)
+                         .first;
 
-  std::vector<kir::ForLoop*> loops_adjusted;
-  size_t it_c = 0, it_p = 0;
-  while (it_c < consumer->nDims() && it_p < producer->nDims()) {
-    if (consumer->axis(it_c)->isBroadcast() &&
-        !producer->axis(it_p)->isBroadcast()) {
-      it_c++;
+  // Set producer_tv with the domain replayed as consumer to grab the right
+  // indices. The guard will reset the domain when this scope ends.
+  ir_utils::TVDomainGuard domain_guard(producer_tv, producerAsC);
+
+  auto domain_indices = loop_utils::getIndicesForTV(
+      producer_tv,
+      loops,
+      false,
+      loop_utils::mapIdPtoC(producer_tv, consumer_tv));
+
+  auto domain_ranges = loop_utils::getRangesForTV(
+      producer_tv, loops, loop_utils::mapIdPtoC(producer_tv, consumer_tv));
+
+  auto root_dom = producer_tv->domain()->hasRFactor()
+      ? producer_tv->domain()->rfactorDomain()
+      : producer_tv->getRootDomain();
+
+  // TODO: Remove contiguity entry from IndexCompute::get
+  std::vector<Val*> root_indices = IndexCompute::get(
+      producerAsC, domain_indices, producer_tv->domain()->contiguity());
+
+  TORCH_INTERNAL_ASSERT(
+      root_indices.size() == root_dom.size(),
+      "Dimensionality error in code generator while computing indexing.");
+
+  std::vector<Val*> root_ranges = RangeCompute::get(
+      producerAsC, domain_ranges, producer_tv->domain()->contiguity());
+
+  TORCH_INTERNAL_ASSERT(
+      root_ranges.size() == root_dom.size(),
+      "Dimensionality error in code generator while computing indexing.");
+
+  std::vector<Val*> strided_inds;
+  for (size_t i = 0; i < root_dom.size(); i++) {
+    if (root_dom[i]->isReduction() ||
+        root_dom[i]->getIterType() == IterType::BroadcastWithoutStride) {
+      continue;
+    } else if (root_indices[i]->isZeroInt() && root_ranges[i]->isZeroInt()) {
+      continue;
+    } else if (root_indices[i]->isZeroInt()) {
+      continue;
     } else {
-      loops_adjusted.push_back(loops[it_c]);
-      it_c++;
-      it_p++;
+      Val* stride = nullptr;
+      for (size_t j = i + 1; j < root_ranges.size(); j++) {
+        if (!root_ranges[j]->isZeroInt() && !root_dom[j]->isBroadcast() &&
+            !root_dom[j]->isReduction()) {
+          if (stride == nullptr) {
+            stride = root_ranges[j];
+          } else {
+            stride = mul(stride, root_ranges[j]);
+          }
+        }
+      }
+
+      if (stride != nullptr) {
+        strided_inds.push_back(mul(root_indices[i], stride));
+      } else {
+        strided_inds.push_back(root_indices[i]);
+      }
     }
   }
 
-  TORCH_INTERNAL_ASSERT(
-      loops_adjusted.size() == producer->domain()->noReductions().size(),
-      "Expected a tensor with ",
-      loops_adjusted.size(),
-      " dimensions but got one with ",
-      producer->nDims());
+  if (strided_inds.size() == 0)
+    strided_inds.push_back(new Int(0));
 
-  std::vector<IterDomain*> ranges(loops_adjusted.size());
-  std::transform(
-      loops_adjusted.begin(),
-      loops_adjusted.end(),
-      ranges.begin(),
-      [](kir::ForLoop* fl) { return fl->iter_domain(); });
-
-  std::vector<Val*> indices(loops_adjusted.size());
-  std::transform(
-      loops_adjusted.begin(),
-      loops_adjusted.end(),
-      indices.begin(),
-      [](kir::ForLoop* fl) {
-        return fl->iter_domain()->isBroadcast() ? new Int(0) : fl->index();
-      });
-
-  std::vector<Val*> used_inds;
-  std::vector<IterDomain*> used_ranges;
-  bool unrolled = false;
-  for (size_t i = 0; i < loops_adjusted.size(); i++) {
-    if (ranges[i]->getParallelType() == ParallelType::Unroll)
-      unrolled = true;
-    if (!unrolled && producer->hasComputeAt() &&
-        i < producer->getThisComputeAtAxis())
-      continue;
-    if (producer->getMemoryType() == MemoryType::Shared &&
-        ranges[i]->isBlockDim())
-      continue;
-    if (producer->getMemoryType() == MemoryType::Local && ranges[i]->isThread())
-      continue;
-    if (producer->domain()->noReductions()[i]->isBroadcast())
-      continue;
-
-    used_inds.push_back(indices[i]);
-    used_ranges.push_back(ranges[i]);
-  }
-
-  for (size_t i = 0; i < used_inds.size(); i++) {
-    Val* ind = used_inds[i];
-    for (size_t j = i + 1; j < used_ranges.size(); j++)
-      ind = mul(ind, used_ranges[j]->extent());
-    used_inds[i] = ind;
-  }
-  if (used_inds.size() == 0)
-    used_inds.push_back(new Int(0));
-
-  return new kir::TensorIndex(producer, used_inds);
+  return new kir::TensorIndex(producer_tv, strided_inds);
 }
 
 kir::TensorIndex* Index::getGlobalConsumerIndex(
-    TensorView* consumer,
+    TensorView* consumer_tv,
     const std::vector<kir::ForLoop*>& loops) {
-  auto indices = loop_utils::getIndicesForTV(consumer, loops);
+  auto indices = loop_utils::getIndicesForTV(consumer_tv, loops);
 
   std::vector<Val*> computed_inds = IndexCompute::get(
-      consumer->domain(), indices, consumer->domain()->contiguity());
+      consumer_tv->domain(), indices, consumer_tv->domain()->contiguity());
 
-  auto root_dom = consumer->getRootDomain();
+  auto root_dom = consumer_tv->domain()->hasRFactor()
+      ? consumer_tv->domain()->rfactorDomain()
+      : consumer_tv->getRootDomain();
 
   TORCH_INTERNAL_ASSERT(
       computed_inds.size() == root_dom.size(),
       "Dimensionality error in code generator while computing indexing.");
 
   bool inner_most_dim_contig =
-      consumer->getRootDomain()[consumer->getRootDomain().size() - 1]
+      consumer_tv->getRootDomain()[consumer_tv->getRootDomain().size() - 1]
               ->getIterType() == IterType::Iteration &&
-      consumer->domain()->contiguity()[consumer->getRootDomain().size() - 1];
+      consumer_tv->domain()
+          ->contiguity()[consumer_tv->getRootDomain().size() - 1];
 
   int64_t stride_i = 0;
   std::vector<Val*> strided_inds;
@@ -577,7 +713,7 @@ kir::TensorIndex* Index::getGlobalConsumerIndex(
       stride_i++;
     } else {
       std::stringstream ss;
-      ss << "T" << consumer->name() << ".stride[" << stride_i++ << "]";
+      ss << "T" << consumer_tv->name() << ".stride[" << stride_i++ << "]";
       strided_inds.push_back(
           mul(computed_inds[i], new NamedScalar(ss.str(), DataType::Int)));
     }
@@ -586,93 +722,71 @@ kir::TensorIndex* Index::getGlobalConsumerIndex(
   if (strided_inds.size() == 0)
     strided_inds.push_back(new Int(0));
 
-  return new kir::TensorIndex(consumer, strided_inds);
+  return new kir::TensorIndex(consumer_tv, strided_inds);
 }
 
 // Consumer index for either shared or local memory
 kir::TensorIndex* Index::getConsumerIndex_impl(
-    TensorView* consumer,
-    const std::vector<kir::ForLoop*>& loops) {
-  // If we're initializing a reduction buffer, we won't have the reduction
-  // loops. If we're actually performing the reduction, we will.
+    TensorView* consumer_tv,
+    const std::vector<kir::ForLoop*>& active_loops) {
+  auto domain_indices = loop_utils::getIndicesForTV(consumer_tv, active_loops);
+  auto domain_ranges = loop_utils::getRangesForTV(consumer_tv, active_loops);
 
-  bool have_reduction_iters = loops.size() == consumer->nDims();
+  auto root_dom = consumer_tv->domain()->hasRFactor()
+      ? consumer_tv->domain()->rfactorDomain()
+      : consumer_tv->getRootDomain();
 
-  if (!have_reduction_iters) {
-    TORCH_INTERNAL_ASSERT(
-        // Init reduction space
-        loops.size() == consumer->domain()->noReductions().size(),
-        "Expected a tensor with ",
-        loops.size(),
-        " dimensions but got one with ",
-        consumer->domain()->noReductions().size());
-  } else {
-    TORCH_INTERNAL_ASSERT(
-        // Calling the reduction op
-        loops.size() == consumer->nDims(),
-        "Expected a tensor with ",
-        loops.size(),
-        " dimensions but got one with ",
-        consumer->nDims());
-  }
+  std::vector<Val*> root_indices = IndexCompute::get(
+      consumer_tv->domain(),
+      domain_indices,
+      consumer_tv->domain()->contiguity());
 
-  std::vector<IterDomain*> ranges(loops.size());
-  std::transform(
-      loops.begin(), loops.end(), ranges.begin(), [](kir::ForLoop* fl) {
-        return fl->iter_domain();
-      });
+  TORCH_INTERNAL_ASSERT(
+      root_indices.size() == root_dom.size(),
+      "Dimensionality error in code generator while computing indexing.");
 
-  std::vector<Val*> indices(loops.size());
-  std::transform(
-      loops.begin(), loops.end(), indices.begin(), [](kir::ForLoop* fl) {
-        return fl->iter_domain()->isBroadcast() ? new Int(0) : fl->index();
-      });
+  std::vector<Val*> root_ranges = RangeCompute::get(
+      consumer_tv->domain(),
+      domain_ranges,
+      consumer_tv->domain()->contiguity());
 
-  std::vector<Val*> used_inds;
-  std::vector<IterDomain*> used_ranges;
-  bool unrolled = false;
-  {
-    size_t c_i = 0, l_i = 0;
-    while (c_i < consumer->nDims() && l_i < loops.size()) {
-      if (consumer->axis(c_i)->isReduction()) {
-        c_i++;
-        if (have_reduction_iters)
-          l_i++;
-        continue;
+  TORCH_INTERNAL_ASSERT(
+      root_ranges.size() == root_dom.size(),
+      "Dimensionality error in code generator while computing indexing.");
+
+  std::vector<Val*> strided_inds;
+  for (size_t i = 0; i < root_dom.size(); i++) {
+    if (root_dom[i]->isReduction() ||
+        root_dom[i]->getIterType() == IterType::BroadcastWithoutStride) {
+      continue;
+    } else if (root_indices[i]->isZeroInt() && root_ranges[i]->isZeroInt()) {
+      continue;
+    } else if (root_indices[i]->isZeroInt()) {
+      continue;
+    } else {
+      Val* stride = nullptr;
+      for (size_t j = i + 1; j < root_ranges.size(); j++) {
+        if (!root_ranges[j]->isZeroInt() && !root_dom[j]->isBroadcast() &&
+            !root_dom[j]->isReduction()) {
+          if (stride == nullptr) {
+            stride = root_ranges[j];
+          } else {
+            stride = mul(stride, root_ranges[j]);
+          }
+        }
       }
-      if (ranges[l_i]->getParallelType() == ParallelType::Unroll)
-        unrolled = true;
-
-      if ((!unrolled && consumer->hasComputeAt() &&
-           c_i < consumer->getThisComputeAtAxis()) ||
-          (consumer->getMemoryType() == MemoryType::Shared &&
-           ranges[l_i]->isBlockDim()) ||
-          (consumer->getMemoryType() == MemoryType::Local &&
-           ranges[l_i]->isThread()) ||
-          (consumer->axis(c_i)->isBroadcast())) {
-        c_i++;
-        l_i++;
-        continue;
+      if (stride != nullptr) {
+        strided_inds.push_back(mul(root_indices[i], stride));
+      } else {
+        strided_inds.push_back(root_indices[i]);
       }
-
-      used_inds.push_back(indices[l_i]);
-      used_ranges.push_back(ranges[l_i]);
-      l_i++;
-      c_i++;
     }
   }
 
-  for (size_t i = 0; i < used_inds.size(); i++) {
-    Val* ind = used_inds[i];
-    for (size_t j = i + 1; j < used_ranges.size(); j++)
-      ind = mul(ind, used_ranges[j]->extent());
-    used_inds[i] = ind;
-  }
+  if (strided_inds.size() == 0)
+    strided_inds.push_back(new Int(0));
 
-  if (used_inds.size() == 0)
-    used_inds.push_back(new Int(0));
-
-  return new kir::TensorIndex(consumer, used_inds);
+  return new kir::TensorIndex(consumer_tv, strided_inds);
 }
 
 // Producer is the inputs of an expression

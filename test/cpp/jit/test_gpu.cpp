@@ -43,7 +43,6 @@ TensorView* makeContigTensor(int nDims, DataType dtype = DataType::Float) {
 }
 
 TensorView* makeDummyTensor(int nDims, DataType dtype = DataType::Float) {
-  return makeContigTensor(nDims, dtype);
   // We can uncomment the below statement to test all tests with contiguous
   // tensors. return makeContigTensor(nDims, dtype);
   std::vector<IterDomain*> dom;
@@ -3051,62 +3050,62 @@ void testGPU_FusionSimpleBCast() {
 }
 
 void testGPU_FusionComplexBCast() {
-  // {
-  //   Fusion fusion;
-  //   FusionGuard fg(&fusion);
+#if 0
+  {
+    Fusion fusion;
+    FusionGuard fg(&fusion);
 
-  //   int x = 2, y = 3, z = 4;
+    int x = 2, y = 3, z = 4;
 
-  //   auto tv0 = makeConcreteTensor({y});
-  //   auto tv1 = div(tv0, new Float(2.0));
-  //   auto tv2 = broadcast(tv1, {false, true});
-  //   auto tv3 = makeConcreteTensor({y, z});
-  //   auto tv4 = mul(tv2, tv3);
-  //   auto tv5 = broadcast(tv4, {true, false, false});
-  //   auto tv6 = makeConcreteTensor({x, y, z});
-  //   auto tv7 = add(tv5, tv6);
+    auto tv0 = makeConcreteTensor({y});
+    auto tv1 = div(tv0, new Float(2.0));
+    auto tv2 = broadcast(tv1, {false, true});
+    auto tv3 = makeConcreteTensor({y, z});
+    auto tv4 = mul(tv2, tv3);
+    auto tv5 = broadcast(tv4, {true, false, false});
+    auto tv6 = makeConcreteTensor({x, y, z});
+    auto tv7 = add(tv5, tv6);
 
-  //   // tv0[    i1    ] = input
-  //   // tv1[    i1    ] = tv0/2.0
-  //   // tv2[    i1, b2] = bcast(tv1)
-  //   // tv3[    i1, i2] = input
-  //   // tv4[    i1, i2] = tv2 * tv3
-  //   // tv5[b0, i1, i2] = bcast(tv4)
-  //   // tv6[i0, i1, i2] = input
-  //   // tv7[i0, i1, i2] = tv5 + tv6
+    // tv0[    i1    ] = input
+    // tv1[    i1    ] = tv0/2.0
+    // tv2[    i1, b2] = bcast(tv1)
+    // tv3[    i1, i2] = input
+    // tv4[    i1, i2] = tv2 * tv3
+    // tv5[b0, i1, i2] = bcast(tv4)
+    // tv6[i0, i1, i2] = input
+    // tv7[i0, i1, i2] = tv5 + tv6
 
-  //   // tv4 = bcast(tv1) * tv3
-  //   // tv7 = bcast(tv4) + tv6
+    // tv4 = bcast(tv1) * tv3
+    // tv7 = bcast(tv4) + tv6
 
-  //   fusion.addInput(tv0);
-  //   fusion.addInput(tv3);
-  //   fusion.addInput(tv6);
+    fusion.addInput(tv0);
+    fusion.addInput(tv3);
+    fusion.addInput(tv6);
 
-  //   fusion.addOutput(tv7);
+    fusion.addOutput(tv7);
 
-  //   tv7->merge(0);
-  //   tv7->merge(0);
-  //   tv0->computeAt(tv7, -1);
+    tv7->merge(0);
+    tv7->merge(0);
+    tv0->computeAt(tv7, -1);
 
-  //   fusion.printMath();
+    fusion.printMath();
 
-  //   auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA,
-  //   0);
+    auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
 
-  //   at::Tensor t0 = at::randn({y}, options);
-  //   at::Tensor t3 = at::randn({y, z}, options);
-  //   at::Tensor t6 = at::randn({x, y, z}, options);
+    at::Tensor t0 = at::randn({y}, options);
+    at::Tensor t3 = at::randn({y, z}, options);
+    at::Tensor t6 = at::randn({x, y, z}, options);
 
-  //   auto t4 = t0.div(2.0).unsqueeze(-1).expand({y, z}) * t3;
-  //   auto t7 = t4.unsqueeze(0).expand({x, y, z}) + t6;
+    auto t4 = t0.div(2.0).unsqueeze(-1).expand({y, z}) * t3;
+    auto t7 = t4.unsqueeze(0).expand({x, y, z}) + t6;
 
-  //   torch::jit::fuser::cuda::FusionExecutor fe;
-  //   fe.compileFusion(&fusion);
-  //   auto outputs = fe.runFusion({t0, t3, t6});
+    torch::jit::fuser::cuda::FusionExecutor fe;
+    fe.compileFusion(&fusion);
+    auto outputs = fe.runFusion({t0, t3, t6});
 
-  //   TORCH_CHECK(t7.allclose(outputs[0]));
-  // }
-
+    TORCH_CHECK(t7.allclose(outputs[0]));
+  }
+#endif
   {
     Fusion fusion;
     FusionGuard fg(&fusion);
@@ -3138,9 +3137,6 @@ void testGPU_FusionComplexBCast() {
     tv5->merge(0);
     tv0->computeAt(tv5, -1);
     tv1->computeAt(tv2, -1);
-
-    fusion.printMath();
-    fusion.printKernel();
 
     auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
 
@@ -4256,6 +4252,8 @@ void testGPU_FusionBCastAfterReduce() {
   tv5->split(1, tidx);
 
   tv3->computeAt(tv5, 1);
+
+  tv2->split(1, tidx);
 
   tv1->axis(-1)->parallelize(ParallelType::TIDx);
   tv2->axis(-1)->parallelize(ParallelType::TIDx);

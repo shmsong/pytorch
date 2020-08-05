@@ -11,9 +11,6 @@ namespace fuser {
 /* ITER VISITOR */
 
 std::vector<Statement*> IterVisitor::next(Statement* stmt) {
-  if(termination_stmts.find(stmt) != termination_stmts.end()){
-    return std::vector<Statement*>();
-  }
   if (stmt->isVal())
     return next(stmt->as<Val>());
   else if (stmt->isExpr())
@@ -73,14 +70,9 @@ void remove_visited(
 void IterVisitor::traverseFrom(
     Fusion* fusion,
     const std::vector<Val*>& from,
-    bool traverseAllPaths,
-    const std::unordered_set<Statement*>& to) {
-
+    bool traverseAllPaths) {
   FusionGuard fg(fusion);
 
-  // Set any type of statement we want to stop traversal on.
-  termination_stmts = std::unordered_set<Statement*>(to);
-  
   std::unordered_set<Statement*> visited;
 
   stmt_stack.clear();
@@ -89,30 +81,28 @@ void IterVisitor::traverseFrom(
   bool all_inputs_visited = false;
 
   while (!stmt_stack.empty()) {
-
     auto& current_inputs = stmt_stack.back();
 
-    // If current_inputs is empty, pop a level of the stmt_stack, mark the level we
-    // pop to as having all inputs processed, the layer we processed were all
+    // If current_inputs is empty, pop a level of the stmt_stack, mark the level
+    // we pop to as having all inputs processed, the layer we processed were all
     // added inputs required for that Stmt.
     if (current_inputs.empty()) {
       stmt_stack.pop_back();
       all_inputs_visited = true;
       continue;
     }
-    
+
     // Get the very last entry in the stack to process
     const auto& stmt = current_inputs.back();
 
     // If we just poped a stmt_stack level, we can finally visit it!
     if (all_inputs_visited) {
-    
       // Mark visited
       visited.insert(stmt);
-    
+
       // Actually visit stmt
       handle(stmt);
-    
+
       // Remove last value just visited
       current_inputs.pop_back();
 
@@ -213,7 +203,6 @@ class AllVals : public IterVisitor {
   }
 
  public:
-
   // Return all values in history of all values in from
   static std::unordered_set<Val*> get(
       Fusion* fusion,

@@ -75,7 +75,7 @@ class TORCH_CUDA_API IterVisitor : public OptOutDispatch {
   // contains the outputs we started with (not guarenteed to be all outputs
   // throughout traversal).
   std::vector<std::vector<Statement*>> stmt_stack;
-  
+
   // Statements to stop traversal on if they're hit (pretends they're leaf
   // nodes in next)
   std::unordered_set<Statement*> termination_stmts;
@@ -97,9 +97,7 @@ class TORCH_CUDA_API IterVisitor : public OptOutDispatch {
   void traverseFrom(
       Fusion* fusion,
       const std::vector<Val*>& from,
-      bool traverseAllPaths = false,
-      const std::unordered_set<Statement*>& to =
-          std::unordered_set<Statement*>());
+      bool traverseAllPaths = false);
 
   // from_outputs_only = true start from outputs registered with fusion,
   // from_outputs_only = false start from all leaf nodes. Calls into

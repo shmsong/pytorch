@@ -2,6 +2,8 @@
 
 #include <torch/csrc/jit/codegen/cuda/iter_visitor.h>
 
+#include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 /*
@@ -64,22 +66,29 @@ class IndexCompute : public BackwardVisitor {
 
   // Otherwise warning on runBackward as it hides an overloaded virtual
   // using TransformIter::runBackward;
-
   IndexCompute(
       const TensorDomain* _td,
       const std::vector<Val*>& indices,
-      std::vector<bool> _root_contiguity);
+      std::vector<bool> _root_contiguity,
+      bool ignore_rfactor);
 
+  // Tensor domain we're mapping back to root
   const TensorDomain* td_;
+  // Map we update as we propagate backward, containing all IDs in the
+  // propagation
   std::unordered_map<IterDomain*, Val*> index_map_;
+  // Indices we start with, returning this after we propagate back as root
+  // indices
   std::vector<Val*> indices_;
-  const std::vector<bool> root_contiguity_;
+  // IDs that are a result of contiguous merges
+  std::unordered_set<IterDomain*> contig_ids;
 
  public:
   static std::vector<Val*> get(
       const TensorDomain* _td,
       const std::vector<Val*>& _indices,
-      const std::vector<bool>& _root_contiguity);
+      const std::vector<bool>& _root_contiguity,
+      bool ignore_rfactor = false);
 
   // Map producer contiguity information to consumer, if entries don't match
   // mark as false

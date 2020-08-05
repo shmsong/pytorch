@@ -111,7 +111,8 @@ kir::Bool* getPredicate(
     // combined
     all_preds = PredicateCompute::computePredicates(new kir::TensorIndex(
         consumer_tv,
-        IndexCompute::get(consumer_tv->domain(), inds, overall_contiguity)));
+        IndexCompute::get(
+            consumer_tv->domain(), inds, overall_contiguity, true)));
   }
 
   // If we have thread predicates, add those
