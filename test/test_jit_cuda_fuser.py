@@ -133,7 +133,7 @@ class TestCudaFuser(JitTestCase):
         self.assertEqual(o, jit_o)
         self.assertGraphContains(t_jit.graph_for(x, y, 2.0), FUSION_GROUP)
 
-    @unittest.skipIf(True) #This works with PE, not with legacy executor
+    @unittest.skipIf(True, "Broken in legacy executor, totally expected as kernel cache can't handle change in broadcast scheme. Renable this after #261 is merged") #This works with PE, not with legacy executor
     @unittest.skipIf(not RUN_CUDA, "requires CUDA")
     @unittest.skipIf(GRAPH_EXECUTOR != ProfilingMode.PROFILING and GRAPH_EXECUTOR !=
                      ProfilingMode.LEGACY, "Requires fusion optimization pass to be effective")
@@ -384,11 +384,12 @@ class TestCudaFuser(JitTestCase):
         addcmul_const_alpha_jit = torch.jit.script(addcmul_const_alpha)
         self._run_helper(addcmul_const_alpha_jit, addcmul_const_alpha, x, y, z)
 
-    @unittest.skipIf(True) #This works with PE, not with legacy executor
+    @unittest.skipIf(False, "still broken")
     @unittest.skipIf(not RUN_CUDA, "requires CUDA")
     @unittest.skipIf(GRAPH_EXECUTOR != ProfilingMode.PROFILING and GRAPH_EXECUTOR !=
                      ProfilingMode.LEGACY, "Requires fusion optimization pass to be effective")
     def test_dynamic_size(self):
+        torch._C._jit_set_bailout_depth(2)
         def t(x: torch.Tensor, y: torch.Tensor, z: float):
             o = x + y
             o = o + z
@@ -404,11 +405,17 @@ class TestCudaFuser(JitTestCase):
         x = torch.randn(8, 32, 16, 8, dtype=torch.float, device="cuda")
         y = torch.randn(16, 8, dtype=torch.float, device="cuda")
         jit_o = t_jit(x, y, 2.0)
+        jit_o = t_jit(x, y, 2.0)
         o = t(x, y, 2.0)
         self.assertEqual(o, jit_o)
+        self.assertGraphContains(t_jit.graph_for(x, y, 2.0), FUSION_GROUP)
         x = torch.randn(8, 17, 8, dtype=torch.float, device="cuda")
         y = torch.randn(8, 17, 1, dtype=torch.float, device="cuda")
         jit_o = t_jit(x, y, 2.0)
+        jit_o = t_jit(x, y, 2.0)
+        o = t(x, y, 2.0)
+        self.assertEqual(o, jit_o)
+        self.assertGraphContains(t_jit.graph_for(x, y, 2.0), FUSION_GROUP)
 
     @unittest.skipIf(not RUN_CUDA, "requires CUDA")
     def test_random_topo(self):
