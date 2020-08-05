@@ -170,56 +170,6 @@ class CudaFusionManager {
     return acc_type;
   }
 
-  void debugPrint(const TensorTypePtr& type) {
-    printf("\nsizes:");
-    if (auto sizes = type->symbolic_sizes().sizes()) {
-      // for (const auto& shape_symbol : sizes.value()) {
-      int rank = static_cast<int>(sizes->size());
-      for (int i = 0; i < rank; i++) {
-        const auto& shape_symbol = sizes.value()[i];
-        if (shape_symbol.is_static()) {
-          printf("%ld, ", shape_symbol.static_size());
-        } else {
-          printf("s(%ld), ", *reinterpret_cast<const int64_t*>(&shape_symbol));
-        }
-      }
-    } else {
-      printf("no size available\n");
-    }
-    if (const auto& stride_properties = type->stride_properties().sizes()) {
-      int rank = static_cast<int>(stride_properties->size());
-      printf("\nstride: ");
-      for (int i = 0; i < rank; i++) {
-        if ((*stride_properties)[i].has_value() &&
-            (*stride_properties)[i]->stride_.has_value()) {
-          printf("%ld, ", (*stride_properties)[i]->stride_.value());
-        } else {
-          printf("?, ");
-        }
-      }
-      printf("\nstride index: ");
-      for (int i = 0; i < rank; i++) {
-        if ((*stride_properties)[i].has_value() &&
-            (*stride_properties)[i]->stride_index_.has_value()) {
-          printf("%ld, ", (*stride_properties)[i]->stride_index_.value());
-        } else {
-          printf("?, ");
-        }
-      }
-      printf("\ncontiguous: ");
-      for (int i = 0; i < rank; i++) {
-        if ((*stride_properties)[i].has_value() &&
-            (*stride_properties)[i]->contiguous_.has_value()) {
-          printf("%d, ", (*stride_properties)[i]->contiguous_.value());
-        } else {
-          printf("?, ");
-        }
-      }
-    } else {
-      printf("no stride properties available\n");
-    }
-  }
-
   // return a permutation order that would undo `permuted`
   at::DimVector restorePermutation(at::DimVector permuted) {
     int rank = static_cast<int>(permuted.size());

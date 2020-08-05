@@ -100,8 +100,6 @@ at::DimVector graphReductionAxes(const std::shared_ptr<Graph>& graph) {
 at::DimVector getPermutationPerSortedStride(const TensorTypePtr& type) {
   // `permute_seq` is the returned permutation to achieve sorted stride;
   at::DimVector permute_seq;
-  printf("\ndebug print permutation type");
-  debugPrint(type);
 
   auto stride_properties = type->stride_properties().sizes();
 
@@ -139,10 +137,6 @@ at::DimVector getPermutationPerSortedStride(const TensorTypePtr& type) {
       permute_seq.emplace_back(unallocated_axis++);
     }
   }
-  printf("\npermutation axes:");
-  for (auto axis : permute_seq) {
-    printf(" %d, ", static_cast<int>(axis));
-  }
   return permute_seq;
 }
 
@@ -162,7 +156,6 @@ at::DimVector reversePermutation(
     // b. we adjust axes index that were affected by reduction;
     at::DimVector adjusted_permutation;
     for (const auto& dim : permuted) {
-      printf("\nexisting perm %ld", dim);
       int adjusted_offset = 0;
       for (const auto& red_dim : reduction_axes) {
         if (red_dim < dim) {
@@ -174,7 +167,6 @@ at::DimVector reversePermutation(
       }
       if (adjusted_offset >= 0) {
         adjusted_permutation.emplace_back(dim - adjusted_offset);
-        printf("\n\tadjusted perm %ld", dim - adjusted_offset);
       }
     }
 
@@ -277,8 +269,6 @@ GraphCache::InputsRequirement::InputsRequirement(
       // auto input_type = TensorType::create(input.toTensor());
       // vec_optional_ttp.emplace_back(input_type);
       vec_optional_ttp.emplace_back(TensorType::create(input.toTensor()));
-      printf("\ndebug print.....");
-      debugPrint(vec_optional_ttp.back().value());
       if (acc_type->dim().has_value()) {
         // TODO: I think merge cannot handle broadcast - Go verify it later;
         // TODO: Since we are only handling permutation here, we should just
@@ -386,7 +376,6 @@ FusionExecutorCache* GraphCache::createFusionExecutorCache(
     const InputsRequirement& input_stack) {
   input_stacks_.emplace_back(input_stack);
   std::shared_ptr<Graph> parsing_graph = graph_->copy();
-  std::cout << "\noriginal\n" << *parsing_graph << std::endl;
   // assign inputs on parsing_graph to accommodate legacy executor, where input
   // type might be missing/incomplete;
   // This is purely overhead for profiling executor;
@@ -449,14 +438,9 @@ FusionExecutorCache* GraphCache::createFusionExecutorCache(
           type->requires_grad());
     };
 
-    std::cout << "\nannotated graph\n" << *parsing_graph << std::endl;
     for (auto input : parsing_graph->inputs()) {
       if (auto input_type = input->type()->cast<TensorType>()) {
-        printf("\nprior to permutation");
-        debugPrint(input_type);
         input->setType(type_permute_fn(input_type));
-        printf("\nafter permutation");
-        debugPrint(input->type()->cast<TensorType>());
       }
     }
 
@@ -491,7 +475,6 @@ FusionExecutorCache* GraphCache::createFusionExecutorCache(
         }
       }
     }
-    std::cout << "\npermuted\n" << *parsing_graph << std::endl;
   }
 
   TORCH_INTERNAL_ASSERT(
