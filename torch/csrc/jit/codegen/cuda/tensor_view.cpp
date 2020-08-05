@@ -85,7 +85,7 @@ TensorView::TensorView(const std::shared_ptr<c10::TensorType>& tensor_type)
             continue;
           }
           // collapse if two axes are neighboring in both sizes & stride_index;
-          contig_info[index] = (left_index_opt.value() == (index - 1));
+          contig_info[index] = (left_index_opt.value() == (index + 1));
         }
       }
     }
