@@ -149,6 +149,9 @@ at::DimVector getPermutationPerSortedStride(const TensorTypePtr& type) {
 at::DimVector reversePermutation(
     const at::DimVector& permuted,
     const std::vector<size_t>& reduction_axes) {
+  if (permuted.empty()) {
+    return permuted;
+  }
   int rank = static_cast<int>(permuted.size());
 
   if (!reduction_axes.empty()) {
@@ -298,14 +301,14 @@ GraphCache::InputsRequirement::InputsRequirement(
 bool GraphCache::InputsRequirement::requiresPermutation() {
   size_t input_rank = input_permutation_.size();
   for (size_t i = 0; i < input_rank; i++) {
-    if (input_permutation_[i] != input_rank - i - 1) {
+    if (input_permutation_[i] != i) {
       return true;
     }
   }
   // Check if output agrees
   size_t output_rank = output_permutation_.size();
   for (size_t i = 0; i < output_rank; i++) {
-    TORCH_INTERNAL_ASSERT(output_permutation_[i] == output_rank - i - 1, "permutation of output and input is not consistent");
+    TORCH_INTERNAL_ASSERT(output_permutation_[i] == i, "permutation of output and input is not consistent");
   }
   return false;
 }
