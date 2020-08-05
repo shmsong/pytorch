@@ -40,6 +40,11 @@ class PredicateCompute {
   // Return the series of predicates, if an axis doesn't have a predicate
   // reutrns 1
   static std::vector<kir::Bool*> computePredicates(const kir::TensorIndex*);
+
+  static kir::Bool* getInlinePredicate(
+      Expr* expr,
+      const std::vector<kir::ForLoop*>& loops,
+      kir::Bool* thread_pred);
 };
 
 } // namespace fuser

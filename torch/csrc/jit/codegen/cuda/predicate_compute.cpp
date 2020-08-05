@@ -2,6 +2,7 @@
 
 #include <torch/csrc/jit/codegen/cuda/arith.h>
 #include <torch/csrc/jit/codegen/cuda/fusion.h>
+#include <torch/csrc/jit/codegen/cuda/index_compute.h>
 #include <torch/csrc/jit/codegen/cuda/transform_iter.h>
 
 namespace torch {
@@ -67,6 +68,77 @@ std::vector<kir::Bool*> PredicateCompute::computePredicates(
     }
   }
   return preds;
+}
+
+kir::Bool* PredicateCompute::getInlinePredicate(
+    Expr* expr,
+    const std::vector<kir::ForLoop*>& loops,
+    kir::Bool* thread_pred) {
+  if (loops.empty())
+    return new kir::Bool(true);
+
+  TORCH_INTERNAL_ASSERT(
+      ir_utils::isTVOp(expr),
+      "Cannot generate predicate based on operation without a TensorView.");
+
+  auto out_tv = ir_utils::getTVOutput(expr);
+
+  bool is_init_op = !loop_utils::loopsHasReductions(out_tv, loops);
+
+  auto pred_contiguity = out_tv->domain()->contiguity();
+
+  for (auto inp : expr->inputs()) {
+    if (!ir_utils::isTV(inp)) {
+      continue;
+    }
+    auto inp_tv = inp->as<TensorView>();
+    if (inp_tv->domain()->hasRFactor()) {
+      continue;
+    } else if (
+        inp_tv->getMemoryType() == MemoryType::Shared ||
+        inp_tv->getMemoryType() == MemoryType::Local) {
+      continue;
+    } else {
+      pred_contiguity = IndexCompute::contiguityAnd(
+          pred_contiguity,
+          IndexCompute::contiguityPasC(inp_tv->domain(), out_tv->domain()));
+    }
+  }
+
+  auto domain_indices = loop_utils::getIndicesForTV(out_tv, loops, true);
+  auto root_indices = IndexCompute::get(
+      out_tv->domain(), domain_indices, pred_contiguity, true);
+  auto pred_ti = new kir::TensorIndex(out_tv, root_indices);
+  auto all_preds = PredicateCompute::computePredicates(pred_ti);
+
+  // If we have thread predicates, add those
+  if (thread_pred != nullptr) {
+    all_preds.push_back(thread_pred);
+  }
+
+  std::vector<kir::Bool*> preds;
+
+  for (auto pred : all_preds)
+    if (!(pred->isConst()) || !(pred->isConst() && pred->value().value()))
+      preds.push_back(pred);
+
+  if (preds.empty()) {
+    return new kir::Bool(true);
+  }
+
+  Val* cond = preds[0];
+
+  for (decltype(preds.size()) i{1}; i < preds.size(); i++) {
+    cond = kir::andExpr(cond, preds[i]);
+  }
+
+  TORCH_INTERNAL_ASSERT(
+      cond->getValType().value() == ValType::KirScalar &&
+          cond->getDataType().value() == DataType::Bool,
+      "Error computing predicate, should be returning a Bool, but returning ",
+      cond->getDataType().value());
+
+  return cond->as<kir::Bool>();
 }
 
 } // namespace fuser
