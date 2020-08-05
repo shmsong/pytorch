@@ -78,7 +78,7 @@ TensorView::TensorView(const std::shared_ptr<c10::TensorType>& tensor_type)
         contig_info[index] = (index == tensor_type->dim().value() - 1);
       } else {
         // check the neighboring faster dimension;
-        if (auto left_index_opt =
+        if (size_t left_index_opt =
                 tensor_type->stride_properties()[i - 1]->stride_index_) {
           // TODO: `isBroadcast` -> issue #230
           if (sizes[left_index_opt.value()]->isBroadcast()) {

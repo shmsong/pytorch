@@ -199,7 +199,7 @@ std::vector<at::Tensor> FusionExecutorCache::runFusionWithInputs(
     // if (fusion_->hasReduction()) {
     if (false) {
       TensorView* red_tv = nullptr;
-      FusionGuard(fusion_.get());
+      FusionGuard fg(fusion_.get());
       for (auto expr : fusion_->exprs()) {
         if (expr->getExprType().has_value() &&
             expr->getExprType().value() == ExprType::ReductionOp) {
