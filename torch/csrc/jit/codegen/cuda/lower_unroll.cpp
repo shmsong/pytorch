@@ -34,7 +34,6 @@ namespace {
 kir::Bool* getUnrollPredicate(
     const std::vector<Expr*>& tv_ops,
     const std::vector<Val*>& inds_,
-    kir::Bool* thread_pred,
     const std::unordered_set<Expr*>& init_exprs) {
   TORCH_INTERNAL_ASSERT(
       !tv_ops.empty() && !inds_.empty(),
@@ -115,11 +114,6 @@ kir::Bool* getUnrollPredicate(
             consumer_tv->domain(), inds, overall_contiguity, true)));
   }
 
-  // If we have thread predicates, add those
-  if (thread_pred != nullptr) {
-    all_preds.push_back(thread_pred);
-  }
-
   std::vector<kir::Bool*> preds;
 
   for (auto pred : all_preds)
@@ -172,6 +166,18 @@ void UnrollPass::handle(kir::ForLoop* fl) {
   if (within_unroll && has_TV_op) {
     // Setup unrolled loop information:
 
+    for (auto tv_op : tv_ops) {
+      auto tv_out = ir_utils::getTVOutput(tv_op);
+      auto thread_pred = getThreadPredicate(tv_out);
+      TORCH_CHECK(
+          thread_pred == nullptr ||
+              (thread_pred->isConst() && thread_pred->value().value()),
+          "Detected a thread predicate for ",
+          tv_out,
+          " but this tensor view is within an unrolled loop.",
+          " This is not supported at this time.");
+    }
+
     // Indices used to detect when we can unroll a loop safely
     // For loops outside the unroll, it's just the index, for loops inside
     // the unroll, if it's a thread it's the thread index, otherwise it's
@@ -203,11 +209,8 @@ void UnrollPass::handle(kir::ForLoop* fl) {
     }
 
     // Make predicates for the unrolling, and the epilogue
-    kir::Bool* unroll_predicate = getUnrollPredicate(
-        tv_ops,
-        unroll_pred_inds,
-        getThreadPredicate(ir_utils::getTVOutput(tv_ops[0])),
-        incoming_init_exprs_);
+    kir::Bool* unroll_predicate =
+        getUnrollPredicate(tv_ops, unroll_pred_inds, incoming_init_exprs_);
 
     // Make the IfThenElse controlling the unrolling
     kir::IfThenElse* unroll_ite = new kir::IfThenElse(
