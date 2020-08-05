@@ -101,6 +101,8 @@ class InputsOf : public IterVisitor {
  * The Fusion owns the whole IR graph (Vals and Exprs)
  */
 class TORCH_CUDA_API Fusion final {
+  class KernelIrMapper;
+
  public:
   Fusion() = default;
 
@@ -243,6 +245,9 @@ class TORCH_CUDA_API Fusion final {
   void replaceInput(Val* replace, Val* with);
   void replaceOutput(Val* replace, Val* with);
 
+  // Converts a Fusion IR value into the Kernel IR equivalent
+  Val* lowerValue(const Val* val);
+
  private:
   // Return an int that monotonically increases for each val/expr, some are
   // explicitly incremented by type.
@@ -282,8 +287,8 @@ class TORCH_CUDA_API Fusion final {
   std::unordered_set<Val*> lowered_val_set_;
   std::unordered_set<Expr*> lowered_expr_set_;
 
-  StmtNameType lowered_val_name_counter_ = 0;
-  StmtNameType lowered_expr_name_counter_ = 0;
+  // Fusion IR node to Kernel IR node mapping
+  std::unordered_map<const Val*, Val*> kir_map_;
 };
 
 } // namespace fuser

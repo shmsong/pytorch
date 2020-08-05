@@ -2,59 +2,13 @@
 #include <torch/csrc/jit/codegen/cuda/kernel_ir.h>
 #include <torch/csrc/jit/codegen/cuda/type.h>
 
-// TODO: remove
+// TODO(kir): remove
 #include <torch/csrc/jit/codegen/cuda/ir_cloner.h>
 
 namespace torch {
 namespace jit {
 namespace fuser {
 namespace kir {
-
-namespace {
-
-bool isLoweredScalar(const Val* val) {
-  switch (val->getValType().value()) {
-    case ValType::KirNamedScalar:
-    case ValType::KirScalar:
-      return true;
-    default:
-      return false;
-  }
-}
-
-Val* newResult(const Val* lhs, const Val* rhs) {
-  TORCH_CHECK(isLoweredScalar(lhs));
-  TORCH_CHECK(isLoweredScalar(rhs));
-  TORCH_CHECK(lhs->getDataType() == rhs->getDataType());
-
-  // Allocate a compatible result value
-  switch (lhs->getDataType().value()) {
-    case DataType::Bool:
-      return new Bool(c10::nullopt);
-    case DataType::Float:
-      return new Float(c10::nullopt);
-    case DataType::Half:
-      return new Half(c10::nullopt);
-    case DataType::Int:
-      return new Int(c10::nullopt);
-    default:
-      TORCH_CHECK(false, "Unexpected data type");
-  }
-}
-
-Val* newArithmeticExpr(BinaryOpType op_type, Val* lhs, Val* rhs) {
-  auto result = newResult(lhs, rhs);
-  new BinaryOp(op_type, result, lhs, rhs);
-  return result;
-}
-
-Val* newLogicExpr(BinaryOpType op_type, Val* lhs, Val* rhs) {
-  auto result = new Bool(c10::nullopt);
-  new BinaryOp(op_type, result, lhs, rhs);
-  return result;
-}
-
-} // namespace
 
 NamedScalar* NamedScalar::getParallelDim(ParallelType p_type) {
   std::string parallel_dim = stringifyThreadSize(p_type);
@@ -100,13 +54,13 @@ c10::optional<ParallelType> NamedScalar::getParallelIndex() const {
   return c10::nullopt;
 }
 
-IterDomain::IterDomain(const fuser::IterDomain* fusion_id)
-    : Val(ValType::KirIterDomain, DataType::Int, true, true),
-      start_(fusion_id->start()),
-      extent_(fusion_id->rawExtent()),
-      parallel_type_(fusion_id->getParallelType()),
-      iter_type_(fusion_id->getIterType()),
-      is_rfactor_domain_(fusion_id->isRFactorProduct()) {}
+IterDomain::IterDomain(const fuser::IterDomain* iter_domain)
+    : Val(iter_domain),
+      start_(iter_domain->start()),
+      extent_(iter_domain->rawExtent()),
+      parallel_type_(iter_domain->getParallelType()),
+      iter_type_(iter_domain->getIterType()),
+      is_rfactor_domain_(iter_domain->isRFactorProduct()) {}
 
 IterDomain::IterDomain(const IterDomain* src, IrCloner* ir_cloner)
     : Val(src, ir_cloner),
@@ -129,14 +83,12 @@ Val* IterDomain::extent() const {
 }
 
 TensorDomain::TensorDomain(const fuser::TensorDomain* tensor_domain)
-    : Val(ValType::KirTensorDomain, DataType::Null, true, true),
-    contiguity_(tensor_domain->contiguity()) {
-
+    : Val(tensor_domain), contiguity_(tensor_domain->contiguity()) {
   const auto lowerIterDomains =
       [](const std::vector<fuser::IterDomain*>& domains) {
         std::vector<IterDomain*> lowered_domains;
         for (const auto iter_domain : domains) {
-          lowered_domains.push_back(new IterDomain(iter_domain));
+          lowered_domains.push_back(lowerValue(iter_domain)->as<IterDomain>());
         }
         return lowered_domains;
       };
@@ -186,9 +138,8 @@ IterDomain* TensorDomain::axis(int i) const {
   return domain_[i];
 }
 
-TensorView::TensorView(const fuser::TensorView* tv)
-    : Val(ValType::KirTensorView, tv->getDataType().value(), true, true) {
-  domain_ = new TensorDomain(tv->domain());
+TensorView::TensorView(const fuser::TensorView* tv) : Val(tv) {
+  domain_ = lowerValue(tv->domain())->as<TensorDomain>();
   memory_type_ = tv->getMemoryType();
 }
 
@@ -312,7 +263,7 @@ TensorIndex::TensorIndex(
     const fuser::TensorView* view,
     std::vector<Val*> indices)
     : Val(ValType::TensorIndex, view->getDataType().value(), true, true),
-      view_(new TensorView(view)),
+      view_(lowerValue(view)->as<TensorView>()),
       indices_(indices) {
   TORCH_INTERNAL_ASSERT(
       std::all_of(
@@ -520,41 +471,68 @@ std::string GridReduction::getPredicateFlagName(const fuser::TensorView* val) {
   return ss.str();
 }
 
-Val* lowerValue(const Val* val) {
+bool isLoweredScalar(const Val* val) {
   switch (val->getValType().value()) {
-    case ValType::TensorDomain: {
-      const auto tensor_domain = val->as<fuser::TensorDomain>();
-      return new TensorDomain(tensor_domain);
-    }
-    case ValType::IterDomain: {
-      const auto iter_domain = val->as<fuser::IterDomain>();
-      return new IterDomain(iter_domain);
-    }
-    case ValType::TensorView: {
-      const auto tv = val->as<fuser::TensorView>();
-      return new TensorView(tv);
-    }
-    case ValType::Scalar: {
-      switch (val->getDataType().value()) {
-        case DataType::Bool:
-          return new Bool(val->as<fuser::Bool>()->value());
-        case DataType::Float:
-          return new Float(val->as<fuser::Float>()->value());
-        case DataType::Half:
-          return new Half(val->as<fuser::Half>()->value());
-        case DataType::Int:
-          return new Int(val->as<fuser::Int>()->value());
-        default:
-          TORCH_CHECK(false, "Unexpected data type");
-      }
-    }
-    case ValType::NamedScalar: {
-      const auto ns = val->as<fuser::NamedScalar>();
-      return new NamedScalar(ns->name(), ns->getDataType().value());
-    }
+    case ValType::KirNamedScalar:
+    case ValType::KirScalar:
+      return true;
     default:
-      TORCH_CHECK(false, "Unexpected Fusion IR value type");
+      return false;
   }
+}
+
+bool isLoweredVal(const Val* val) {
+  switch (val->getValType().value()) {
+    case ValType::TensorIndex:
+    case ValType::KirNamedScalar:
+    case ValType::KirScalar:
+    case ValType::KirTensorDomain:
+    case ValType::KirIterDomain:
+    case ValType::KirTensorView:
+      return true;
+    default:
+      return false;
+  }
+}
+
+namespace {
+
+Val* newResult(const Val* lhs, const Val* rhs) {
+  TORCH_CHECK(isLoweredScalar(lhs));
+  TORCH_CHECK(isLoweredScalar(rhs));
+  TORCH_CHECK(lhs->getDataType() == rhs->getDataType());
+
+  // Allocate a compatible result value
+  switch (lhs->getDataType().value()) {
+    case DataType::Bool:
+      return new Bool(c10::nullopt);
+    case DataType::Float:
+      return new Float(c10::nullopt);
+    case DataType::Half:
+      return new Half(c10::nullopt);
+    case DataType::Int:
+      return new Int(c10::nullopt);
+    default:
+      TORCH_CHECK(false, "Unexpected data type");
+  }
+}
+
+Val* newArithmeticExpr(BinaryOpType op_type, Val* lhs, Val* rhs) {
+  auto result = newResult(lhs, rhs);
+  new BinaryOp(op_type, result, lhs, rhs);
+  return result;
+}
+
+Val* newLogicExpr(BinaryOpType op_type, Val* lhs, Val* rhs) {
+  auto result = new Bool(c10::nullopt);
+  new BinaryOp(op_type, result, lhs, rhs);
+  return result;
+}
+
+} // namespace
+
+Val* lowerValue(const Val* val) {
+  return FusionGuard::getCurFusion()->lowerValue(val);
 }
 
 Val* andExpr(Val* lhs, Val* rhs) {

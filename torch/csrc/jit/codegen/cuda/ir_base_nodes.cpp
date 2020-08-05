@@ -57,6 +57,38 @@ Val::Val(ValType _vtype, DataType _dtype, bool register_val, bool lowered)
   }
 }
 
+namespace {
+
+// TODO(kir): remove this
+ValType lowerValType(ValType vtype) {
+  switch (vtype) {
+    case ValType::Scalar:
+      return ValType::KirScalar;
+    case ValType::NamedScalar:
+      return ValType::KirNamedScalar;
+    case ValType::TensorDomain:
+      return ValType::KirTensorDomain;
+    case ValType::IterDomain:
+      return ValType::KirIterDomain;
+    case ValType::TensorView:
+      return ValType::KirTensorView;
+    default:
+      TORCH_CHECK(false, "Unexpected");
+  }
+}
+
+} // namespace
+
+// TODO(kir): remove this
+Val::Val(const Val* fusion_ir_node)
+    : vtype_(lowerValType(fusion_ir_node->vtype_)),
+      dtype_(fusion_ir_node->dtype_) {
+  // The lowered nodes preserve the names from the fusion IR counterparts
+  name_ = fusion_ir_node->name_;
+  fusion_ = fusion_ir_node->fusion_;
+  fusion_->registerLoweredVal(this);
+}
+
 Val::Val(const Val* src, IrCloner* ir_cloner)
     : Statement(src, ir_cloner), vtype_(src->vtype_), dtype_(src->dtype_) {}
 

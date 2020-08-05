@@ -202,6 +202,9 @@ class TORCH_CUDA_API Val : public Statement {
       bool register_val = true,
       bool lowered = false);
 
+  // Lowers an existing Fusion IR node into a Kernel IR counterpart
+  explicit Val(const Val* fusion_ir_node);
+  
   Val(const Val* src, IrCloner* ir_cloner);
 
   // TODO: Values are unique and not copyable

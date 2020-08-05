@@ -5,7 +5,8 @@
 
 #include <torch/csrc/jit/codegen/cuda/type.h>
 
-// TODO: remove these once the Kernel IR is separated from Fusion IR
+// TODO(kir): remove these once the Kernel IR is separated from Fusion IR
+#include <torch/csrc/jit/codegen/cuda/fusion.h>
 #include <torch/csrc/jit/codegen/cuda/ir_base_nodes.h>
 #include <torch/csrc/jit/codegen/cuda/ir_interface_nodes.h>
 #include <torch/csrc/jit/codegen/cuda/ir_internal_nodes.h>
@@ -25,6 +26,9 @@ class TORCH_CUDA_API NamedScalar : public Val {
  public:
   NamedScalar(std::string name, DataType dtype)
       : Val(ValType::KirNamedScalar, dtype, true, true), name_(name) {}
+
+  explicit NamedScalar(const fuser::NamedScalar* node)
+      : Val(node), name_(node->name()) {}
 
   NamedScalar(const NamedScalar* src, IrCloner* ir_cloner)
       : Val(src, ir_cloner), name_(src->name_) {}
@@ -57,6 +61,9 @@ class TORCH_CUDA_API Bool : public Val {
       : Val(ValType::KirScalar, DataType::Bool, true, true),
         maybe_value_(value) {}
 
+  explicit Bool(const fuser::Bool* node)
+      : Val(node), maybe_value_(node->value()) {}
+
   Bool(const Bool* src, IrCloner* ir_cloner)
       : Val(src, ir_cloner), maybe_value_(src->maybe_value_) {}
 
@@ -82,6 +89,9 @@ class TORCH_CUDA_API Float : public Val {
       : Val(ValType::KirScalar, DataType::Float, true, true),
         maybe_value_(value) {}
 
+  explicit Float(const fuser::Float* node)
+      : Val(node), maybe_value_(node->value()) {}
+
   Float(const Float* src, IrCloner* ir_cloner)
       : Val(src, ir_cloner), maybe_value_(src->maybe_value_) {}
 
@@ -104,6 +114,9 @@ class TORCH_CUDA_API Half : public Val {
   explicit Half(const c10::optional<float>& value)
       : Val(ValType::KirScalar, DataType::Half, true, true),
         maybe_value_(value) {}
+
+  explicit Half(const fuser::Half* node)
+      : Val(node), maybe_value_(node->value()) {}
 
   Half(const Half* src, IrCloner* ir_cloner)
       : Val(src, ir_cloner), maybe_value_(src->maybe_value_) {}
@@ -130,6 +143,9 @@ class TORCH_CUDA_API Int : public Val {
       : Val(ValType::KirScalar, DataType::Int, true, true),
         maybe_value_(value) {}
 
+  explicit Int(const fuser::Int* node, bool /*avoid_zero_ambiguity*/)
+      : Val(node), maybe_value_(node->value()) {}
+
   Int(const Int* src, IrCloner* ir_cloner)
       : Val(src, ir_cloner), maybe_value_(src->maybe_value_) {}
 
@@ -149,7 +165,7 @@ class TORCH_CUDA_API Int : public Val {
 
 class TORCH_CUDA_API IterDomain : public Val {
  public:
-  explicit IterDomain(const fuser::IterDomain* fusion_id);
+  explicit IterDomain(const fuser::IterDomain* iter_domain);
 
   IterDomain(const IterDomain* src, IrCloner* ir_cloner);
 
@@ -694,6 +710,10 @@ class TORCH_CUDA_API GridReduction : public Expr {
   Allocate* reduction_buffer_ = nullptr;
   Allocate* sync_buffer_ = nullptr;
 };
+
+// Simple classification helpers
+bool isLoweredScalar(const Val* val);
+bool isLoweredVal(const Val* val);
 
 // Converts a Fusion IR value into the Kernel IR equivalent
 Val* lowerValue(const Val* val);

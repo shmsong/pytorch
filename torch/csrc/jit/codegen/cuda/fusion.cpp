@@ -4,6 +4,7 @@
 #include <torch/csrc/jit/codegen/cuda/ir_cloner.h>
 #include <torch/csrc/jit/codegen/cuda/ir_printer.h>
 #include <torch/csrc/jit/codegen/cuda/lower2device.h>
+#include <torch/csrc/jit/codegen/cuda/kernel_ir.h>
 
 namespace torch {
 namespace jit {
@@ -96,8 +97,7 @@ void swap(Fusion& a, Fusion& b) noexcept {
   // Lowered IR nodes
   swap(a.lowered_val_set_, b.lowered_val_set_);
   swap(a.lowered_expr_set_, b.lowered_expr_set_);
-  swap(a.lowered_val_name_counter_, b.lowered_val_name_counter_);
-  swap(a.lowered_expr_name_counter_, b.lowered_expr_name_counter_);
+  swap(a.kir_map_, b.kir_map_);
 
   for (auto val : a.lowered_val_set_) {
     val->fusion_ = &a;
@@ -165,8 +165,11 @@ Fusion::Fusion(const Fusion& other) {
     lowered_expr_set_.insert(ir_cloner.clone(expr));
   }
 
-  lowered_val_name_counter_ = other.lowered_val_name_counter_;
-  lowered_expr_name_counter_ = other.lowered_expr_name_counter_;
+  for (const auto& kv : other.kir_map_) {
+    auto from_node = ir_cloner.clone(kv.first);
+    auto to_node = ir_cloner.clone(kv.second);
+    kir_map_.insert({from_node, to_node});
+  }
 }
 
 Fusion::Fusion(Fusion&& other) noexcept {
@@ -228,9 +231,7 @@ void Fusion::clear() noexcept {
   }
   lowered_val_set_.clear();
   lowered_expr_set_.clear();
-
-  lowered_val_name_counter_ = 0;
-  lowered_expr_name_counter_ = 0;
+  kir_map_.clear();
 }
 
 void Fusion::removeExpr(Expr* expr) {
@@ -505,7 +506,7 @@ StmtNameType Fusion::registerLoweredVal(Val* val) {
   TORCH_INTERNAL_ASSERT(!inFusion(val));
   TORCH_INTERNAL_ASSERT(!inKernelIr(val));
   lowered_val_set_.insert(val);
-  return lowered_val_name_counter_++;
+  return getValName(*val->getValType());
 }
 
 StmtNameType Fusion::registerLoweredExpr(Expr* expr) {
@@ -525,7 +526,7 @@ StmtNameType Fusion::registerLoweredExpr(Expr* expr) {
   }
 
   lowered_expr_set_.insert(expr);
-  return lowered_expr_name_counter_++;
+  return getExprName();
 }
 
 bool Fusion::used(Val* val) const {
@@ -657,6 +658,88 @@ std::vector<Val*> Fusion::getTerminatingOutputs() {
     terminating_outputs.push_back(out);
   }
   return terminating_outputs;
+}
+
+// Maps Fusion IR nodes to the Kernel IR counterparts
+// (this is a interim solution for easing the Kernel IR splitting)
+class TORCH_CUDA_API Fusion::KernelIrMapper : private OptInConstDispatch {
+ public:
+  explicit KernelIrMapper(Fusion* fusion) : fusion_(fusion) {}
+
+  Val* lower(const Val* value) {
+    const auto it = fusion_->kir_map_.find(value);
+    if (it != fusion_->kir_map_.end()) {
+      return it->second;
+    } else {
+      handle(value);
+      const auto lowered_node = fusion_->kir_map_[value];
+      TORCH_CHECK(lowered_node != nullptr);
+      TORCH_CHECK(kir::isLoweredVal(lowered_node));
+      return lowered_node;
+    }
+  }
+
+ private:
+  void handle(const Statement* node) override {
+    OptInConstDispatch::handle(node);
+  }
+
+  void handle(const Val* node) override {
+    OptInConstDispatch::handle(node);
+  }
+
+  void handle(const Expr* node) override {
+    OptInConstDispatch::handle(node);
+  }
+
+  void handle(const TensorDomain* node) override {
+    const auto lowered_node = new kir::TensorDomain(node);
+    TORCH_CHECK(fusion_->kir_map_.insert({node, lowered_node}).second);
+  }
+
+  void handle(const IterDomain* node) override {
+    const auto lowered_node = new kir::IterDomain(node);
+    TORCH_CHECK(fusion_->kir_map_.insert({node, lowered_node}).second);
+  }
+
+  void handle(const TensorView* node) override {
+    const auto lowered_node = new kir::TensorView(node);
+    TORCH_CHECK(fusion_->kir_map_.insert({node, lowered_node}).second);
+  }
+
+  void handle(const Bool* node) override {
+    const auto lowered_node = new kir::Bool(node);
+    TORCH_CHECK(fusion_->kir_map_.insert({node, lowered_node}).second);
+  }
+
+  void handle(const Float* node) override {
+    const auto lowered_node = new kir::Float(node);
+    TORCH_CHECK(fusion_->kir_map_.insert({node, lowered_node}).second);
+  }
+
+  void handle(const Half* node) override {
+    const auto lowered_node = new kir::Half(node);
+    TORCH_CHECK(fusion_->kir_map_.insert({node, lowered_node}).second);
+  }
+
+  void handle(const Int* node) override {
+    const auto lowered_node = new kir::Int(node, false);
+    TORCH_CHECK(fusion_->kir_map_.insert({node, lowered_node}).second);
+  }
+
+  void handle(const NamedScalar* node) override {
+    const auto lowered_node =
+        new kir::NamedScalar(node->name(), node->getDataType().value());
+    TORCH_CHECK(fusion_->kir_map_.insert({node, lowered_node}).second);
+  }
+
+ private:
+  Fusion* fusion_ = nullptr;
+};
+
+Val* Fusion::lowerValue(const Val* val) {
+  KernelIrMapper kir_mapper(this);
+  return kir_mapper.lower(val);
 }
 
 } // namespace fuser
