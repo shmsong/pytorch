@@ -3050,6 +3050,7 @@ void testGPU_FusionSimpleBCast() {
 }
 
 void testGPU_FusionComplexBCast() {
+// TODO: Work on this disabled test. Uncertain why it's failing at this point
 #if 0
   {
     Fusion fusion;
