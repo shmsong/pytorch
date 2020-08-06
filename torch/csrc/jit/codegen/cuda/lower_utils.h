@@ -5,6 +5,7 @@
 #include <torch/csrc/jit/codegen/cuda/ir_all_nodes.h>
 
 #include <bitset>
+#include <map>
 
 // Provides utilities for dealing with nested ForLoop and IfThenElse scopes
 
@@ -65,15 +66,9 @@ class TVDomainGuard {
   TensorView* tv_;
   TensorDomain* prev_domain;
 
-  // Set the active fusion so it can be manipulated.
-  explicit TVDomainGuard(TensorView* _tv, TensorDomain* td)
-      : tv_(_tv), prev_domain(tv_->domain()) {
-    tv_->setDomain(td);
-  }
+  explicit TVDomainGuard(TensorView* _tv, TensorDomain* td);
 
-  ~TVDomainGuard() {
-    tv_->setDomain(prev_domain);
-  }
+  ~TVDomainGuard();
 };
 
 // Return inputs of provided IterDomains that are IterDomains

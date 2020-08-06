@@ -390,6 +390,15 @@ Expr* firstInnerMostScope(Expr* scope) {
 
 namespace ir_utils {
 
+TVDomainGuard::TVDomainGuard(TensorView* _tv, TensorDomain* td)
+    : tv_(_tv), prev_domain(tv_->domain()) {
+  tv_->setDomain(td);
+}
+
+TVDomainGuard::~TVDomainGuard() {
+  tv_->setDomain(prev_domain);
+}
+
 std::vector<IterDomain*> iterDomainInputsOf(
     const std::vector<IterDomain*>& input_ids) {
   auto inputs = IterVisitor::getInputsTo({input_ids.begin(), input_ids.end()});
@@ -741,7 +750,9 @@ std::unordered_map<IterDomain*, IterDomain*> mapIdPtoC(
     TensorView* consumer) {
   auto p2c_domain_ind_map = TensorDomain::mapDomainPandC(
       producer->domain()->domain(), consumer->domain()->domain());
+
   std::unordered_map<IterDomain*, IterDomain*> p2c_id_map;
+
   for (auto entry : p2c_domain_ind_map) {
     auto p_i = entry.first;
     auto c_i = entry.second;
