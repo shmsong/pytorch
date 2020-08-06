@@ -792,9 +792,7 @@ std::vector<Val*> getIndicesForTV(
       continue;
     }
 
-    auto ca_id = tv_i < tv->getThisComputeAtAxis()
-        ? tv->getComputeAtAxis(tv_i).first
-        : tv->axis(tv_i);
+    auto ca_id = tv->getComputeAtAxis(tv_i).first;
     if (!ca_id_map.empty()) {
       ca_id = ca_id_map.at(ca_id);
     }
@@ -866,19 +864,12 @@ std::vector<Val*> getUnrollPredIndicesForTV(
 
   std::vector<Val*> indices(consumer_tv->nDims(), zero);
 
-  std::unordered_set<kir::ForLoop*> loops_within_unroll;
-
-  {
-    bool within_unroll = false;
-    for (auto loop : loops) {
-      if (loop->iter_domain()->getParallelType() == ParallelType::Unroll) {
-        within_unroll = true;
-      }
-      if (within_unroll) {
-        loops_within_unroll.emplace(loop);
-      }
-    }
-  }
+  std::unordered_set<kir::ForLoop*> loops_within_unroll(
+      std::find_if(loops.begin(), loops.end(),
+                   [](const auto& loop) {
+                     return loop->iter_domain()->getParallelType() == ParallelType::Unroll;
+                   }),
+      loops.end());
 
   // Which loop is this axis associated with?
   auto ca2loop = computeAtToLoopMap(consumer_tv, loops);
@@ -886,22 +877,13 @@ std::vector<Val*> getUnrollPredIndicesForTV(
 
   // Look at each axis individually in out's domain
   for (int64_t tv_i = 0; tv_i < (int64_t)consumer_tv->nDims(); tv_i++) {
-    auto ca_id = tv_i < consumer_tv->getThisComputeAtAxis()
-        ? consumer_tv->getComputeAtAxis(tv_i).first
-        : consumer_tv->axis(tv_i);
+    auto ca_id = consumer_tv->getComputeAtAxis(tv_i).first;
 
     if (consumer_tv->axis(tv_i)->isReduction() && !need_reduction_axes) {
       continue;
     }
 
-    auto it = ca2loop.find(ca_id);
-
-    // We may not have loops for reduction axes
-    if (it == ca2loop.end()) {
-      continue;
-    }
-
-    auto loop = it->second;
+    auto loop = ca2loop.at(ca_id);
 
     auto ind = loop->index();
     if (loops_within_unroll.find(loop) != loops_within_unroll.end() &&
@@ -951,10 +933,7 @@ std::vector<Val*> getRangesForTV(
       continue;
     }
 
-    auto ca_id = tv_i < tv->getThisComputeAtAxis()
-        ? tv->getComputeAtAxis(tv_i).first
-        : tv->axis(tv_i);
-
+    auto ca_id = tv->getComputeAtAxis(tv_i).first;
     if (!ca_id_map.empty()) {
       ca_id = ca_id_map.at(ca_id);
     }
