@@ -782,34 +782,21 @@ std::vector<Val*> getIndicesForTV(
 
   // Look at each axis individually in out's domain
   for (int64_t tv_i = 0; tv_i < (int64_t)tv->nDims(); tv_i++) {
-    // Grab the axis information
-    auto tv_id = tv->axis(tv_i);
-
-    auto ca_id = tv_i < tv->getThisComputeAtAxis()
-        ? tv->getComputeAtAxis(tv_i).first
-        : tv->axis(tv_i);
-
     if (tv->axis(tv_i)->isReduction() && !need_reduction_axes) {
       continue;
     }
-
-    if (!ca_id_map.empty()) {
-      ca_id = ca_id_map.at(ca_id);
-    }
-
-    auto it = ca2loop.find(ca_id);
-
-    // We may not have loops for reduction axes
-    if (it == ca2loop.end()) {
-      continue;
-    }
-
-    auto loop = it->second;
 
     // Check if we need to index based on this axis. If outside our allocation
     // point, we don't need to unless we're generating a predicate
     if (tv_i < alloc_axis && !for_predicates) {
       continue;
+    }
+
+    auto ca_id = tv_i < tv->getThisComputeAtAxis()
+        ? tv->getComputeAtAxis(tv_i).first
+        : tv->axis(tv_i);
+    if (!ca_id_map.empty()) {
+      ca_id = ca_id_map.at(ca_id);
     }
 
     // If bound to a grid dimension and this tv is shared memory we don't need
@@ -823,6 +810,8 @@ std::vector<Val*> getIndicesForTV(
       continue;
     }
 
+    auto loop = ca2loop.at(ca_id);
+
     // We're worried below about merged axes in the compute at that aren't in
     // tv, however reduction domains can only merge in themselves, so if
     // computeAt is a reduction domain it can't have a merged in dim tv doesn't
@@ -831,6 +820,9 @@ std::vector<Val*> getIndicesForTV(
       indices[tv_i] = loop->index();
       continue;
     }
+
+    // Grab the axis information
+    auto tv_id = tv->axis(tv_i);
 
     // Check if tv_id had a broadcast merged that ca_id had an extent for, or
     // tv_id didn't have an iter domain that ca_id has merged into it. If this
@@ -894,9 +886,6 @@ std::vector<Val*> getUnrollPredIndicesForTV(
 
   // Look at each axis individually in out's domain
   for (int64_t tv_i = 0; tv_i < (int64_t)consumer_tv->nDims(); tv_i++) {
-    // Grab the axis information
-    auto tv_id = consumer_tv->axis(tv_i);
-
     auto ca_id = tv_i < consumer_tv->getThisComputeAtAxis()
         ? consumer_tv->getComputeAtAxis(tv_i).first
         : consumer_tv->axis(tv_i);
@@ -1012,10 +1001,10 @@ std::pair<kir::ForLoop*, int64_t> getAllocPoint(
     });
 
     TORCH_INTERNAL_ASSERT(
-        loops_it != loops.end(), "Could not find all required axes for indexing.");
+        loops_it != loops.end(),
+        "Could not find all required axes for indexing.");
 
-    if ((*loops_it)->iter_domain()->getParallelType() ==
-        ParallelType::Unroll) {
+    if ((*loops_it)->iter_domain()->getParallelType() == ParallelType::Unroll) {
       return std::make_pair(alloc_loop, tv_i);
     }
 
