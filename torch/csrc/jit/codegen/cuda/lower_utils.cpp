@@ -999,31 +999,28 @@ std::pair<kir::ForLoop*, int64_t> getAllocPoint(
   // outside an unroll loop, or inside our computeAt point.
   kir::ForLoop* alloc_loop = nullptr;
 
-  std::deque<kir::ForLoop*> loops_copy(loops.begin(), loops.end());
+  auto loops_it = loops.begin();
 
   // Look at each axis individually in out's domain
   for (int64_t tv_i = 0; tv_i < (int64_t)tv->getThisComputeAtAxis(); tv_i++) {
     // Grab the axis ID
     auto ca_id = tv->getComputeAtAxis(tv_i).first;
 
-    while (!loops_copy.empty() && ca_id != loops_copy.front()->iter_domain()) {
-      if (loops_copy.front()->iter_domain()->getParallelType() ==
-          ParallelType::Unroll) {
-        return std::make_pair(alloc_loop, tv_i);
-      }
-      loops_copy.pop_front();
-    }
+    loops_it = std::find_if(loops_it, loops.end(), [&ca_id](const auto& loop) {
+      return ca_id == loop->iter_domain() ||
+          loop->iter_domain()->getParallelType() == ParallelType::Unroll;
+    });
 
-    if (loops_copy.front()->iter_domain()->getParallelType() ==
+    TORCH_INTERNAL_ASSERT(
+        loops_it != loops.end(), "Could not find all required axes for indexing.");
+
+    if ((*loops_it)->iter_domain()->getParallelType() ==
         ParallelType::Unroll) {
       return std::make_pair(alloc_loop, tv_i);
     }
 
-    TORCH_INTERNAL_ASSERT(
-        !loops_copy.empty(), "Could not find all required axes for indexing.");
-
-    alloc_loop = loops_copy.front();
-    loops_copy.pop_front();
+    alloc_loop = *loops_it;
+    ++loops_it;
   }
 
   return std::make_pair(alloc_loop, (int64_t)tv->getThisComputeAtAxis());
