@@ -794,10 +794,6 @@ kir::TensorIndex* Index::getProducerIndex(
     TensorView* producer,
     TensorView* consumer,
     const std::vector<kir::ForLoop*>& loops) {
-  TORCH_INTERNAL_ASSERT(
-      loops.size() == consumer->nDims() ||
-      loops.size() == consumer->domain()->noReductions().size());
-
   if (producer->domain()->noReductions().size() == 0) {
     return new kir::TensorIndex(producer, {});
   }
@@ -811,10 +807,6 @@ kir::TensorIndex* Index::getProducerIndex(
 kir::TensorIndex* Index::getConsumerIndex(
     TensorView* consumer,
     const std::vector<kir::ForLoop*>& loops) {
-  TORCH_INTERNAL_ASSERT(
-      loops.size() == consumer->nDims() ||
-      loops.size() == consumer->domain()->noReductions().size());
-
   if (consumer->domain()->noReductions().size() == 0) {
     return new kir::TensorIndex(consumer, {});
   }
