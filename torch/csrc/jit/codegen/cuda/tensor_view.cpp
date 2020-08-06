@@ -165,18 +165,34 @@ void TensorView::setComputeAt(
 }
 
 // Where in compute_at_view does this->axis(pos) match up?
+// TODO: This doesn't seem like the safest function as a fusion output can ref
+// another fusion output,  we may want to check that there is a direct
+// consumer/producer relationship between this and compute_at view before using
+// this function, and creating another pass to handle relative outputs.
 int TensorView::getComputeAtRelPos(int pos) {
-  if (!hasComputeAt())
+  if (!hasComputeAt()) {
     return pos;
+  }
 
-  if (!compute_at_view_->hasBroadcast())
+  if (!compute_at_view_->hasBroadcast()) {
     return pos;
+  }
 
   size_t pos_cav = 0, pos_this = 0;
+
+  // We could be in an instance where pos == 0, but consumer[0] is bcast and
+  // this[0] is not
+
+  while (compute_at_view_->axis(pos_cav)->isBroadcast() &&
+         !(axis(pos_this)->isBroadcast())) {
+    pos_cav++;
+  }
+
   while ((int)pos_this < pos) {
     TORCH_INTERNAL_ASSERT(
         pos_cav < compute_at_view_->nDims(),
         "Error computing relative position in computeAt.");
+
     if (compute_at_view_->axis(pos_cav)->isBroadcast() &&
         !(axis(pos_this)->isBroadcast())) {
       pos_cav++;
