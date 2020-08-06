@@ -3013,8 +3013,7 @@ void testGPU_FusionSimpleBCast() {
 
     constexpr int x = 63, y = 33, z = 15;
 
-    auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA,
-    0);
+    auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
 
     at::Tensor t0 = at::randn({1, z}, options);
     at::Tensor t1 = at::randn({x, y, z}, options);
