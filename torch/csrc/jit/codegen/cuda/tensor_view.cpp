@@ -100,6 +100,10 @@ bool TensorView::hasBroadcast() const {
   return domain()->hasBroadcast();
 }
 
+c10::optional<unsigned int> TensorView::getReductionAxis() const {
+  return domain()->getReductionAxis();
+}
+
 const std::vector<IterDomain*>& TensorView::getRootDomain() const {
   return domain()->rootDomain();
 };

@@ -1,7 +1,10 @@
 #include <torch/csrc/jit/codegen/cuda/lower_utils.h>
 #include <torch/csrc/jit/codegen/cuda/arith.h>
 #include <torch/csrc/jit/codegen/cuda/ir_iostream.h>
+#include <torch/csrc/jit/codegen/cuda/ir_utils.h>
 #include <torch/csrc/jit/codegen/cuda/lower_thread_predicate.h>
+
+#include <algorithm>
 
 namespace torch {
 namespace jit {
@@ -402,12 +405,9 @@ TVDomainGuard::~TVDomainGuard() {
 std::vector<IterDomain*> iterDomainInputsOf(
     const std::vector<IterDomain*>& input_ids) {
   auto inputs = IterVisitor::getInputsTo({input_ids.begin(), input_ids.end()});
-  std::vector<IterDomain*> id_inputs;
-  for (auto inp : inputs) {
-    if (inp->getValType() == ValType::IterDomain) {
-      id_inputs.push_back(inp->as<IterDomain>());
-    }
-  }
+  std::vector<IterDomain*> id_inputs(
+      ir_utils::filterByType<IterDomain>(inputs).begin(),
+      ir_utils::filterByType<IterDomain>(inputs).end());
   return id_inputs;
 }
 
@@ -420,11 +420,13 @@ std::vector<IterDomain*> iterDomainInputsOfOrderedAs(
       inputs_vec.begin(), inputs_vec.end());
 
   std::vector<IterDomain*> ordered_inputs;
-  for (auto id : order) {
-    if (inputs_set.find(id) != inputs_set.end()) {
-      ordered_inputs.push_back(id);
-    }
-  }
+  std::copy_if(
+      order.begin(),
+      order.end(),
+      std::back_inserter(ordered_inputs),
+      [&inputs_set](const auto& id) {
+        return inputs_set.find(id) != inputs_set.end();
+      });
 
   return ordered_inputs;
 }
@@ -661,35 +663,27 @@ bool loopsHasReductions(
   // loops. If we're actually performing the reduction, we will. Grab a root
   // dimension in tv and see if it maps to any loop, if it does we need to map
   // reductions, if not, assume we don't.
-  bool need_reduction_axes = false;
+
+  if (!tv->hasReduction())
+    return false;
 
   // Grab a reduction ID in the tensor, see if it maps to any loops.
-  if (tv->hasReduction()) {
-    size_t reduction_i = tv->nDims();
-    for (size_t tv_i = 0; tv_i < tv->nDims(); tv_i++) {
-      if (tv->axis(tv_i)->isReduction()) {
-        reduction_i = tv_i;
-        break;
-      }
-    }
+  auto reduction_i = tv->getReductionAxis();
 
-    // shouldn't be possible to hit this as isReduction should just check every
-    // ID in tv->domain() for ->isReduction
-    TORCH_INTERNAL_ASSERT(reduction_i != tv->nDims());
+  // shouldn't be possible to hit this as isReduction should just check every
+  // ID in tv->domain() for ->isReduction
+  TORCH_INTERNAL_ASSERT(reduction_i.has_value());
 
-    auto reduction_ca_id = tv->getComputeAtAxis(reduction_i).first;
-    if (ca_id_map.find(reduction_ca_id) != ca_id_map.end()) {
-      reduction_ca_id = ca_id_map.at(reduction_ca_id);
-    }
-
-    for (auto loop : loops) {
-      if (loop->iter_domain() == reduction_ca_id) {
-        need_reduction_axes = true;
-        break;
-      }
-    }
+  auto reduction_ca_id = tv->getComputeAtAxis(*reduction_i).first;
+  if (ca_id_map.find(reduction_ca_id) != ca_id_map.end()) {
+    reduction_ca_id = ca_id_map.at(reduction_ca_id);
   }
-  return need_reduction_axes;
+
+  // find if reduction_ca_id is an iteration domain of any of loops
+  return std::any_of(
+      loops.begin(), loops.end(), [reduction_ca_id](const auto& loop) {
+        return loop->iter_domain() == reduction_ca_id;
+      });
 }
 
 std::unordered_map<IterDomain*, kir::ForLoop*> computeAtToLoopMap(
@@ -701,7 +695,7 @@ std::unordered_map<IterDomain*, kir::ForLoop*> computeAtToLoopMap(
 
   bool need_reduction_axes = loopsHasReductions(tv, loops, ca_id_map);
 
-  std::deque<kir::ForLoop*> loops_copy(loops.begin(), loops.end());
+  auto loops_it = loops.begin();
 
   // Look at each axis individually in out's domain and find the matching loop
   for (int64_t tv_i = 0; tv_i < (int64_t)tv->nDims(); tv_i++) {
@@ -719,15 +713,16 @@ std::unordered_map<IterDomain*, kir::ForLoop*> computeAtToLoopMap(
       ca_id = ca_id_map.at(ca_id);
     }
 
-    while (!loops_copy.empty() && ca_id != loops_copy.front()->iter_domain()) {
-      loops_copy.pop_front();
-    }
+    loops_it = std::find_if(loops_it, loops.end(), [&ca_id](const auto& loop) {
+      return ca_id == loop->iter_domain();
+    });
 
     TORCH_INTERNAL_ASSERT(
-        !loops_copy.empty(), "Could not find all required axes for indexing.");
+        loops_it != loops.end(),
+        "Could not find all required axes for indexing.");
 
-    ca_to_loop_map[ca_id] = loops_copy.front();
-    loops_copy.pop_front();
+    ca_to_loop_map[ca_id] = *loops_it;
+    ++loops_it;
   }
 
   return ca_to_loop_map;

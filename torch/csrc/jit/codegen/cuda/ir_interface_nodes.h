@@ -227,6 +227,8 @@ class TORCH_CUDA_API TensorView : public Val {
   bool hasGridReduction() const;
   bool hasBroadcast() const;
 
+  c10::optional<unsigned int> getReductionAxis() const;
+
   // Is there an active computeAt TensorView/Axis
   bool hasComputeAt() const {
     return compute_at_view_ != nullptr;

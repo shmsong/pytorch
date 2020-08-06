@@ -602,6 +602,17 @@ bool TensorDomain::hasRFactor() const {
   return !rfactor_domain_.empty();
 }
 
+c10::optional<unsigned int> TensorDomain::getReductionAxis() const {
+  auto it = std::find_if(domain_.begin(), domain_.end(), [](const auto& id) {
+    return id->isReduction();
+  });
+  if (it == domain_.end()) {
+    return c10::optional<unsigned int>();
+  } else {
+    return c10::optional<unsigned int>(std::distance(domain_.begin(), it));
+  }
+}
+
 // i here is int, as we want to accept negative value and ::size_type can be a
 // uint.
 IterDomain* TensorDomain::axis(int i) const {

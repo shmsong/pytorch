@@ -422,6 +422,8 @@ class TORCH_CUDA_API TensorDomain : public Val {
   bool hasBroadcast() const;
   bool hasRFactor() const;
 
+  c10::optional<unsigned int> getReductionAxis() const;
+
   const std::vector<IterDomain*>& noReductions() const {
     return no_reduction_domain_;
   }
