@@ -216,7 +216,7 @@ void UnrollPass::handle(kir::ForLoop* fl) {
         unroll_pred_inds.push_back((*it)->index());
       else
         unroll_pred_inds.push_back(
-            kir::subExpr(kir::lowerValue(id->extent()), new kir::Int(1)));
+            kir::subExpr(id->extent(), new kir::Int(1)));
       it++;
     }
 

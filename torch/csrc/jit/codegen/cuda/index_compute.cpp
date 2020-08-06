@@ -642,8 +642,10 @@ kir::TensorIndex* Index::getProducerIndex(
     return new kir::TensorIndex(producer, {});
   }
 
-  if (producer->getMemoryType() == MemoryType::Global)
+  if (producer->getMemoryType() == MemoryType::Global) {
     return getGlobalProducerIndex(producer, consumer, loops);
+  }
+  
   return getProducerIndex_impl(producer, consumer, loops);
 }
 
@@ -659,8 +661,10 @@ kir::TensorIndex* Index::getConsumerIndex(
     return new kir::TensorIndex(consumer, {});
   }
 
-  if (consumer->getMemoryType() == MemoryType::Global)
+  if (consumer->getMemoryType() == MemoryType::Global) {
     return getGlobalConsumerIndex(consumer, loops);
+  }
+
   return getConsumerIndex_impl(consumer, loops);
 }
 

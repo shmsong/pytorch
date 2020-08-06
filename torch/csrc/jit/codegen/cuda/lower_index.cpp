@@ -83,14 +83,18 @@ void IndexLowering::handle(kir::ForLoop* fl) {
 void IndexLowering::handle(UnaryOp* uop) {
   const auto in = lowerOperand(uop->in(), uop->out());
   const auto out = lowerOutput(uop);
-  pushBack(new kir::UnaryOp(uop->getUnaryOpType(), out, in));
+  if (!out->isScalar()) {
+    pushBack(new kir::UnaryOp(uop->getUnaryOpType(), out, in));
+  }
 }
 
 void IndexLowering::handle(BinaryOp* bop) {
   const auto lhs = lowerOperand(bop->lhs(), bop->out());
   const auto rhs = lowerOperand(bop->rhs(), bop->out());
   const auto out = lowerOutput(bop);
-  pushBack(new kir::BinaryOp(bop->getBinaryOpType(), out, lhs, rhs));
+  if (!out->isScalar()) {
+    pushBack(new kir::BinaryOp(bop->getBinaryOpType(), out, lhs, rhs));
+  }
 }
 
 void IndexLowering::handle(TernaryOp* top) {
@@ -98,7 +102,9 @@ void IndexLowering::handle(TernaryOp* top) {
   const auto in2 = lowerOperand(top->in2(), top->out());
   const auto in3 = lowerOperand(top->in3(), top->out());
   const auto out = lowerOutput(top);
-  pushBack(new TernaryOp(top->getTernaryOpType(), out, in1, in2, in3));
+  if (!out->isScalar()) {
+    pushBack(new TernaryOp(top->getTernaryOpType(), out, in1, in2, in3));
+  }
 }
 
 namespace {
