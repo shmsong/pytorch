@@ -645,7 +645,7 @@ kir::TensorIndex* Index::getProducerIndex(
   if (producer->getMemoryType() == MemoryType::Global) {
     return getGlobalProducerIndex(producer, consumer, loops);
   }
-  
+
   return getProducerIndex_impl(producer, consumer, loops);
 }
 

@@ -181,12 +181,7 @@ BinaryOp::BinaryOp(const BinaryOp* src, IrCloner* ir_cloner)
       lhs_(ir_cloner->clone(src->lhs_)),
       rhs_(ir_cloner->clone(src->rhs_)) {}
 
-TernaryOp::TernaryOp(
-    TernaryOpType type,
-    Val* out,
-    Val* in1,
-    Val* in2,
-    Val* in3)
+TernaryOp::TernaryOp(TernaryOpType type, Val* out, Val* in1, Val* in2, Val* in3)
     : Expr(ExprType::KirTernaryOp),
       ternary_op_type_{type},
       out_{out},

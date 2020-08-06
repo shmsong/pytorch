@@ -2,9 +2,9 @@
 #include <torch/csrc/jit/codegen/cuda/ir_cloner.h>
 #include <torch/csrc/jit/codegen/cuda/ir_interface_nodes.h>
 #include <torch/csrc/jit/codegen/cuda/ir_iostream.h>
+#include <torch/csrc/jit/codegen/cuda/kernel_ir.h>
 #include <torch/csrc/jit/codegen/cuda/transform_iter.h>
 #include <torch/csrc/jit/codegen/cuda/transform_rfactor.h>
-#include <torch/csrc/jit/codegen/cuda/kernel_ir.h>
 
 #include <torch/csrc/jit/codegen/cuda/ir_iostream.h>
 
@@ -306,7 +306,7 @@ IterDomain::IterDomain(
       _extent,
       " .");
 
-  //TORCH_INTERNAL_ASSERT(!kir::isLoweredVal(_extent));
+  // TORCH_INTERNAL_ASSERT(!kir::isLoweredVal(_extent));
 
   name_ = fusion_->registerVal(this);
 }
