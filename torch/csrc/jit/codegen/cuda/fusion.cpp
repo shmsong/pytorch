@@ -670,11 +670,51 @@ class TORCH_CUDA_API Fusion::KernelIrMapper : private OptInConstDispatch {
       const auto lowered_node = fusion_->kir_map_[value];
       TORCH_CHECK(lowered_node != nullptr);
       TORCH_CHECK(kir::isLoweredVal(lowered_node));
+
+      // Lower the arithmetic expression defining the value, if any
+      if (value->isScalar()) {
+        if (auto def = fusion_->origin(value)) {
+          lowerDefinition(lowered_node, def);
+        }
+      }
+
       return lowered_node;
     }
   }
 
  private:
+  // TODO(kir): rewrite this
+  void lowerDefinition(Val* lowered_value, const Expr* def) {
+    switch (def->type()) {
+      case ExprType::UnaryOp: {
+        const auto op = def->as<fuser::UnaryOp>();
+        new kir::UnaryOp(op->getUnaryOpType(), lowered_value, lower(op->in()));
+        break;
+      }
+      case ExprType::BinaryOp: {
+        const auto op = def->as<fuser::BinaryOp>();
+        new kir::BinaryOp(
+            op->getBinaryOpType(),
+            lowered_value,
+            lower(op->lhs()),
+            lower(op->rhs()));
+        break;
+      }
+      case ExprType::TernaryOp: {
+        const auto op = def->as<fuser::TernaryOp>();
+        new kir::TernaryOp(
+            op->getTernaryOpType(),
+            lowered_value,
+            lower(op->in1()),
+            lower(op->in2()),
+            lower(op->in3()));
+        break;
+      }
+      default:
+        TORCH_CHECK(false, "Unexpected expression type");
+    }
+  }
+
   void handle(const Statement* node) override {
     OptInConstDispatch::handle(node);
   }

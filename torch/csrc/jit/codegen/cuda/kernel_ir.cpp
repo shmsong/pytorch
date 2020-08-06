@@ -181,6 +181,25 @@ BinaryOp::BinaryOp(const BinaryOp* src, IrCloner* ir_cloner)
       lhs_(ir_cloner->clone(src->lhs_)),
       rhs_(ir_cloner->clone(src->rhs_)) {}
 
+TernaryOp::TernaryOp(
+    TernaryOpType type,
+    Val* out,
+    Val* in1,
+    Val* in2,
+    Val* in3)
+    : Expr(ExprType::KirTernaryOp),
+      ternary_op_type_{type},
+      out_{out},
+      in1_{in1},
+      in2_{in2},
+      in3_{in3} {
+  addOutput(out);
+  addInput(in1);
+  addInput(in2);
+  addInput(in3);
+  name_ = FusionGuard::getCurFusion()->registerLoweredExpr(this);
+}
+
 TernaryOp::TernaryOp(const TernaryOp* src, IrCloner* ir_cloner)
     : Expr(src, ir_cloner),
       ternary_op_type_(src->ternary_op_type_),
