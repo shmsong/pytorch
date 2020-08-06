@@ -68,7 +68,6 @@ void swap(Fusion& a, Fusion& b) noexcept {
   swap(a.val_deque_, b.val_deque_);
 
   swap(a.val_type_name_map_, b.val_type_name_map_);
-  swap(a.val_name_counter_, b.val_name_counter_);
   swap(a.expr_name_counter_, b.expr_name_counter_);
 
   swap(a.origin_, b.origin_);
@@ -129,7 +128,6 @@ Fusion::Fusion(const Fusion& other) {
   }
 
   val_type_name_map_ = other.val_type_name_map_;
-  val_name_counter_ = other.val_name_counter_;
   expr_name_counter_ = other.expr_name_counter_;
 
   for (const auto& kv : other.origin_) {
@@ -212,7 +210,6 @@ void Fusion::clear() noexcept {
     kv.second = 0;
   }
 
-  val_name_counter_ = 0;
   expr_name_counter_ = 0;
 
   origin_.clear();
@@ -589,9 +586,7 @@ void Fusion::replaceOutput(Val* replace, Val* with) {
 }
 
 StmtNameType Fusion::getValName(ValType vtype) {
-  if (val_type_name_map_.find(vtype) != val_type_name_map_.end())
-    return val_type_name_map_[vtype]++;
-  return val_name_counter_++;
+  return val_type_name_map_[vtype]++;
 }
 
 StmtNameType Fusion::getExprName() {

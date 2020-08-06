@@ -418,6 +418,7 @@ std::pair<IterDomain*, IterDomain*> IterDomain::split(
   return {ido, idi};
 }
 
+// TODO(kir): review if this is still needed in the Fusion IR
 Val* IterDomain::extent() const {
   if (isThread()) {
     if (extent_->getValType() == ValType::Scalar)

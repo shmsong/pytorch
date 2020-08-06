@@ -56,8 +56,8 @@ c10::optional<ParallelType> NamedScalar::getParallelIndex() const {
 
 IterDomain::IterDomain(const fuser::IterDomain* iter_domain)
     : Val(iter_domain),
-      start_(iter_domain->start()),
-      extent_(iter_domain->rawExtent()),
+      start_(lowerValue(iter_domain->start())),
+      extent_(lowerValue(iter_domain->rawExtent())),
       parallel_type_(iter_domain->getParallelType()),
       iter_type_(iter_domain->getIterType()),
       is_rfactor_domain_(iter_domain->isRFactorProduct()) {}
@@ -70,13 +70,14 @@ IterDomain::IterDomain(const IterDomain* src, IrCloner* ir_cloner)
       iter_type_(src->iter_type_),
       is_rfactor_domain_(src->is_rfactor_domain_) {}
 
-// TODO: eliminate the extent/rawExtent duplication
 Val* IterDomain::extent() const {
+  TORCH_CHECK(isLoweredVal(extent_));
   if (isThread()) {
-    if (extent_->getValType() == ValType::Scalar)
-      if (extent_->as<Int>()->isConst())
+    if (extent_->getValType() == ValType::KirScalar) {
+      if (extent_->as<kir::Int>()->isConst()) {
         return extent_;
-
+      }
+    }
     return NamedScalar::getParallelDim(getParallelType());
   }
   return extent_;
@@ -138,7 +139,7 @@ IterDomain* TensorDomain::axis(int i) const {
   return domain_[i];
 }
 
-TensorView::TensorView(const fuser::TensorView* tv) : Val(tv) {
+TensorView::TensorView(const fuser::TensorView* tv) : Val(tv), fuser_tv_(tv) {
   domain_ = lowerValue(tv->domain())->as<TensorDomain>();
   memory_type_ = tv->getMemoryType();
 }
@@ -211,17 +212,8 @@ ReductionOp::ReductionOp(const ReductionOp* src, IrCloner* ir_cloner)
       in_(ir_cloner->clone(src->in_)) {}
 
 std::vector<IterDomain*> ReductionOp::getReductionDomains() const {
-  const Val* out_val = out();
-
-  TORCH_INTERNAL_ASSERT(
-      out_val->getValType() == ValType::TensorView ||
-          out_val->getValType() == ValType::TensorIndex,
-      "Output of reduction must be TensorView or TensorIndex");
-
   // out is a TensorIndex after lowering
-  if (out_val->getValType() == ValType::TensorIndex) {
-    out_val = out_val->as<kir::TensorIndex>()->view();
-  }
+  const auto out_val = out()->as<kir::TensorIndex>()->view();
 
   auto vec_domain = out_val->as<TensorView>()->domain()->domain();
 
@@ -399,7 +391,7 @@ Allocate::Allocate(Val* buffer, MemoryType memory_type, Val* size)
         buffer_);
   } else {
     if (buffer_->getValType().value() == ValType::TensorView) {
-      const auto domain = buffer_->as<TensorView>()->domain();
+      const auto domain = buffer_->as<fuser::TensorView>()->domain();
       size_ = domain->nDims() == 0 ? new Int(1) : domain->axis(0)->extent();
       for (size_t i = 1; i < domain->nDims(); i++) {
         auto result = new Int(c10::nullopt);

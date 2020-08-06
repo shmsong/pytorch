@@ -580,7 +580,7 @@ ParallelTypeBitmap getParallelBroadcastDomains(
     const Val* bop_out,
     const ThreadPredicateMap& preds) {
   if (bop_out->getValType().value() == ValType::TensorIndex) {
-    bop_out = bop_out->as<kir::TensorIndex>()->view();
+    bop_out = bop_out->as<kir::TensorIndex>()->view()->fuserTv();
   }
   TORCH_INTERNAL_ASSERT(
       bop_out->getValType().value() == ValType::TensorView,

@@ -152,14 +152,13 @@ void IndexLowering::handle(ReductionOp* rop) {
   auto loops = scope_utils::getLoops(active_scope_expr);
 
   kir::TensorIndex* out = Index::getConsumerIndex(out_tv, loops);
-  Val* in = rop->in();
-  in = Index::getProducerIndex(
-      ir_utils::asTV(in), ir_utils::asTV(rop->out()), loops);
+  Val* in = Index::getProducerIndex(
+      ir_utils::asTV(rop->in()), ir_utils::asTV(rop->out()), loops);
 
   kir::ReductionOp* block_reduction = nullptr;
   if (is_block_reduce) {
-    block_reduction =
-        new kir::ReductionOp(rop->getReductionOpType(), rop->init(), out, in);
+    block_reduction = new kir::ReductionOp(
+        rop->getReductionOpType(), kir::lowerValue(rop->init()), out, in);
     pushBack(block_reduction);
   }
 
@@ -214,10 +213,12 @@ void IndexLowering::handle(ReductionOp* rop) {
     pushBack(reduce_buffer);
     pushBack(sync_buffer);
     pushBack(new kir::GridReduction(
-        block_reduction == nullptr
-            ? new kir::ReductionOp(
-                  rop->getReductionOpType(), rop->init(), out, in)
-            : block_reduction,
+        block_reduction == nullptr ? new kir::ReductionOp(
+                                         rop->getReductionOpType(),
+                                         kir::lowerValue(rop->init()),
+                                         out,
+                                         in)
+                                   : block_reduction,
         reduce_buffer,
         sync_buffer));
   }

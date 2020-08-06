@@ -215,7 +215,8 @@ void UnrollPass::handle(kir::ForLoop* fl) {
       if (id->isThread())
         unroll_pred_inds.push_back((*it)->index());
       else
-        unroll_pred_inds.push_back(sub(id->extent(), new kir::Int(1)));
+        unroll_pred_inds.push_back(
+            kir::subExpr(kir::lowerValue(id->extent()), new kir::Int(1)));
       it++;
     }
 

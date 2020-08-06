@@ -261,15 +261,10 @@ class TORCH_CUDA_API Fusion final {
   std::deque<Val*> val_deque_;
   std::unordered_set<Expr*> expr_set_;
 
-  // map from valtype to individual name counters
-  std::unordered_map<ValType, StmtNameType, TypeHash> val_type_name_map_ = {
-      {ValType::TensorView, 0},
-      {ValType::TensorDomain, 0},
-      {ValType::IterDomain, 0},
-      {ValType::Scalar, 0}};
+  // Values names counters
+  std::unordered_map<ValType, StmtNameType, TypeHash> val_type_name_map_;
 
-  // Generic counters
-  StmtNameType val_name_counter_ = 0;
+  // Expression names counter
   StmtNameType expr_name_counter_ = 0;
 
   // Dependency tracking for Vals. Where did it come from? Where is it used?

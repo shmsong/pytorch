@@ -221,10 +221,6 @@ class TORCH_CUDA_API IterDomain : public Val {
 
   Val* extent() const;
 
-  Val* rawExtent() const {
-    return extent_;
-  }
-
  private:
   Val* const start_ = nullptr;
   Val* const extent_ = nullptr;
@@ -322,9 +318,16 @@ class TORCH_CUDA_API TensorView : public Val {
     return memory_type_;
   }
 
+  const fuser::TensorView* fuserTv() const {
+    return fuser_tv_;
+  }
+
  private:
   TensorDomain* domain_ = nullptr;
   MemoryType memory_type_ = MemoryType::Global;
+
+  // TODO(kir): remove temporary hack
+  const fuser::TensorView* fuser_tv_ = nullptr;
 };
 
 class TORCH_CUDA_API UnaryOp : public Expr {

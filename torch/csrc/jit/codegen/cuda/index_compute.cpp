@@ -156,19 +156,17 @@ void IndexCompute::handle(Merge* merge) {
       isContiguousMerge(merge, td_->rootDomain(), root_contiguity_);
 
   if (mergable_info.mergeable) {
+    TORCH_CHECK(kir::isLoweredScalar(out_ind));
     index_map_[mergable_info.last_root_id] = out_ind;
     for (auto root_ind : mergable_info.zero_root_ids) {
-      index_map_[root_ind] = new Int(0);
+      index_map_[root_ind] = new kir::Int(0);
     }
     return;
   }
 
-  Val* I = inner_id->extent();
-  Val* outer_ind = div(out_ind, I);
-  Val* inner_ind = mod(out_ind, I);
-
-  index_map_[outer_id] = outer_ind;
-  index_map_[inner_id] = inner_ind;
+  Val* extent = kir::lowerValue(inner_id->extent());
+  index_map_[outer_id] = kir::divExpr(out_ind, extent);
+  index_map_[inner_id] = kir::modExpr(out_ind, extent);
 }
 
 void IndexCompute::handle(Expr* e) {
@@ -189,7 +187,7 @@ IndexCompute::IndexCompute(
     std::vector<bool> _root_contiguity)
     : td_(_td), root_contiguity_(std::move(_root_contiguity)) {
   if (td_->nDims() == 0 || indices.empty()) {
-    indices_.push_back(new Int(0));
+    indices_.push_back(new kir::Int(0));
     return;
   }
 
@@ -205,6 +203,7 @@ IndexCompute::IndexCompute(
     for (auto id : td_->domain()) {
       if (exclude_reduction && id->isReduction())
         continue;
+      TORCH_CHECK(kir::isLoweredScalar(indices[i]));
       index_map_[id] = indices[i++];
     }
   }
@@ -330,7 +329,7 @@ kir::TensorIndex* Index::getGlobalProducerIndex(
           p_inds.push_back(c_inds[it_c]);
         } else {
           if (p_root[it_p]->getIterType() == IterType::BroadcastWithStride) {
-            p_inds.push_back(new Int(0));
+            p_inds.push_back(new kir::Int(0));
           } else {
             implicit_bcast_dims++;
           }
@@ -498,7 +497,7 @@ kir::TensorIndex* Index::getGlobalConsumerIndex(
         } else {
           if (root_dom[root_i]->getIterType() ==
               IterType::BroadcastWithStride) {
-            computed_inds[inds_i] = new Int(0);
+            computed_inds[inds_i] = new kir::Int(0);
           }
           root_i++;
           inds_i++;
@@ -577,7 +576,7 @@ kir::TensorIndex* Index::getConsumerIndex_impl(
   std::vector<Val*> indices(loops.size());
   std::transform(
       loops.begin(), loops.end(), indices.begin(), [](kir::ForLoop* fl) {
-        return fl->iter_domain()->isBroadcast() ? new Int(0) : fl->index();
+        return fl->iter_domain()->isBroadcast() ? new kir::Int(0) : fl->index();
       });
 
   std::vector<Val*> used_inds;
@@ -607,7 +606,8 @@ kir::TensorIndex* Index::getConsumerIndex_impl(
         continue;
       }
 
-      used_inds.push_back(kir::lowerValue(indices[l_i]));
+      TORCH_CHECK(kir::isLoweredScalar(indices[l_i]));
+      used_inds.push_back(indices[l_i]);
       used_ranges.push_back(ranges[l_i]);
       l_i++;
       c_i++;
