@@ -483,9 +483,10 @@ c10::optional<ReductionParams> scheduleReduction(
       //      [<output dims>, X-Warp, rF-Leftover,| rF-Unroll]
       // Idx:      0 -- 1      2(-3)      3(-2)        4(-1)
       Val* input = fusion->origin(red_tv_rf)->as<ReductionOp>()->in();
-      if (!fusion->hasInput(input)) {
+      while (!fusion->hasInput(input)) {
         input->as<TensorView>()->computeAt(red_tv_rf, -2);
         input->as<TensorView>()->axis(-1)->parallelize(ParallelType::Unroll);
+        input = fusion->origin(input)->as<ReductionOp>()->in();
       }
       // Do a cross-warp reduction per block
     } else {
@@ -596,9 +597,10 @@ c10::optional<ReductionParams> scheduleReduction(
         //      [Outputs, X-Warp, X-Block, rF-Leftover,| rF-Unroll]
         // Idx:     0     1(-4)    2(-3)      3(-2)        4(-1)
         Val* input = fusion->origin(red_tv_rf)->as<ReductionOp>()->in();
-        if (!fusion->hasInput(input)) {
+        while (!fusion->hasInput(input)) {
           input->as<TensorView>()->computeAt(red_tv_rf, -2);
           input->as<TensorView>()->axis(-1)->parallelize(ParallelType::Unroll);
+          input = fusion->origin(input)->as<ReductionOp>()->in();
         }
       }
     }
@@ -662,9 +664,10 @@ c10::optional<ReductionParams> scheduleReduction(
         //      [<output dims>, X-Grid, X-Block, rF-Leftover,| rF-Unroll]
         // Idx:      0 -- 1     2(-4)    3(-3)      4(-2)        5(-1)
         Val* input = fusion->origin(red_tv_rf)->as<ReductionOp>()->in();
-        if (!fusion->hasInput(input)) {
+        while (!fusion->hasInput(input)) {
           input->as<TensorView>()->computeAt(red_tv_rf, -2);
           input->as<TensorView>()->axis(-1)->parallelize(ParallelType::Unroll);
+          input = fusion->origin(input)->as<ReductionOp>()->in();
         }
       } else {
         // Reduction Splits
@@ -722,15 +725,23 @@ c10::optional<ReductionParams> scheduleReduction(
         //      [<output dims>, X-Block, rF-Leftover,| rF-Unroll]
         // Idx:      0 -- 1      2(-3)      3(-2)        4(-1)
         Val* input = fusion->origin(red_tv_rf)->as<ReductionOp>()->in();
-        if (!fusion->hasInput(input)) {
+        while (!fusion->hasInput(input)) {
           input->as<TensorView>()->computeAt(red_tv_rf, -2);
           input->as<TensorView>()->axis(-1)->parallelize(ParallelType::Unroll);
+          input = fusion->origin(input)->as<ReductionOp>()->in();
         }
       }
     } else {
       red_tv->split(0, rparams.lparams.bdimx());
       red_tv->axis(0)->parallelize(ParallelType::TIDx);
       red_tv->axis(1)->parallelize(ParallelType::BIDx);
+
+      Val* input = fusion->origin(red_tv)->as<ReductionOp>()->in();
+      while (!fusion->hasInput(input)) {
+        input->as<TensorView>()->computeAt(red_tv, -2);
+        input->as<TensorView>()->axis(-1)->parallelize(ParallelType::Unroll);
+        input = fusion->origin(input)->as<ReductionOp>()->in();
+      }
     }
   }
 
