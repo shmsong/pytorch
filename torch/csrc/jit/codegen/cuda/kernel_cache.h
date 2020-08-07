@@ -2,6 +2,7 @@
 
 #include <torch/csrc/jit/codegen/cuda/executor.h>
 #include <torch/csrc/jit/codegen/cuda/fusion.h>
+#include <torch/csrc/jit/codegen/cuda/scheduler.h>
 
 #include <c10/util/ArrayRef.h>
 #include <torch/csrc/WindowsTorchApiMacro.h>
@@ -75,8 +76,11 @@ class FusionExecutorCache {
   // original un-scheduled `Fusion`;
   std::unique_ptr<Fusion> fusion_;
 
-  // TODO: placeholder that will be updated;
-  std::vector<std::unique_ptr<FusionExecutor>> fusion_executor_cache_;
+  // TODO: ugly logic for now. We should integrate the hashing of cache for
+  //       different kernels. (alternative could do so in scheduler).
+  // proposed way is to hash on encoded input requirements.
+  std::unique_ptr<FusionExecutor> pw_fusion_executor_cache_;
+  std::unordered_map<ReductionParams, FusionExecutor, ReductionParamsHash> red_fusion_executor_cache_;
 };
 
 class GraphCache {

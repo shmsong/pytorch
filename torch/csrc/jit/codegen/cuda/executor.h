@@ -35,6 +35,10 @@ class TORCH_CUDA_API FusionExecutor {
     return runFusion(inputs, {}, launch_constraints);
   }
 
+  bool compiled() {
+    return compiled_;
+  };
+
  private:
   std::string kernelName() const {
     std::stringstream ss;
@@ -59,6 +63,8 @@ class TORCH_CUDA_API FusionExecutor {
   std::vector<at::Tensor> allocOutputs(EvaluationContext& ec);
 
  private:
+  bool compiled_ = false;
+
   Fusion fusion_;
 
   CompileOptions options_;
