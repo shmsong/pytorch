@@ -825,19 +825,20 @@ std::vector<Val*> getIndicesForTV(
     // Check if tv_id had a broadcast merged that ca_id had an extent for, or
     // tv_id didn't have an iter domain that ca_id has merged into it. If this
     // is the case, we need to modulo the index of that loop by tv_id's extent.
-    auto tv_id_inputs = ir_utils::iterDomainInputsOf({tv_id});
-    int tv_id_inputs_n_bcast = std::count_if(
-        tv_id_inputs.begin(), tv_id_inputs.end(), [](IterDomain* id) {
+
+    auto ca_id_inputs = ir_utils::iterDomainInputsOf({ca_id});
+    int ca_id_inputs_n_bcast = std::count_if(
+        ca_id_inputs.begin(), ca_id_inputs.end(), [](IterDomain* id) {
           return id->isBroadcast();
         });
 
-    // If no broadcasts were in the input to tv_id no modulo necessary
-    if (tv_id_inputs_n_bcast > 0) {
+    // If no broadcasts were in the input to ca_id no modulo necessary
+    if (ca_id_inputs_n_bcast == 0) {
       indices[tv_i] = loop->index();
     } else {
-      auto ca_id_inputs = ir_utils::iterDomainInputsOf({ca_id});
-      int ca_id_inputs_n_bcast = std::count_if(
-          ca_id_inputs.begin(), ca_id_inputs.end(), [](IterDomain* id) {
+      auto tv_id_inputs = ir_utils::iterDomainInputsOf({tv_id});
+      int tv_id_inputs_n_bcast = std::count_if(
+          tv_id_inputs.begin(), tv_id_inputs.end(), [](IterDomain* id) {
             return id->isBroadcast();
           });
 
@@ -895,7 +896,7 @@ std::vector<Val*> getUnrollPredIndicesForTV(
     }
 
     indices[tv_i] = ind;
-    // Normally we'd be worried about meerged axes in the compute at (see
+    // Normally we'd be worried about merged axes in the compute at (see
     // getIndicesforTV), but this should be picked up by an expr later in the
     // unrolled loop, shouldn't have to worry about it here.
   }
