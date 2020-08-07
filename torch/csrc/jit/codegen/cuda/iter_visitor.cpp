@@ -471,6 +471,19 @@ std::unordered_set<Val*> DependencyCheck::getAllValsBetween(
   return Dependencies::getAllVals(dependencies, of);
 }
 
+void UnsortedExprs::handle(Expr* e) {
+  exprs.push_back(e);
+}
+
+std::vector<Expr*> UnsortedExprs::getFrom(std::vector<Val*> outputs) {
+  if (outputs.empty())
+    return std::vector<Expr*>();
+
+  UnsortedExprs inst;
+  inst.traverseFrom(outputs[0]->fusion(), outputs);
+  return inst.exprs;
+}
+
 } // namespace fuser
 } // namespace jit
 } // namespace torch

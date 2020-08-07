@@ -214,6 +214,17 @@ class TORCH_CUDA_API DependencyCheck {
       const std::vector<Val*>& of);
 };
 
+// Simply grabs all exprs needed to produce provided outputs, only in dependency
+// order, not computeAtOrder like ExprSort in fusion.h
+class UnsortedExprs : public IterVisitor {
+ private:
+  std::vector<Expr*> exprs;
+  void handle(Expr* e) override;
+
+ public:
+  static std::vector<Expr*> getFrom(std::vector<Val*> outputs);
+};
+
 } // namespace fuser
 } // namespace jit
 } // namespace torch
