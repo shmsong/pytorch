@@ -274,6 +274,8 @@ void LoopNestGenerator::handle(Expr* expr) {
     // Go from start, and open all loops in the computeAt view until we hit the
     // one associated with out->getComputeAtAxis(out_i)
     for (size_t ca_i = start; ca_i < ca_view->nDims(); ca_i++) {
+      // Note that ca_view->getComputeAtAxis(ca_i) is equivalent to
+      // std::pair(ca_view->axis(ca_i), ca_view)
       loop_structure.push_back(ca_view->getComputeAtAxis(ca_i));
 
       // Update the last view processed
@@ -304,12 +306,15 @@ void LoopNestGenerator::handle(Expr* expr) {
   // Lets get a copy of the loop structure, and figure out which loops we need
   // to open.
   decltype(loop_structure) loops_to_open(loop_structure);
-  std::deque<kir::ForLoop*> for_copy(for_loops.begin(), for_loops.end());
-  while (!loops_to_open.empty() && !for_copy.empty()) {
-    if (loops_to_open.front().first == for_copy.front()->iter_domain()) {
+  // Pop out loops already opened
+  for (const auto& existing_loop : for_loops) {
+    if (loops_to_open.empty()) {
+      // Nothing to open
+      break;
+    }
+    if (loops_to_open.front().first == existing_loop->iter_domain()) {
       loops_to_open.pop_front();
     }
-    for_copy.pop_front();
   }
 
   // At this point for_loops + loops_to_open contains our overal target loop
@@ -340,8 +345,9 @@ void LoopNestGenerator::handle(Expr* expr) {
 
   // Reduce the loop nest structure back to computeAt
   if (out->getThisComputeAtAxis() == 0) {
-    while (!for_loops.empty())
+    while (!for_loops.empty()) {
       popFor();
+    }
   } else {
     auto ca_axis = out->getThisComputeAtAxis() - 1;
     while (for_loops.size() > 0 &&
