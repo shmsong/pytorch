@@ -865,10 +865,13 @@ std::vector<Val*> getUnrollPredIndicesForTV(
   std::vector<Val*> indices(consumer_tv->nDims(), zero);
 
   std::unordered_set<kir::ForLoop*> loops_within_unroll(
-      std::find_if(loops.begin(), loops.end(),
-                   [](const auto& loop) {
-                     return loop->iter_domain()->getParallelType() == ParallelType::Unroll;
-                   }),
+      std::find_if(
+          loops.begin(),
+          loops.end(),
+          [](const auto& loop) {
+            return loop->iter_domain()->getParallelType() ==
+                ParallelType::Unroll;
+          }),
       loops.end());
 
   // Which loop is this axis associated with?
