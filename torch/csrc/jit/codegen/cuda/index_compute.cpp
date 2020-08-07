@@ -396,11 +396,17 @@ void IndexCompute::handle(Merge* merge) {
   }
 
   Val* I = inner_id->extent();
-  Val* outer_ind = div(out_ind, I);
-  Val* inner_ind = mod(out_ind, I);
+  if (I->isOneInt()) {
+    index_map_[outer_id] = out_ind;
+    index_map_[inner_id] = out_ind;
 
-  index_map_[outer_id] = outer_ind;
-  index_map_[inner_id] = inner_ind;
+  } else {
+    Val* outer_ind = div(out_ind, I);
+    Val* inner_ind = mod(out_ind, I);
+
+    index_map_[outer_id] = outer_ind;
+    index_map_[inner_id] = inner_ind;
+  }
 }
 
 void IndexCompute::handle(Expr* e) {
