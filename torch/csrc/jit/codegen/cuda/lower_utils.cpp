@@ -758,6 +758,119 @@ std::unordered_map<IterDomain*, IterDomain*> mapIdPtoC(
   return p2c_id_map;
 }
 
+namespace {
+
+// TODO: This class may be better suited to be in index_compute[.cpp, .h]
+// An iteration domain that a loop is on may be based on inputs that don't exist
+// in the tensor we want to index into. This class will adjust the index to
+// extract out factors from iteration domains that aren't inputs to the
+// iteration domain we want to index into.
+// Example case:
+//   T1[I0, I1] = bcast(T0[I1])
+//   T2[I0, I1, I2] = bcast(t1)
+//   T2->split(0, factor1)
+//   T2->split(-1, factor2)
+//   T2->mege(1)->merge(1)
+//   T2[I0o, I0i*I1*I2o, I2]
+//   T0->computeAt(T2, 2)
+// In this case we want to use the index in:
+//   loop{x : I0i*I1*I2o}
+// index into T0 should be:
+//   T0[ x / I2o % I1 ]
+// Input into this function is:
+//   index, IterationDomain, existing root indices
+// for above example:
+//   x, IterationDomain(I0i*I1*I2o), I1
+// Output is adjusted index, or for this example:
+//  x / I2o % I1
+class IndexCleanup {
+ private:
+  void handle(Merge* merge) {
+    auto outer_inputs = ir_utils::iterDomainInputsOf({merge->outer()});
+    auto inner_inputs = ir_utils::iterDomainInputsOf({merge->inner()});
+
+    bool outer_has_existing = false;
+    bool outer_has_non_existing = false;
+    bool inner_has_existing = false;
+    bool inner_has_non_existing = false;
+
+    for (auto inp : outer_inputs) {
+      if (existing_roots_.find(inp) == existing_roots_.end()) {
+        outer_has_non_existing = true;
+      } else {
+        outer_has_existing = true;
+      }
+    }
+
+    for (auto inp : inner_inputs) {
+      if (existing_roots_.find(inp) == existing_roots_.end()) {
+        inner_has_non_existing = true;
+      } else {
+        inner_has_existing = true;
+      }
+    }
+
+    // We're looking for clean breaks of existing and non existing
+    if (!outer_has_non_existing && !inner_has_non_existing) {
+      finished = true;
+      return;
+    }
+
+    if ((outer_has_non_existing && !outer_has_existing) ||
+        (inner_has_non_existing && !inner_has_existing)) {
+      Val* extent = nullptr;
+      for (auto id : inner_inputs) {
+        if (extent == nullptr) {
+          extent = id->extent();
+        } else {
+          extent = mul(extent, id->extent());
+        }
+      }
+      TORCH_INTERNAL_ASSERT(extent != nullptr);
+
+      if (outer_has_existing) {
+        index_ = div(index_, extent);
+      } else {
+        index_ = mod(index_, extent);
+      }
+    }
+  }
+
+  // Otherwise warning on runBackward as it hides an overloaded virtual
+  // using TransformIter::runBackward;
+  IndexCleanup(
+      Val* _index,
+      IterDomain* loop_id,
+      const std::unordered_set<IterDomain*>& _existing_roots)
+      : index_(_index), existing_roots_(_existing_roots) {
+    auto exprs = UnsortedExprs::getFrom({loop_id});
+
+    for (auto it = exprs.rbegin(); it != exprs.rend(); it++) {
+      auto expr = *it;
+      if (expr->getExprType() == ExprType::Merge) {
+        handle(expr->as<Merge>());
+        if (finished)
+          break;
+      }
+    }
+  }
+
+  Val* index_;
+  const std::unordered_set<IterDomain*>& existing_roots_;
+  bool finished = false;
+
+ public:
+  static Val* get(
+      Val* index,
+      IterDomain* loop_id,
+      const std::unordered_set<IterDomain*>& existing_roots) {
+    IndexCleanup ic(index, loop_id, existing_roots);
+    return ic.index_;
+  }
+};
+
+} // namespace
+
 std::vector<Val*> getIndicesForTV(
     TensorView* tv,
     const std::vector<kir::ForLoop*>& loops,
@@ -828,30 +941,51 @@ std::vector<Val*> getIndicesForTV(
     // is the case, we need to modulo the index of that loop by tv_id's extent.
 
     auto ca_id_inputs = ir_utils::iterDomainInputsOf({ca_id});
+    auto tv_id_inputs = ir_utils::iterDomainInputsOf({tv_id});
+
+    int tv_id_inputs_n_bcast = std::count_if(
+        tv_id_inputs.begin(), tv_id_inputs.end(), [](IterDomain* id) {
+          return id->isBroadcast();
+        });
+
     int ca_id_inputs_n_bcast = std::count_if(
         ca_id_inputs.begin(), ca_id_inputs.end(), [](IterDomain* id) {
           return id->isBroadcast();
         });
 
-    // If no broadcasts were in the input to ca_id no modulo necessary
-    if (ca_id_inputs_n_bcast == 0) {
+    // tv_id has broadcasts in their input, but so does the ca_id. Also
+    // shouldn't need modulo. Can't merge a braodcast/iteration domain with a
+    // reduction domain, so ca_id inputs should strictly be >= tv_id's
+    if (ca_id_inputs.size() == tv_id_inputs.size() &&
+        tv_id_inputs_n_bcast == ca_id_inputs_n_bcast) {
       indices[tv_i] = loop->index();
     } else {
-      auto tv_id_inputs = ir_utils::iterDomainInputsOf({tv_id});
-      int tv_id_inputs_n_bcast = std::count_if(
-          tv_id_inputs.begin(), tv_id_inputs.end(), [](IterDomain* id) {
-            return id->isBroadcast();
-          });
-
-      // tv_id has broadcasts in their input, but so does the ca_id. Also
-      // shouldn't need modulo. Can't merge a braodcast/iteration domain with a
-      // reduction domain, so ca_id inputs should strictly be >= tv_id's
-      if (ca_id_inputs.size() == tv_id_inputs.size() &&
-          ca_id_inputs_n_bcast == tv_id_inputs_n_bcast) {
-        indices[tv_i] = loop->index();
-      } else {
-        indices[tv_i] = mod(loop->index(), tv_id->extent());
+      std::unordered_set<IterDomain*> tv_term_inps;
+      std::unordered_set<IterDomain*> tv_inp_is_bcast;
+      for (auto tv_inp : tv_id_inputs) {
+        auto term_id = loop_utils::getTermIDInMap(tv_inp, p2c_root_map);
+        tv_term_inps.emplace(term_id);
+        if (tv_inp->isBroadcast()) {
+          tv_inp_is_bcast.emplace(term_id);
+        }
       }
+
+      std::unordered_set<IterDomain*> matching_inputs;
+      for (auto ca_inp : ca_id_inputs) {
+        auto ca_term_inp = loop_utils::getTermIDInMap(ca_inp, p2c_root_map);
+
+        if (tv_term_inps.find(ca_term_inp) != tv_term_inps.end()) {
+          bool is_bcast =
+              tv_inp_is_bcast.find(ca_term_inp) != tv_inp_is_bcast.end();
+          if ((is_bcast && ca_inp->isBroadcast()) ||
+              (!is_bcast && !ca_inp->isBroadcast())) {
+            matching_inputs.emplace(ca_inp);
+          }
+        }
+      }
+
+      indices[tv_i] = IndexCleanup::get(
+          loop->index(), loop->iter_domain(), matching_inputs);
     }
   }
 
