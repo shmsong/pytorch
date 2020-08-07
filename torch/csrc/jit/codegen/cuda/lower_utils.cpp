@@ -998,6 +998,43 @@ std::pair<kir::ForLoop*, int64_t> getAllocPoint(
   return std::make_pair(alloc_loop, (int64_t)tv->getThisComputeAtAxis());
 }
 
+std::unordered_map<IterDomain*, IterDomain*> p2cRootMap(
+    std::vector<Expr*> exprs) {
+  std::unordered_map<IterDomain*, IterDomain*> p2c_root_map;
+
+  for (auto expr : exprs) {
+    auto out_tv = ir_utils::getTVOutput(expr);
+    for (auto inp : expr->inputs()) {
+      if (inp->getValType().value() != ValType::TensorView) {
+        continue;
+      }
+
+      auto root_p2c = TensorDomain::mapRootPtoC(
+          inp->as<TensorView>()->domain(), out_tv->domain());
+      for (auto entry : root_p2c) {
+        auto p_id = entry.first;
+        auto c_id = entry.second;
+        // Careful we don't allow circular references
+        if (p_id != c_id) {
+          p2c_root_map[p_id] = c_id;
+        }
+      }
+    }
+  }
+
+  return p2c_root_map;
+}
+
+IterDomain* getTermIDInMap(
+    IterDomain* root_id,
+    std::unordered_map<IterDomain*, IterDomain*> p2c_root_map) {
+  auto entry = root_id;
+  while (p2c_root_map.find(entry) != p2c_root_map.end()) {
+    entry = p2c_root_map.at(entry);
+  }
+  return entry;
+}
+
 } // namespace loop_utils
 
 } // namespace fuser

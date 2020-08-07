@@ -167,16 +167,6 @@ class TORCH_CUDA_API ExtractTVExprs {
   std::vector<Expr*> exprs;
 };
 
-IterDomain* getTermIDInMap(
-    IterDomain* id,
-    std::unordered_map<IterDomain*, IterDomain*> map) {
-  auto entry = id;
-  while (map.find(entry) != map.end()) {
-    entry = map.at(entry);
-  }
-  return entry;
-}
-
 } // namespace
 
 kir::Bool* UnrollPredicate::get(
@@ -250,7 +240,8 @@ void UnrollPredicate::predicateOn(Expr* tv_expr) {
     if (all_preds[i]->isConst() && all_preds[i]->value().value()) {
       continue;
     }
-    auto term_id = getTermIDInMap(out_tv->getRootDomain()[i], forward_root_map);
+    auto term_id =
+        loop_utils::getTermIDInMap(out_tv->getRootDomain()[i], p2c_root_map);
     predicates[term_id] = all_preds[i];
   }
 }
@@ -275,24 +266,7 @@ UnrollPredicate::UnrollPredicate(
     : for_loops(outer_loops) {
   auto exprs = ExtractTVExprs::get(unrolled_loop);
 
-  for (auto expr : exprs) {
-    auto out_tv = ir_utils::getTVOutput(expr);
-    for (auto inp : expr->inputs()) {
-      if (inp->getValType().value() != ValType::TensorView) {
-        continue;
-      }
-
-      auto root_p2c = TensorDomain::mapRootPtoC(
-          inp->as<TensorView>()->domain(), out_tv->domain());
-      for (auto entry : root_p2c) {
-        auto p_id = entry.first;
-        auto c_id = entry.second;
-        if (p_id != c_id) {
-          forward_root_map[p_id] = c_id;
-        }
-      }
-    }
-  }
+  p2c_root_map = loop_utils::p2cRootMap(exprs);
 
   openLoop(unrolled_loop);
 }

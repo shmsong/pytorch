@@ -65,8 +65,8 @@ class TORCH_CUDA_API UnrollPredicate {
 
   std::unordered_map<IterDomain*, kir::Bool*> predicates;
   std::vector<kir::ForLoop*> for_loops;
-  // root map from all exprs traversing producer->consumer direction
-  std::unordered_map<IterDomain*, IterDomain*> forward_root_map;
+
+  std::unordered_map<IterDomain*, IterDomain*> p2c_root_map;
 };
 
 } // namespace fuser

@@ -239,6 +239,17 @@ std::pair<kir::ForLoop*, int64_t> getAllocPoint(
     TensorView* tv,
     const std::vector<kir::ForLoop*>& loops);
 
+// Go through exprs mapping root domains from producer to consumer. Provides a
+// ground truth for how root domains map through our expressions
+std::unordered_map<IterDomain*, IterDomain*> p2cRootMap(
+    std::vector<Expr*> exprs);
+
+// Given a root IterationDomain and a p2c_root_map find the root IterationDomain
+// furthest down in the sorted expr list it maps to
+IterDomain* getTermIDInMap(
+    IterDomain* root_id,
+    std::unordered_map<IterDomain*, IterDomain*> p2c_root_map);
+
 } // namespace loop_utils
 
 } // namespace fuser
