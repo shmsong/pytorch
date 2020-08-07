@@ -45,7 +45,8 @@ class PredicateCompute {
   static kir::Bool* getInlinePredicate(
       Expr* expr,
       const std::vector<kir::ForLoop*>& loops,
-      kir::Bool* thread_pred);
+      kir::Bool* thread_pred,
+      const std::unordered_map<IterDomain*, IterDomain*>& _p2c_root_map);
 };
 
 class TORCH_CUDA_API UnrollPredicate {
@@ -53,7 +54,7 @@ class TORCH_CUDA_API UnrollPredicate {
   static kir::Bool* get(
       const std::vector<kir::ForLoop*>& outer_loops,
       kir::ForLoop* unrolled_loop,
-      const std::unordered_map<IterDomain*, IterDomain*>& _p2c_root_map);
+      const std::unordered_map<IterDomain*, IterDomain*>& p2c_root_map);
 
  private:
   UnrollPredicate(

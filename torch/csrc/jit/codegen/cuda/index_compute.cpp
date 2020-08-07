@@ -556,6 +556,7 @@ kir::TensorIndex* Index::getGlobalProducerIndex(
   auto indices = loop_utils::getIndicesForTV(
       producer_tv,
       loops,
+      p2c_root_map,
       false,
       loop_utils::mapIdPtoC(producer_tv, consumer_tv));
 
@@ -619,6 +620,7 @@ kir::TensorIndex* Index::getProducerIndex_impl(
   auto domain_indices = loop_utils::getIndicesForTV(
       producer_tv,
       loops,
+      p2c_root_map,
       false,
       loop_utils::mapIdPtoC(producer_tv, consumer_tv));
 
@@ -684,7 +686,7 @@ kir::TensorIndex* Index::getGlobalConsumerIndex(
     TensorView* consumer_tv,
     const std::vector<kir::ForLoop*>& loops,
     const std::unordered_map<IterDomain*, IterDomain*>& p2c_root_map) {
-  auto indices = loop_utils::getIndicesForTV(consumer_tv, loops);
+  auto indices = loop_utils::getIndicesForTV(consumer_tv, loops, p2c_root_map);
 
   std::vector<Val*> computed_inds = IndexCompute::get(
       consumer_tv->domain(), indices, consumer_tv->domain()->contiguity());
@@ -732,7 +734,8 @@ kir::TensorIndex* Index::getConsumerIndex_impl(
     TensorView* consumer_tv,
     const std::vector<kir::ForLoop*>& active_loops,
     const std::unordered_map<IterDomain*, IterDomain*>& p2c_root_map) {
-  auto domain_indices = loop_utils::getIndicesForTV(consumer_tv, active_loops);
+  auto domain_indices =
+      loop_utils::getIndicesForTV(consumer_tv, active_loops, p2c_root_map);
   auto domain_ranges = loop_utils::getRangesForTV(consumer_tv, active_loops);
 
   auto root_dom = consumer_tv->domain()->hasRFactor()

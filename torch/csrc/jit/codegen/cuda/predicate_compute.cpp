@@ -75,7 +75,8 @@ std::vector<kir::Bool*> PredicateCompute::computePredicates(
 kir::Bool* PredicateCompute::getInlinePredicate(
     Expr* expr,
     const std::vector<kir::ForLoop*>& loops,
-    kir::Bool* thread_pred) {
+    kir::Bool* thread_pred,
+    const std::unordered_map<IterDomain*, IterDomain*>& p2c_root_map) {
   if (loops.empty())
     return new kir::Bool(true);
 
@@ -105,7 +106,8 @@ kir::Bool* PredicateCompute::getInlinePredicate(
     }
   }
 
-  auto domain_indices = loop_utils::getIndicesForTV(out_tv, loops, true);
+  auto domain_indices =
+      loop_utils::getIndicesForTV(out_tv, loops, p2c_root_map, true);
   auto root_indices = IndexCompute::get(
       out_tv->domain(), domain_indices, pred_contiguity, true);
   auto pred_ti = new kir::TensorIndex(out_tv, root_indices);

@@ -33,7 +33,10 @@ void UnrollPass::handle(Expr* expr) {
     TORCH_INTERNAL_ASSERT(for_loops.size() != 0);
 
     auto pred = PredicateCompute::getInlinePredicate(
-        expr, for_loops, getThreadPredicate(ir_utils::getTVOutput(expr)));
+        expr,
+        for_loops,
+        getThreadPredicate(ir_utils::getTVOutput(expr)),
+        p2c_root_map_);
 
     // If we need a predicate, put expr inside an if then else
     if (!(pred->isConst()) || !(pred->isConst() && pred->value().value())) {

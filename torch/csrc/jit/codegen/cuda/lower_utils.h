@@ -209,6 +209,7 @@ std::unordered_map<IterDomain*, IterDomain*> mapIdPtoC(
 std::vector<Val*> getIndicesForTV(
     TensorView* tv,
     const std::vector<kir::ForLoop*>& loops,
+    const std::unordered_map<IterDomain*, IterDomain*>& p2c_root_map,
     bool for_predicates = false,
     const std::unordered_map<IterDomain*, IterDomain*>& ca_id_map =
         std::unordered_map<IterDomain*, IterDomain*>());
