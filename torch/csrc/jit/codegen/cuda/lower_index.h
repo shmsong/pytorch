@@ -14,14 +14,19 @@ class TORCH_CUDA_API IndexLowering : public OptInDispatch {
  public:
   static std::vector<Expr*> getIndexedExprs(
       Fusion* fusion,
-      std::vector<Expr*> incoming_exprs) {
+      std::vector<Expr*> incoming_exprs,
+      const std::unordered_map<IterDomain*, IterDomain*>& p2c_root_map) {
     FusionGuard fg(fusion);
-    IndexLowering il;
+    IndexLowering il(p2c_root_map);
     il.generate(incoming_exprs);
     return il.lowered_exprs;
   }
 
  private:
+  IndexLowering(
+      const std::unordered_map<IterDomain*, IterDomain*>& _p2c_root_map)
+      : p2c_root_map_(_p2c_root_map) {}
+
   // Wrap pushBack, if active_scope is null we want it to go
   // straight to lower_exprs
   void pushBack(Expr*);
@@ -53,6 +58,8 @@ class TORCH_CUDA_API IndexLowering : public OptInDispatch {
   // to understand the nesting of IfThenElse/ForLoop nodes.
   kir::Scope* active_scope = nullptr;
   Expr* active_scope_expr = nullptr;
+
+  std::unordered_map<IterDomain*, IterDomain*> p2c_root_map_;
 };
 
 } // namespace fuser

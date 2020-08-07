@@ -141,38 +141,11 @@ kir::Bool* PredicateCompute::getInlinePredicate(
   return cond->as<kir::Bool>();
 }
 
-namespace {
-
-class TORCH_CUDA_API ExtractTVExprs {
-  // Get all exprs within loop and containing loops
- public:
-  static std::vector<Expr*> get(kir::ForLoop* loop) {
-    ExtractTVExprs ee;
-    ee.extract(loop);
-    return ee.exprs;
-  }
-
- private:
-  // Open the for loop.
-  void extract(kir::ForLoop* fl) {
-    for (auto expr : fl->body().exprs()) {
-      if (ir_utils::isTVOp(expr)) {
-        exprs.push_back(expr);
-      } else if (expr->getExprType().value() == ExprType::ForLoop) {
-        extract(expr->as<kir::ForLoop>());
-      }
-    }
-  };
-
-  std::vector<Expr*> exprs;
-};
-
-} // namespace
-
 kir::Bool* UnrollPredicate::get(
     const std::vector<kir::ForLoop*>& outer_loops,
-    kir::ForLoop* unrolled_loop) {
-  UnrollPredicate up(outer_loops, unrolled_loop);
+    kir::ForLoop* unrolled_loop,
+    const std::unordered_map<IterDomain*, IterDomain*>& p2c_root_map) {
+  UnrollPredicate up(outer_loops, unrolled_loop, p2c_root_map);
 
   std::unordered_set<kir::Bool*> pred_set;
   for (auto entry : up.predicates) {
@@ -241,7 +214,7 @@ void UnrollPredicate::predicateOn(Expr* tv_expr) {
       continue;
     }
     auto term_id =
-        loop_utils::getTermIDInMap(out_tv->getRootDomain()[i], p2c_root_map);
+        loop_utils::getTermIDInMap(out_tv->getRootDomain()[i], p2c_root_map_);
     predicates[term_id] = all_preds[i];
   }
 }
@@ -262,12 +235,9 @@ void UnrollPredicate::openLoop(kir::ForLoop* fl) {
 
 UnrollPredicate::UnrollPredicate(
     const std::vector<kir::ForLoop*>& outer_loops,
-    kir::ForLoop* unrolled_loop)
-    : for_loops(outer_loops) {
-  auto exprs = ExtractTVExprs::get(unrolled_loop);
-
-  p2c_root_map = loop_utils::p2cRootMap(exprs);
-
+    kir::ForLoop* unrolled_loop,
+    const std::unordered_map<IterDomain*, IterDomain*>& _p2c_root_map)
+    : for_loops(outer_loops), p2c_root_map_(_p2c_root_map) {
   openLoop(unrolled_loop);
 }
 

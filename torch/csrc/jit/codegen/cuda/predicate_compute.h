@@ -52,12 +52,14 @@ class TORCH_CUDA_API UnrollPredicate {
  public:
   static kir::Bool* get(
       const std::vector<kir::ForLoop*>& outer_loops,
-      kir::ForLoop* unrolled_loop);
+      kir::ForLoop* unrolled_loop,
+      const std::unordered_map<IterDomain*, IterDomain*>& _p2c_root_map);
 
  private:
   UnrollPredicate(
       const std::vector<kir::ForLoop*>& outer_loops,
-      kir::ForLoop* unrolled_loop);
+      kir::ForLoop* unrolled_loop,
+      const std::unordered_map<IterDomain*, IterDomain*>& _p2c_root_map);
 
   void predicateOn(Expr*);
 
@@ -66,7 +68,7 @@ class TORCH_CUDA_API UnrollPredicate {
   std::unordered_map<IterDomain*, kir::Bool*> predicates;
   std::vector<kir::ForLoop*> for_loops;
 
-  std::unordered_map<IterDomain*, IterDomain*> p2c_root_map;
+  const std::unordered_map<IterDomain*, IterDomain*>& p2c_root_map_;
 };
 
 } // namespace fuser

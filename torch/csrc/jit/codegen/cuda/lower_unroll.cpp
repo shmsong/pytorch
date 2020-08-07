@@ -69,7 +69,7 @@ void UnrollPass::handle(kir::ForLoop* fl) {
     return;
   }
 
-  auto unroll_pred = UnrollPredicate::get(for_loops, fl);
+  auto unroll_pred = UnrollPredicate::get(for_loops, fl, p2c_root_map_);
 
   kir::IfThenElse* unroll_ite =
       new kir::IfThenElse(unroll_pred, {}, {}, for_loops.back());
@@ -110,9 +110,10 @@ std::vector<Expr*> UnrollPass::runPass(
     Fusion* fusion,
     const std::vector<Expr*>& exprs,
     const std::unordered_set<Expr*>& init_exprs,
-    const ThreadPredicateMap& thread_predicates) {
+    const ThreadPredicateMap& thread_predicates,
+    const std::unordered_map<IterDomain*, IterDomain*>& p2c_root_map) {
   FusionGuard fg(fusion);
-  UnrollPass up(fusion, exprs, init_exprs, thread_predicates);
+  UnrollPass up(fusion, exprs, init_exprs, thread_predicates, p2c_root_map);
   up.computeMap();
   std::vector<Expr*> mutated_exprs;
   for (Expr* expr : exprs) {

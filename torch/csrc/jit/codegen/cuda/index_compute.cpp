@@ -558,7 +558,6 @@ kir::TensorIndex* Index::getGlobalProducerIndex(
       false,
       loop_utils::mapIdPtoC(producer_tv, consumer_tv));
 
-  // TODO: Remove contiguity entry from IndexCompute::get
   std::vector<Val*> root_indices = IndexCompute::get(
       producerAsC, indices, producer_tv->domain()->contiguity());
 
