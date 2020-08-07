@@ -64,14 +64,15 @@ void IndexLowering::handle(UnaryOp* uop) {
     return;
   }
 
-  kir::TensorIndex* out = Index::getConsumerIndex(
-      ir_utils::asTV(uop->out()), scope_utils::getLoops(active_scope_expr));
+  auto loops = scope_utils::getLoops(active_scope_expr);
+
+  kir::TensorIndex* out =
+      Index::getConsumerIndex(ir_utils::asTV(uop->out()), loops, p2c_root_map_);
+
   Val* in = uop->in();
   if (ir_utils::isTV(in))
     in = Index::getProducerIndex(
-        ir_utils::asTV(in),
-        ir_utils::asTV(uop->out()),
-        scope_utils::getLoops(active_scope_expr));
+        ir_utils::asTV(in), ir_utils::asTV(uop->out()), loops, p2c_root_map_);
   pushBack(new UnaryOp(uop->getUnaryOpType(), out, in));
 }
 
@@ -81,23 +82,21 @@ void IndexLowering::handle(BinaryOp* bop) {
     return;
   }
 
-  kir::TensorIndex* out = Index::getConsumerIndex(
-      ir_utils::asTV(bop->out()), scope_utils::getLoops(active_scope_expr));
+  auto loops = scope_utils::getLoops(active_scope_expr);
+
+  kir::TensorIndex* out =
+      Index::getConsumerIndex(ir_utils::asTV(bop->out()), loops, p2c_root_map_);
 
   Val* lhs = bop->lhs();
   Val* rhs = bop->rhs();
 
   if (ir_utils::isTV(lhs))
     lhs = Index::getProducerIndex(
-        ir_utils::asTV(lhs),
-        ir_utils::asTV(bop->out()),
-        scope_utils::getLoops(active_scope_expr));
+        ir_utils::asTV(lhs), ir_utils::asTV(bop->out()), loops, p2c_root_map_);
 
   if (ir_utils::isTV(rhs))
     rhs = Index::getProducerIndex(
-        ir_utils::asTV(rhs),
-        ir_utils::asTV(bop->out()),
-        scope_utils::getLoops(active_scope_expr));
+        ir_utils::asTV(rhs), ir_utils::asTV(bop->out()), loops, p2c_root_map_);
 
   pushBack(new BinaryOp(bop->getBinaryOpType(), out, lhs, rhs));
 }
@@ -108,29 +107,25 @@ void IndexLowering::handle(TernaryOp* top) {
     return;
   }
 
-  kir::TensorIndex* out = Index::getConsumerIndex(
-      ir_utils::asTV(top->out()), scope_utils::getLoops(active_scope_expr));
+  auto loops = scope_utils::getLoops(active_scope_expr);
+
+  kir::TensorIndex* out =
+      Index::getConsumerIndex(ir_utils::asTV(top->out()), loops, p2c_root_map_);
   Val* in1 = top->in1();
   Val* in2 = top->in2();
   Val* in3 = top->in3();
 
   if (ir_utils::isTV(in1))
     in1 = Index::getProducerIndex(
-        ir_utils::asTV(in1),
-        ir_utils::asTV(top->out()),
-        scope_utils::getLoops(active_scope_expr));
+        ir_utils::asTV(in1), ir_utils::asTV(top->out()), loops, p2c_root_map_);
 
   if (ir_utils::isTV(in2))
     in2 = Index::getProducerIndex(
-        ir_utils::asTV(in2),
-        ir_utils::asTV(top->out()),
-        scope_utils::getLoops(active_scope_expr));
+        ir_utils::asTV(in2), ir_utils::asTV(top->out()), loops, p2c_root_map_);
 
   if (ir_utils::isTV(in3))
     in3 = Index::getProducerIndex(
-        ir_utils::asTV(in3),
-        ir_utils::asTV(top->out()),
-        scope_utils::getLoops(active_scope_expr));
+        ir_utils::asTV(in3), ir_utils::asTV(top->out()), loops, p2c_root_map_);
 
   pushBack(new TernaryOp(top->getTernaryOpType(), out, in1, in2, in3));
 }
@@ -185,10 +180,10 @@ void IndexLowering::handle(ReductionOp* rop) {
   }
   auto loops = scope_utils::getLoops(active_scope_expr);
 
-  kir::TensorIndex* out = Index::getConsumerIndex(out_tv, loops);
+  kir::TensorIndex* out = Index::getConsumerIndex(out_tv, loops, p2c_root_map_);
   Val* in = rop->in();
   in = Index::getProducerIndex(
-      ir_utils::asTV(in), ir_utils::asTV(rop->out()), loops);
+      ir_utils::asTV(in), ir_utils::asTV(rop->out()), loops, p2c_root_map_);
 
   kir::ReductionOp* block_reduction = nullptr;
   if (is_block_reduce) {
@@ -267,14 +262,15 @@ void IndexLowering::handle(BroadcastOp* bop) {
       "Cannot have a broadcast operation on something other than a tensor view, but received ",
       bop);
 
-  kir::TensorIndex* out = Index::getConsumerIndex(
-      ir_utils::asTV(bop->out()), scope_utils::getLoops(active_scope_expr));
+  auto loops = scope_utils::getLoops(active_scope_expr);
+
+  kir::TensorIndex* out =
+      Index::getConsumerIndex(ir_utils::asTV(bop->out()), loops, p2c_root_map_);
+
   Val* in = bop->in();
   if (ir_utils::isTV(in))
     in = Index::getProducerIndex(
-        ir_utils::asTV(in),
-        ir_utils::asTV(bop->out()),
-        scope_utils::getLoops(active_scope_expr));
+        ir_utils::asTV(in), ir_utils::asTV(bop->out()), loops, p2c_root_map_);
   pushBack(new kir::BroadcastOp(out, in));
 }
 

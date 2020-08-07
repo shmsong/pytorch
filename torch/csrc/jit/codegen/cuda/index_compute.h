@@ -110,23 +110,27 @@ class Index {
   static kir::TensorIndex* getProducerIndex_impl(
       TensorView* producer,
       TensorView* consumer,
-      const std::vector<kir::ForLoop*>& loops);
+      const std::vector<kir::ForLoop*>& loops,
+      const std::unordered_map<IterDomain*, IterDomain*>& p2c_root_map);
 
   // Consumer indexing if it's in shared or local memory
   static kir::TensorIndex* getConsumerIndex_impl(
       TensorView* consumer,
-      const std::vector<kir::ForLoop*>& loops);
+      const std::vector<kir::ForLoop*>& loops,
+      const std::unordered_map<IterDomain*, IterDomain*>& p2c_root_map);
 
   // Producer if it's in global memory
   static kir::TensorIndex* getGlobalProducerIndex(
       TensorView* producer,
       TensorView* consumer,
-      const std::vector<kir::ForLoop*>& loops);
+      const std::vector<kir::ForLoop*>& loops,
+      const std::unordered_map<IterDomain*, IterDomain*>& p2c_root_map);
 
   // Consumer indexing if it's in global memory
   static kir::TensorIndex* getGlobalConsumerIndex(
       TensorView* consumer,
-      const std::vector<kir::ForLoop*>& loops);
+      const std::vector<kir::ForLoop*>& loops,
+      const std::unordered_map<IterDomain*, IterDomain*>& p2c_root_map);
 
  public:
   // Indexing functions
@@ -136,12 +140,14 @@ class Index {
   static kir::TensorIndex* getProducerIndex(
       TensorView* producer,
       TensorView* consumer,
-      const std::vector<kir::ForLoop*>& loops);
+      const std::vector<kir::ForLoop*>& loops,
+      const std::unordered_map<IterDomain*, IterDomain*>& p2c_root_map);
 
   // Consumer index dispatch
   static kir::TensorIndex* getConsumerIndex(
       TensorView* consumer,
-      const std::vector<kir::ForLoop*>& loops);
+      const std::vector<kir::ForLoop*>& loops,
+      const std::unordered_map<IterDomain*, IterDomain*>& p2c_root_map);
 };
 
 } // namespace fuser

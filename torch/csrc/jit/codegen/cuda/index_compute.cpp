@@ -542,7 +542,8 @@ std::vector<bool> IndexCompute::contiguityPasC(
 kir::TensorIndex* Index::getGlobalProducerIndex(
     TensorView* producer_tv,
     TensorView* consumer_tv,
-    const std::vector<kir::ForLoop*>& loops) {
+    const std::vector<kir::ForLoop*>& loops,
+    const std::unordered_map<IterDomain*, IterDomain*>& p2c_root_map) {
   // producer_tv->domain() is not replayed as the loop strucutre we were
   // provided, so replay it to match consumer_tv which is.
   auto producerAsC = TransformReplay::replayPasC(
@@ -603,7 +604,8 @@ kir::TensorIndex* Index::getGlobalProducerIndex(
 kir::TensorIndex* Index::getProducerIndex_impl(
     TensorView* producer_tv,
     TensorView* consumer_tv,
-    const std::vector<kir::ForLoop*>& loops) {
+    const std::vector<kir::ForLoop*>& loops,
+    const std::unordered_map<IterDomain*, IterDomain*>& p2c_root_map) {
   // producer_tv->domain() is not replayed as the loop strucutre we were
   // provided, so replay it to match consumer_tv which is.
   auto producerAsC = TransformReplay::replayPasC(
@@ -680,7 +682,8 @@ kir::TensorIndex* Index::getProducerIndex_impl(
 
 kir::TensorIndex* Index::getGlobalConsumerIndex(
     TensorView* consumer_tv,
-    const std::vector<kir::ForLoop*>& loops) {
+    const std::vector<kir::ForLoop*>& loops,
+    const std::unordered_map<IterDomain*, IterDomain*>& p2c_root_map) {
   auto indices = loop_utils::getIndicesForTV(consumer_tv, loops);
 
   std::vector<Val*> computed_inds = IndexCompute::get(
@@ -727,7 +730,8 @@ kir::TensorIndex* Index::getGlobalConsumerIndex(
 // Consumer index for either shared or local memory
 kir::TensorIndex* Index::getConsumerIndex_impl(
     TensorView* consumer_tv,
-    const std::vector<kir::ForLoop*>& active_loops) {
+    const std::vector<kir::ForLoop*>& active_loops,
+    const std::unordered_map<IterDomain*, IterDomain*>& p2c_root_map) {
   auto domain_indices = loop_utils::getIndicesForTV(consumer_tv, active_loops);
   auto domain_ranges = loop_utils::getRangesForTV(consumer_tv, active_loops);
 
@@ -792,27 +796,29 @@ kir::TensorIndex* Index::getConsumerIndex_impl(
 kir::TensorIndex* Index::getProducerIndex(
     TensorView* producer,
     TensorView* consumer,
-    const std::vector<kir::ForLoop*>& loops) {
+    const std::vector<kir::ForLoop*>& loops,
+    const std::unordered_map<IterDomain*, IterDomain*>& p2c_root_map) {
   if (producer->domain()->noReductions().size() == 0) {
     return new kir::TensorIndex(producer, {});
   }
 
   if (producer->getMemoryType() == MemoryType::Global)
-    return getGlobalProducerIndex(producer, consumer, loops);
-  return getProducerIndex_impl(producer, consumer, loops);
+    return getGlobalProducerIndex(producer, consumer, loops, p2c_root_map);
+  return getProducerIndex_impl(producer, consumer, loops, p2c_root_map);
 }
 
 // Consumer is the output of an expression
 kir::TensorIndex* Index::getConsumerIndex(
     TensorView* consumer,
-    const std::vector<kir::ForLoop*>& loops) {
+    const std::vector<kir::ForLoop*>& loops,
+    const std::unordered_map<IterDomain*, IterDomain*>& p2c_root_map) {
   if (consumer->domain()->noReductions().size() == 0) {
     return new kir::TensorIndex(consumer, {});
   }
 
   if (consumer->getMemoryType() == MemoryType::Global)
-    return getGlobalConsumerIndex(consumer, loops);
-  return getConsumerIndex_impl(consumer, loops);
+    return getGlobalConsumerIndex(consumer, loops, p2c_root_map);
+  return getConsumerIndex_impl(consumer, loops, p2c_root_map);
 }
 
 } // namespace fuser
