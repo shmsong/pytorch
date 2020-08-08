@@ -358,10 +358,10 @@ int BestEffortReplay::findFirstMismatchedID(
     const TensorDomain* td1,
     const TensorDomain* td2) {
   std::unordered_map<IterDomain*, IterDomain*> id_map;
-  auto rd1 = td1->rootDomain();
-  auto rd2 = td2->rootDomain();
+  auto rd1 = td1->getRootDomain();
+  auto rd2 = td2->getRootDomain();
   std::unordered_set<IterDomain*> rd2_set(
-      td2->rootDomain().begin(), td2->rootDomain().end());
+      td2->getRootDomain().begin(), td2->getRootDomain().end());
 
   // Find matching root IterDomains, we could make this O(nlog(n)) if we could
   // sort IterDomains.

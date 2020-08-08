@@ -214,7 +214,7 @@ class RangeCompute : public BackwardVisitor {
 
     if (contig_ids.find(out_id) != contig_ids.end()) {
       auto input_ids =
-          ir_utils::iterDomainInputsOfOrderedAs({out_id}, td_->rootDomain());
+          ir_utils::iterDomainInputsOfOrderedAs({out_id}, td_->getRootDomain());
 
       // Shouldn't hit this, but don't want to segfault if somehow we do.
       TORCH_INTERNAL_ASSERT(!input_ids.empty());
@@ -256,7 +256,7 @@ class RangeCompute : public BackwardVisitor {
       std::vector<bool> _root_contiguity)
       : td_(_td) {
     contig_ids =
-        ContigIDs::find(td_->domain(), td_->rootDomain(), _root_contiguity);
+        ContigIDs::find(td_->domain(), td_->getRootDomain(), _root_contiguity);
 
     if (td_->nDims() == 0 || ranges.empty()) {
       ranges_.push_back(new Int(0));
@@ -294,8 +294,7 @@ class RangeCompute : public BackwardVisitor {
     traverseFrom(ranges[0]->fusion(), domain_vals, false);
 
     // TODO: Don't exclude reduction axes
-    auto root_dom =
-        td_->hasRFactor() ? td_->rfactorDomain() : td_->rootDomain();
+    auto root_dom = td_->getMaybeRFactorDomain();
     for (auto id : root_dom) {
       if (exclude_reduction && id->isReduction()) {
         continue;
@@ -382,7 +381,7 @@ void IndexCompute::handle(Merge* merge) {
 
   if (contig_ids.find(out_id) != contig_ids.end()) {
     auto input_ids =
-        ir_utils::iterDomainInputsOfOrderedAs({out_id}, td_->rootDomain());
+        ir_utils::iterDomainInputsOfOrderedAs({out_id}, td_->getRootDomain());
 
     // Shouldn't hit this, but don't want to segfault if somehow we do.
     TORCH_INTERNAL_ASSERT(!input_ids.empty());
@@ -431,7 +430,7 @@ IndexCompute::IndexCompute(
     bool ignore_rfactor)
     : td_(_td) {
   contig_ids =
-      ContigIDs::find(td_->domain(), td_->rootDomain(), root_contiguity);
+      ContigIDs::find(td_->domain(), td_->getRootDomain(), root_contiguity);
   if (td_->nDims() == 0 || indices.empty()) {
     indices_.push_back(new Int(0));
     return;
@@ -468,8 +467,8 @@ IndexCompute::IndexCompute(
   traverseFrom(indices[0]->fusion(), domain_vals, false);
 
   // TODO: Don't exclude reduction axes
-  auto root_dom = td_->hasRFactor() && !ignore_rfactor ? td_->rfactorDomain()
-                                                       : td_->rootDomain();
+  auto root_dom =
+      ignore_rfactor ? td_->getRootDomain() : td_->getMaybeRFactorDomain();
   for (auto id : root_dom) {
     if (exclude_reduction && id->isReduction()) {
       continue;
@@ -520,8 +519,8 @@ std::vector<bool> IndexCompute::contiguityPasC(
   const std::vector<bool>& producer_contiguity = producer->contiguity();
   std::vector<bool> as_consumer_contiguity;
 
-  auto c_root = consumer->rootDomain();
-  auto p_root = producer->rootDomain();
+  auto c_root = consumer->getRootDomain();
+  auto p_root = producer->getRootDomain();
 
   size_t p_ind = 0;
   size_t c_ind = 0;
@@ -572,9 +571,7 @@ kir::TensorIndex* Index::getGlobalProducerIndex(
   std::vector<Val*> root_indices = IndexCompute::get(
       producerAsC, indices, producer_tv->domain()->contiguity());
 
-  auto root_dom = producer_tv->domain()->hasRFactor()
-      ? producer_tv->domain()->rfactorDomain()
-      : producer_tv->getRootDomain();
+  auto root_dom = producer_tv->getMaybeRFactorDomain();
 
   TORCH_INTERNAL_ASSERT(
       root_indices.size() == root_dom.size(),
@@ -636,9 +633,7 @@ kir::TensorIndex* Index::getProducerIndex_impl(
   auto domain_ranges = loop_utils::getRangesForTV(
       producer_tv, loops, loop_utils::mapIdPtoC(producer_tv, consumer_tv));
 
-  auto root_dom = producer_tv->domain()->hasRFactor()
-      ? producer_tv->domain()->rfactorDomain()
-      : producer_tv->getRootDomain();
+  auto root_dom = producer_tv->getMaybeRFactorDomain();
 
   // TODO: Remove contiguity entry from IndexCompute::get
   std::vector<Val*> root_indices = IndexCompute::get(
@@ -700,9 +695,7 @@ kir::TensorIndex* Index::getGlobalConsumerIndex(
   std::vector<Val*> computed_inds = IndexCompute::get(
       consumer_tv->domain(), indices, consumer_tv->domain()->contiguity());
 
-  auto root_dom = consumer_tv->domain()->hasRFactor()
-      ? consumer_tv->domain()->rfactorDomain()
-      : consumer_tv->getRootDomain();
+  auto root_dom = consumer_tv->getMaybeRFactorDomain();
 
   TORCH_INTERNAL_ASSERT(
       computed_inds.size() == root_dom.size(),
@@ -747,9 +740,7 @@ kir::TensorIndex* Index::getConsumerIndex_impl(
       loop_utils::getIndicesForTV(consumer_tv, active_loops, p2c_root_map);
   auto domain_ranges = loop_utils::getRangesForTV(consumer_tv, active_loops);
 
-  auto root_dom = consumer_tv->domain()->hasRFactor()
-      ? consumer_tv->domain()->rfactorDomain()
-      : consumer_tv->getRootDomain();
+  auto root_dom = consumer_tv->getMaybeRFactorDomain();
 
   std::vector<Val*> root_indices = IndexCompute::get(
       consumer_tv->domain(),

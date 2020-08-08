@@ -226,8 +226,19 @@ class TORCH_CUDA_API TensorView : public Val {
   bool hasBlockReduction() const;
   bool hasGridReduction() const;
   bool hasBroadcast() const;
+  bool hasRFactor() const;
 
   c10::optional<unsigned int> getReductionAxis() const;
+
+  const std::vector<IterDomain*>& getRootDomain() const;
+
+  const std::vector<IterDomain*>& getRFactorDomain() const;
+
+  // If rfactor domain exists in domain() return it, otherwise return root
+  // domain.
+  const std::vector<IterDomain*>& getMaybeRFactorDomain() const;
+
+  IterDomain* axis(int pos) const;
 
   // Is there an active computeAt TensorView/Axis
   bool hasComputeAt() const {
@@ -240,8 +251,6 @@ class TORCH_CUDA_API TensorView : public Val {
   }
 
   size_t nDims() const;
-
-  IterDomain* axis(int pos) const;
 
   // Return compute at axis relative to this domain
   unsigned int getThisComputeAtAxis() const {
@@ -269,8 +278,6 @@ class TORCH_CUDA_API TensorView : public Val {
     return std::make_pair(
         computeAtPos.second->axis(computeAtPos.first), computeAtPos.second);
   }
-
-  const std::vector<IterDomain*>& getRootDomain() const;
 
   // Compute this TensorView relative to another tensor at axis
   TensorView* computeAt(TensorView* consumer, int axis);

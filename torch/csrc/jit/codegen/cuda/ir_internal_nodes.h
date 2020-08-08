@@ -432,13 +432,18 @@ class TORCH_CUDA_API TensorDomain : public Val {
     return no_bcast_domain_;
   }
 
-  const std::vector<IterDomain*>& rootDomain() const {
+  const std::vector<IterDomain*>& getRootDomain() const {
     return root_domain_;
   };
 
-  const std::vector<IterDomain*>& rfactorDomain() const {
+  const std::vector<IterDomain*>& getRFactorDomain() const {
     return rfactor_domain_;
   };
+  // If rfactor domain exists in domain() return it, otherwise return root
+  // domain.
+  const std::vector<IterDomain*>& getMaybeRFactorDomain() const {
+    return hasRFactor() ? getRFactorDomain() : getRootDomain();
+  }
 
   void resetDomains() {
     no_reduction_domain_ = noReductions(domain_);
@@ -513,7 +518,7 @@ class TORCH_CUDA_API TensorDomain : public Val {
   static std::unordered_map<IterDomain*, IterDomain*> mapRootPtoC(
       const TensorDomain* producer,
       const TensorDomain* consumer) {
-    auto p_root = producer->rootDomain();
+    auto p_root = producer->getRootDomain();
     return mapRootPtoC(
         producer,
         consumer,

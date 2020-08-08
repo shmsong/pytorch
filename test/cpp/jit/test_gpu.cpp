@@ -2371,7 +2371,7 @@ void testGPU_FusionRFactorReplay() {
           !tv1->domain()->sameAs(new_domain2),
       "Error in rfactor, number of dimensions is not correct.");
 
-  auto dom = new_domain->rootDomain();
+  auto dom = new_domain->getRootDomain();
   TORCH_CHECK(
       !dom[0]->isReduction() &&
           std::any_of(
@@ -2384,7 +2384,7 @@ void testGPU_FusionRFactorReplay() {
               [](IterDomain* id) { return id->isRFactorProduct(); }),
       "Error in rFactor, there seems to be something wrong in root domain.");
 
-  auto dom2 = new_domain2->rootDomain();
+  auto dom2 = new_domain2->getRootDomain();
   TORCH_CHECK(
       !dom2[0]->isReduction() &&
           std::any_of(

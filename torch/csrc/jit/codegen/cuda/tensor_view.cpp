@@ -100,12 +100,24 @@ bool TensorView::hasBroadcast() const {
   return domain()->hasBroadcast();
 }
 
+bool TensorView::hasRFactor() const {
+  return domain()->hasRFactor();
+}
+
 c10::optional<unsigned int> TensorView::getReductionAxis() const {
   return domain()->getReductionAxis();
 }
 
 const std::vector<IterDomain*>& TensorView::getRootDomain() const {
-  return domain()->rootDomain();
+  return domain()->getRootDomain();
+};
+
+const std::vector<IterDomain*>& TensorView::getRFactorDomain() const {
+  return domain()->getRFactorDomain();
+};
+
+const std::vector<IterDomain*>& TensorView::getMaybeRFactorDomain() const {
+  return domain()->getMaybeRFactorDomain();
 };
 
 std::vector<IterDomain*>::size_type TensorView::nDims() const {
