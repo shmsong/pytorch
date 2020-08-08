@@ -373,10 +373,10 @@ void IndexCompute::handle(Merge* merge) {
     return;
 
   auto out_ind = out_it->second;
-
+  auto zero = new Int(0);
   if (out_ind->isZeroInt()) {
-    index_map_[outer_id] = new Int(0);
-    index_map_[inner_id] = new Int(0);
+    index_map_[outer_id] = zero;
+    index_map_[inner_id] = zero;
     return;
   }
 
@@ -388,19 +388,22 @@ void IndexCompute::handle(Merge* merge) {
     TORCH_INTERNAL_ASSERT(!input_ids.empty());
 
     for (auto root_id : input_ids) {
-      index_map_[root_id] = new Int(0);
+      index_map_[root_id] = zero;
     }
 
     index_map_[*(input_ids.end() - 1)] = out_ind;
     return;
   }
 
-  Val* I = inner_id->extent();
-  if (I->isOneInt()) {
+  if (inner_id->isBroadcast() && inner_id->extent()->isOneInt()) {
     index_map_[outer_id] = out_ind;
+    index_map_[inner_id] = zero;
+  } else if (outer_id->isBroadcast() && outer_id->extent()->isOneInt()) {
+    index_map_[outer_id] = zero;
     index_map_[inner_id] = out_ind;
-
   } else {
+    Val* I = inner_id->extent();
+
     Val* outer_ind = div(out_ind, I);
     Val* inner_ind = mod(out_ind, I);
 

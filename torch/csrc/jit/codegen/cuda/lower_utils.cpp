@@ -811,7 +811,8 @@ class IndexCleanup {
     }
 
     // We're looking for clean breaks of existing and non existing
-    if (!outer_has_non_existing && !inner_has_non_existing) {
+    if ( (!outer_has_non_existing && !inner_has_non_existing) || 
+    (!outer_has_existing && !inner_has_existing) ) {
       finished = true;
       return;
     }
