@@ -734,13 +734,8 @@ kir::TensorIndex* Index::getGlobalProducerIndex(
   // Indices should now be mapped onto IterDomains in producer, so just grab
   // and use them.
   auto zero = new Int(0);
-  auto root_dom = producer_tv->getMaybeRFactorDomain();
-  std::vector<Val*> root_inds(root_dom.size(), zero);
-  for (size_t i = 0; i < root_dom.size(); i++) {
-    if (index_map.find(root_dom[i]) != index_map.end()) {
-      root_inds[i] = index_map.at(root_dom[i]);
-    }
-  }
+
+  auto root_dom = producer_tv->getRootDomain();
 
   bool inner_most_dim_contig =
       root_dom[root_dom.size() - 1]->getIterType() == IterType::Iteration &&
@@ -753,15 +748,23 @@ kir::TensorIndex* Index::getGlobalProducerIndex(
     if (root_dom[i]->isReduction() ||
         root_dom[i]->getIterType() == IterType::BroadcastWithoutStride) {
       continue;
-    } else if (i == root_dom.size() - 1 && inner_most_dim_contig) {
-      strided_inds.push_back(root_inds[i]);
     } else if (root_dom[i]->getIterType() == IterType::BroadcastWithStride) {
+      stride_i++;
+      continue;
+    }
+
+    TORCH_INTERNAL_ASSERT(index_map.find(root_dom[i]) != index_map.end());
+    auto ind = index_map.at(root_dom[i]);
+
+    if (i == root_dom.size() - 1 && inner_most_dim_contig) {
+      strided_inds.push_back(ind);
+    } else if (ind->isZeroInt()) {
       stride_i++;
     } else {
       std::stringstream ss;
       ss << "T" << producer_tv->name() << ".stride[" << stride_i++ << "]";
       strided_inds.push_back(
-          mul(root_inds[i], new NamedScalar(ss.str(), DataType::Int)));
+          mul(ind, new NamedScalar(ss.str(), DataType::Int)));
     }
   }
 
@@ -854,22 +857,30 @@ kir::TensorIndex* Index::getGlobalConsumerIndex(
     TensorView* consumer_tv,
     const std::vector<kir::ForLoop*>& loops,
     const std::unordered_map<IterDomain*, IterDomain*>& p2c_root_map) {
-  auto indices = loop_utils::getIndicesForTV(consumer_tv, loops, p2c_root_map);
+  // grab all tensor views from producer_tv <- computeAtRoot
+  std::deque<TensorView*> tv_stack = getComputeAtTVStackFrom(consumer_tv);
 
-  std::vector<Val*> computed_inds = IndexCompute::get(
-      consumer_tv->domain(), indices, consumer_tv->domain()->contiguity());
+  std::unordered_map<kir::ForLoop*, Val*> loop_to_ind_map;
+  std::transform(
+      loops.begin(),
+      loops.end(),
+      std::inserter(loop_to_ind_map, loop_to_ind_map.begin()),
+      [](kir::ForLoop* fl) { return std::make_pair(fl, fl->index()); });
 
-  auto root_dom = consumer_tv->getMaybeRFactorDomain();
+  auto index_map = generateIndexMap(
+      tv_stack,
+      std::deque<kir::ForLoop*>(loops.begin(), loops.end()),
+      loop_to_ind_map);
 
-  TORCH_INTERNAL_ASSERT(
-      computed_inds.size() == root_dom.size(),
-      "Dimensionality error in code generator while computing indexing.");
+  // Indices should now be mapped onto IterDomains in consumer, so just grab
+  // and use them.
+  auto zero = new Int(0);
+
+  auto root_dom = consumer_tv->getRootDomain();
 
   bool inner_most_dim_contig =
-      consumer_tv->getRootDomain()[consumer_tv->getRootDomain().size() - 1]
-              ->getIterType() == IterType::Iteration &&
-      consumer_tv->domain()
-          ->contiguity()[consumer_tv->getRootDomain().size() - 1];
+      root_dom[root_dom.size() - 1]->getIterType() == IterType::Iteration &&
+      consumer_tv->domain()->contiguity()[root_dom.size() - 1];
 
   int64_t stride_i = 0;
   std::vector<Val*> strided_inds;
@@ -877,15 +888,23 @@ kir::TensorIndex* Index::getGlobalConsumerIndex(
     if (root_dom[i]->isReduction() ||
         root_dom[i]->getIterType() == IterType::BroadcastWithoutStride) {
       continue;
-    } else if (i == root_dom.size() - 1 && inner_most_dim_contig) {
-      strided_inds.push_back(computed_inds[i]);
-    } else if (computed_inds[i]->isZeroInt()) {
+    } else if (root_dom[i]->getIterType() == IterType::BroadcastWithStride) {
+      stride_i++;
+      continue;
+    }
+
+    TORCH_INTERNAL_ASSERT(index_map.find(root_dom[i]) != index_map.end());
+    auto ind = index_map.at(root_dom[i]);
+
+    if (i == root_dom.size() - 1 && inner_most_dim_contig) {
+      strided_inds.push_back(ind);
+    } else if (ind->isZeroInt()) {
       stride_i++;
     } else {
       std::stringstream ss;
       ss << "T" << consumer_tv->name() << ".stride[" << stride_i++ << "]";
       strided_inds.push_back(
-          mul(computed_inds[i], new NamedScalar(ss.str(), DataType::Int)));
+          mul(ind, new NamedScalar(ss.str(), DataType::Int)));
     }
   }
 
