@@ -3,6 +3,7 @@
 #include <torch/csrc/jit/codegen/cuda/arith.h>
 #include <torch/csrc/jit/codegen/cuda/ir_all_nodes.h>
 #include <torch/csrc/jit/codegen/cuda/ir_iostream.h>
+#include <torch/csrc/jit/codegen/cuda/transform_iter.h>
 #include <torch/csrc/jit/codegen/cuda/transform_replay.h>
 
 namespace torch {
@@ -423,6 +424,18 @@ void IndexCompute::handle(Expr* e) {
   BackwardVisitor::handle(e);
 }
 
+// Otherwise warning on runBackward as it hides an overloaded virtual
+// using TransformIter::runBackward;
+IndexCompute::IndexCompute(
+    const TensorDomain* _td,
+    std::unordered_map<IterDomain*, Val*> initial_index_map)
+    : td_(_td), index_map_(initial_index_map) {
+  const std::vector<Val*> domain_vals(
+      td_->domain().begin(), td_->domain().end());
+
+  traverseFrom(td_->fusion(), domain_vals, false);
+}
+
 IndexCompute::IndexCompute(
     const TensorDomain* _td,
     const std::vector<Val*>& indices,
@@ -431,6 +444,7 @@ IndexCompute::IndexCompute(
     : td_(_td) {
   contig_ids =
       ContigIDs::find(td_->domain(), td_->getRootDomain(), root_contiguity);
+
   if (td_->nDims() == 0 || indices.empty()) {
     indices_.push_back(new Int(0));
     return;
@@ -464,7 +478,7 @@ IndexCompute::IndexCompute(
   // these indices at the root of the domain, but actually at the rfactor root.
   // Fortunately we can run them all the way back, but grab the indices from the
   // map at the rfactor IterDomains.
-  traverseFrom(indices[0]->fusion(), domain_vals, false);
+  traverseFrom(td_->fusion(), domain_vals, false);
 
   // TODO: Don't exclude reduction axes
   auto root_dom =
@@ -561,27 +575,94 @@ kir::TensorIndex* Index::getGlobalProducerIndex(
   // Set producer_tv with the domain replayed as consumer to grab the right
   // indices. The guard will reset the domain when this scope ends.
   ir_utils::TVDomainGuard domain_guard(producer_tv, producerAsC);
-  auto indices = loop_utils::getIndicesForTV(
-      producer_tv,
-      loops,
-      p2c_root_map,
-      false,
-      loop_utils::mapIdPtoC(producer_tv, consumer_tv));
 
-  std::vector<Val*> root_indices = IndexCompute::get(
-      producerAsC, indices, producer_tv->domain()->contiguity());
+  auto end_tv = consumer_tv->getComputeAtAxis(0).second;
+  auto running_tv = consumer_tv;
 
+  // ComputeAT TensorViews in order from consumer -> producer
+  std::deque<TensorView*> tv_stack;
+  tv_stack.push_front(producer_tv);
+
+  while (running_tv != end_tv) {
+    TORCH_INTERNAL_ASSERT(running_tv->hasComputeAt());
+    tv_stack.push_front(running_tv);
+    running_tv = running_tv->getComputeAtView();
+  }
+
+  tv_stack.push_front(end_tv);
+
+  // Intermediate IterDomain map from consumer -> producer
+  std::deque<std::unordered_map<IterDomain*, IterDomain*>> ID_maps_c2p;
+  for (size_t i = 0; i + 1 < tv_stack.size(); i++) {
+    auto c_tv = tv_stack[i];
+    auto p_tv = tv_stack[i + 1];
+
+    auto c2p_root_map =
+        TensorDomain::mapRootCtoP(c_tv->domain(), p_tv->domain());
+
+    {
+      // Remove entries in map where a broadcast ID maps to a non-broadcast ID
+      auto it = c2p_root_map.begin();
+      while (it != c2p_root_map.end()) {
+        auto entry = *it;
+        it++;
+        if (entry.first->isBroadcast() != entry.second->isBroadcast()) {
+          c2p_root_map.erase(entry.first);
+        }
+      }
+    }
+
+    BestEffortReplay replay(
+        p_tv->domain()->domain(), c_tv->domain()->domain(), c2p_root_map);
+
+    ID_maps_c2p.push_back(replay.getReplay());
+  }
+  std::deque<kir::ForLoop*> loop_copy(loops.begin(), loops.end());
+
+  std::unordered_map<IterDomain*, Val*> index_map;
+
+  while (tv_stack.size() > 1 && !ID_maps_c2p.empty()) {
+    auto tv = tv_stack.front();
+    tv_stack.pop_front();
+
+    auto td = tv->domain()->domain();
+    while (!loop_copy.empty() &&
+           std::find(td.begin(), td.end(), loop_copy.front()->iter_domain()) !=
+               td.end()) {
+      index_map[loop_copy.front()->iter_domain()] = loop_copy.front()->index();
+      loop_copy.pop_front();
+    }
+
+    IndexCompute index(tv->domain(), index_map);
+    auto updated_index_map = index.indexMap();
+
+    index_map = std::unordered_map<IterDomain*, Val*>();
+
+    auto to_producer_id_map = ID_maps_c2p.front();
+    ID_maps_c2p.pop_front();
+
+    // Convert map from consumer to producer
+    for (auto consumer_entry : updated_index_map) {
+      auto c_id = consumer_entry.first;
+      auto ind = consumer_entry.second;
+      if (to_producer_id_map.find(c_id) != to_producer_id_map.end()) {
+        index_map[to_producer_id_map.at(c_id)] = ind;
+      }
+    }
+  }
+
+  auto zero = new Int(0);
   auto root_dom = producer_tv->getMaybeRFactorDomain();
-
-  TORCH_INTERNAL_ASSERT(
-      root_indices.size() == root_dom.size(),
-      "Dimensionality error in code generator while computing indexing.");
+  std::vector<Val*> root_inds(root_dom.size(), zero);
+  for (size_t i = 0; i < root_dom.size(); i++) {
+    if (index_map.find(root_dom[i]) != index_map.end()) {
+      root_inds[i] = index_map.at(root_dom[i]);
+    }
+  }
 
   bool inner_most_dim_contig =
-      producer_tv->getRootDomain()[producer_tv->getRootDomain().size() - 1]
-              ->getIterType() == IterType::Iteration &&
-      producer_tv->domain()
-          ->contiguity()[producer_tv->getRootDomain().size() - 1];
+      root_dom[root_dom.size() - 1]->getIterType() == IterType::Iteration &&
+      producer_tv->domain()->contiguity()[root_dom.size() - 1];
 
   int64_t stride_i = 0;
   std::vector<Val*> strided_inds;
@@ -590,14 +671,14 @@ kir::TensorIndex* Index::getGlobalProducerIndex(
         root_dom[i]->getIterType() == IterType::BroadcastWithoutStride) {
       continue;
     } else if (i == root_dom.size() - 1 && inner_most_dim_contig) {
-      strided_inds.push_back(root_indices[i]);
-    } else if (root_indices[i]->isZeroInt()) {
+      strided_inds.push_back(root_inds[i]);
+    } else if (root_dom[i]->getIterType() == IterType::BroadcastWithStride) {
       stride_i++;
     } else {
       std::stringstream ss;
       ss << "T" << producer_tv->name() << ".stride[" << stride_i++ << "]";
       strided_inds.push_back(
-          mul(root_indices[i], new NamedScalar(ss.str(), DataType::Int)));
+          mul(root_inds[i], new NamedScalar(ss.str(), DataType::Int)));
     }
   }
 

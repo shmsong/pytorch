@@ -84,6 +84,15 @@ class IndexCompute : public BackwardVisitor {
   std::unordered_set<IterDomain*> contig_ids;
 
  public:
+  const std::unordered_map<IterDomain*, Val*> indexMap() const {
+    return index_map_;
+  }
+
+  // Propagate back from _td using initial_index_map
+  IndexCompute(
+      const TensorDomain* _td,
+      std::unordered_map<IterDomain*, Val*> initial_index_map);
+
   static std::vector<Val*> get(
       const TensorDomain* _td,
       const std::vector<Val*>& _indices,
