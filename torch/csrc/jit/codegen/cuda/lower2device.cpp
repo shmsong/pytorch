@@ -85,8 +85,11 @@ void GPULower::lower() {
   // them.
   LoopNestGenerator lng(fusion_, preds, sorted_exprs);
 
-  const auto unrolled_loops = UnrollPass::runPass(
-      fusion_, lng.loweredExprs(), lng.initExprs(), preds, p2c_root_map);
+  // TODO: I think we can get rid of lng.initExprs
+  const auto loops = lng.loweredExprs();
+
+  const auto unrolled_loops =
+      UnrollPass::runPass(fusion_, loops, lng.initExprs(), preds, p2c_root_map);
 
   const auto indexed_loops =
       IndexLowering::getIndexedExprs(fusion_, unrolled_loops, p2c_root_map);

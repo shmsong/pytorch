@@ -395,14 +395,28 @@ void IndexCompute::handle(Merge* merge) {
     return;
   }
 
-  if (inner_id->isBroadcast() && inner_id->extent()->isOneInt()) {
+  Val* inner_extent = nullptr;
+  if (extent_map_.find(inner_id) != extent_map_.end()) {
+    inner_extent = extent_map_.at(inner_id);
+  } else {
+    inner_extent = inner_id->extent();
+  }
+
+  Val* outer_extent = nullptr;
+  if (extent_map_.find(inner_id) != extent_map_.end()) {
+    outer_extent = extent_map_.at(inner_id);
+  } else {
+    outer_extent = inner_id->extent();
+  }
+
+  if (inner_id->isBroadcast() && inner_extent->isOneInt()) {
     index_map_[outer_id] = out_ind;
     index_map_[inner_id] = zero;
-  } else if (outer_id->isBroadcast() && outer_id->extent()->isOneInt()) {
+  } else if (outer_id->isBroadcast() && outer_extent->isOneInt()) {
     index_map_[outer_id] = zero;
     index_map_[inner_id] = out_ind;
   } else {
-    Val* I = inner_id->extent();
+    Val* I = inner_extent;
 
     Val* outer_ind = div(out_ind, I);
     Val* inner_ind = mod(out_ind, I);
@@ -428,8 +442,9 @@ void IndexCompute::handle(Expr* e) {
 // using TransformIter::runBackward;
 IndexCompute::IndexCompute(
     const TensorDomain* _td,
-    std::unordered_map<IterDomain*, Val*> initial_index_map)
-    : td_(_td), index_map_(initial_index_map) {
+    std::unordered_map<IterDomain*, Val*> initial_index_map,
+    const std::unordered_map<IterDomain*, Val*>& _extent_map)
+    : td_(_td), index_map_(initial_index_map), extent_map_(_extent_map) {
   const std::vector<Val*> domain_vals(
       td_->domain().begin(), td_->domain().end());
 
@@ -441,7 +456,7 @@ IndexCompute::IndexCompute(
     const std::vector<Val*>& indices,
     std::vector<bool> root_contiguity,
     bool ignore_rfactor)
-    : td_(_td) {
+    : td_(_td), extent_map_(std::unordered_map<IterDomain*, Val*>()) {
   contig_ids =
       ContigIDs::find(td_->domain(), td_->getRootDomain(), root_contiguity);
 
@@ -566,23 +581,30 @@ kir::TensorIndex* Index::getGlobalProducerIndex(
     TensorView* consumer_tv,
     const std::vector<kir::ForLoop*>& loops,
     const std::unordered_map<IterDomain*, IterDomain*>& p2c_root_map) {
-  // producer_tv->domain() is not replayed as the loop strucutre we were
-  // provided, so replay it to match consumer_tv which is.
+  // Replay producer to look like consumer so we can index on producer since our
+  // loop nests look like consumer
   auto producerAsC = TransformReplay::replayPasC(
                          producer_tv->domain(), consumer_tv->domain(), -1)
                          .first;
 
-  // Set producer_tv with the domain replayed as consumer to grab the right
-  // indices. The guard will reset the domain when this scope ends.
+  // Make the actual producer_tv look like consumer while we do the indexing
+  // math in this function
   ir_utils::TVDomainGuard domain_guard(producer_tv, producerAsC);
 
+  // What's the computeAt root tensor view in this operation
+  // This tensor is the terminating tensor in the computeAT dag from consumer
   auto end_tv = consumer_tv->getComputeAtAxis(0).second;
-  auto running_tv = consumer_tv;
 
-  // ComputeAT TensorViews in order from consumer -> producer
+  // grab all tensor views from producer_tv -> computeAtRoot
   std::deque<TensorView*> tv_stack;
+
+  // start with producer
   tv_stack.push_front(producer_tv);
 
+  // Then immediate consumer
+  auto running_tv = consumer_tv;
+
+  // Follow computeAt path until we hit end_tv
   while (running_tv != end_tv) {
     TORCH_INTERNAL_ASSERT(running_tv->hasComputeAt());
     tv_stack.push_front(running_tv);
@@ -591,41 +613,48 @@ kir::TensorIndex* Index::getGlobalProducerIndex(
 
   tv_stack.push_front(end_tv);
 
-  // Intermediate IterDomain map from consumer -> producer
+  // Go through our stack, and map the intermediate IterDomains from common
+  // transformations from consumer to producer
   std::deque<std::unordered_map<IterDomain*, IterDomain*>> ID_maps_c2p;
+
   for (size_t i = 0; i + 1 < tv_stack.size(); i++) {
     auto c_tv = tv_stack[i];
     auto p_tv = tv_stack[i + 1];
 
+    // Map root ID's from consumer to producer
     auto c2p_root_map =
         TensorDomain::mapRootCtoP(c_tv->domain(), p_tv->domain());
 
-    {
-      // Remove entries in map where a broadcast ID maps to a non-broadcast ID
-      auto it = c2p_root_map.begin();
-      while (it != c2p_root_map.end()) {
-        auto entry = *it;
-        it++;
-        if (entry.first->isBroadcast() != entry.second->isBroadcast()) {
-          c2p_root_map.erase(entry.first);
-        }
-      }
-    }
-
+    // Look for matching ID transformations in producer and consumer...
     BestEffortReplay replay(
         p_tv->domain()->domain(), c_tv->domain()->domain(), c2p_root_map);
 
+    // and grab the intermediate IterDomain map.
     ID_maps_c2p.push_back(replay.getReplay());
   }
+
+  // Grab a copy of the loop structure so we can consume it
   std::deque<kir::ForLoop*> loop_copy(loops.begin(), loops.end());
 
+  // Map from all IterDomain's to corresponding index as we process each tv in
+  // the stack
   std::unordered_map<IterDomain*, Val*> index_map;
 
+  // Want to map extents of IterationDomains backwards consumer <- producer.
+  // So when we index into a tensor the size of the IterDomains have based on
+  // what broadcast dimensions will be broadcasted to.
+  std::unordered_map<IterDomain*, Val*> extent_map;
+
+  // Go through the tv entire stack
   while (tv_stack.size() > 1 && !ID_maps_c2p.empty()) {
+    // Grab the TV
     auto tv = tv_stack.front();
     tv_stack.pop_front();
 
     auto td = tv->domain()->domain();
+
+    // Match loops to this TV if the loop matchis this TV's ID (could reduce
+    // complexity here)
     while (!loop_copy.empty() &&
            std::find(td.begin(), td.end(), loop_copy.front()->iter_domain()) !=
                td.end()) {
@@ -633,24 +662,46 @@ kir::TensorIndex* Index::getGlobalProducerIndex(
       loop_copy.pop_front();
     }
 
-    IndexCompute index(tv->domain(), index_map);
-    auto updated_index_map = index.indexMap();
+    // With indices mapped into this domain, and indices mapped into
+    // intermediate IterDomains try to continue the indexing computation.
+    IndexCompute index(tv->domain(), index_map, extent_map);
 
+    // Grab the newly mapped indices from continuing the index computation
+    auto computed_index_map = index.indexMap();
+
+    // Going to generate the index_map for the next TV
+    auto old_index_map = index_map;
     index_map = std::unordered_map<IterDomain*, Val*>();
 
+    // Going to generate the extent_map for the next TV
+    std::unordered_map<IterDomain*, Val*> old_extent_map = extent_map;
+    auto updated_extent_map = std::unordered_map<IterDomain*, Val*>();
+
+    // Grab intermediate map to map into next tensor view
     auto to_producer_id_map = ID_maps_c2p.front();
     ID_maps_c2p.pop_front();
 
-    // Convert map from consumer to producer
-    for (auto consumer_entry : updated_index_map) {
+    // Go through all indices in updated_index_map
+    for (auto consumer_entry : computed_index_map) {
       auto c_id = consumer_entry.first;
       auto ind = consumer_entry.second;
+
+      // Map the index onto an IterationDomain in the next TV
       if (to_producer_id_map.find(c_id) != to_producer_id_map.end()) {
-        index_map[to_producer_id_map.at(c_id)] = ind;
+        auto p_id = to_producer_id_map.at(c_id);
+
+        index_map[p_id] = ind;
+        if (old_extent_map.find(c_id) != old_extent_map.end()) {
+          extent_map[p_id] = old_extent_map.at(c_id);
+        } else {
+          extent_map[p_id] = c_id->extent();
+        }
       }
     }
   }
 
+  // Indices should now be mapped onto IterDomains in producer, so just grab
+  // and use them.
   auto zero = new Int(0);
   auto root_dom = producer_tv->getMaybeRFactorDomain();
   std::vector<Val*> root_inds(root_dom.size(), zero);

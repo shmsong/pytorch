@@ -79,6 +79,9 @@ class IndexCompute : public BackwardVisitor {
   std::unordered_map<IterDomain*, Val*> index_map_;
   // Indices we start with, returning this after we propagate back as root
   // indices
+
+  const std::unordered_map<IterDomain*, Val*> extent_map_;
+
   std::vector<Val*> indices_;
   // IDs that are a result of contiguous merges
   std::unordered_set<IterDomain*> contig_ids;
@@ -91,7 +94,8 @@ class IndexCompute : public BackwardVisitor {
   // Propagate back from _td using initial_index_map
   IndexCompute(
       const TensorDomain* _td,
-      std::unordered_map<IterDomain*, Val*> initial_index_map);
+      std::unordered_map<IterDomain*, Val*> initial_index_map,
+      const std::unordered_map<IterDomain*, Val*>& _extent_map);
 
   static std::vector<Val*> get(
       const TensorDomain* _td,
