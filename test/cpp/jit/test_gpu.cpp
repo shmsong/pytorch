@@ -2843,11 +2843,10 @@ void testGPU_FusionBranches() {
   at::Tensor t2 = at::randn({x, y}, options);
 
   torch::jit::fuser::cuda::FusionExecutor fe;
-  //fuser::cuda::scheduleFusion(&fusion, {t0, t1, t2});
   tv6->merge(0);
   tv6->split(0, 128);
   tv6->split(0, 4);
-  
+
   tv6->axis(0)->parallelize(ParallelType::BIDx);
 
   tv0->computeAt(tv6, 1);
