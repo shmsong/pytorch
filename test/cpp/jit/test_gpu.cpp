@@ -2860,6 +2860,7 @@ void testGPU_FusionBranches() {
   tv4->axis(-1)->parallelize(ParallelType::TIDx);
   tv5->axis(-2)->parallelize(ParallelType::Unroll);
   tv5->axis(-1)->parallelize(ParallelType::TIDx);
+  tv6->axis(-1)->parallelize(ParallelType::TIDx);
 
   fe.compileFusion(&fusion);
   auto outputs = fe.runFusion({t0, t1, t2});
@@ -2869,7 +2870,7 @@ void testGPU_FusionBranches() {
   auto t5 = t3.add(t2);
   auto t6 = t4.add(t5);
 
-  TORCH_CHECK(t4.allclose(outputs[0]));
+  TORCH_CHECK(t6.allclose(outputs[0]));
 }
 
 void testGPU_FusionSimpleBCast() {
