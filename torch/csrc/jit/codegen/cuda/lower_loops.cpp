@@ -63,14 +63,16 @@ Expr* LoopNestGenerator::pushAlloc(TensorView* tv) {
   if (alloc_dims.size() == 0) {
     size = new kir::Int(1);
   } else {
-    size = alloc_dims[0];
+    size = kir::lowerValue(alloc_dims[0]);
     for (size_t i = 1; i < alloc_dims.size(); i++) {
-      size = mul(size, alloc_dims[i]);
+      size = kir::mulExpr(size, kir::lowerValue(alloc_dims[i]));
     }
   }
 
   // Create the allocation node
-  kir::Allocate* alloc = new kir::Allocate(tv, tv->getMemoryType(), size);
+  const auto lowered_tv = new kir::TensorView(tv);
+  const auto alloc =
+      new kir::Allocate(lowered_tv, lowered_tv->getMemoryType(), size);
 
   // Place the allocation
   if (alloc_pos == 0) {
@@ -264,7 +266,8 @@ void LoopNestGenerator::handle(Expr* expr) {
           " cannot lower ",
           out->getValType().value());
 
-      pushBack(new kir::Allocate(out, MemoryType::Local, new kir::Int(1)));
+      pushBack(new kir::Allocate(
+          kir::lowerValue(out), MemoryType::Local, new kir::Int(1)));
     }
     pushBack(expr);
     return;
