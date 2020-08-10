@@ -767,10 +767,9 @@ generateIndexAndExtentMap(
   // Go through the tv entire stack
   while (!tv_stack.empty()) {
     // Grab the TV
-    auto tv = tv_stack.front();
+    tv = tv_stack.front();
     tv_stack.pop_front();
-
-    auto td = tv->domain()->domain();
+    td = tv->domain()->domain();
 
     std::unordered_map<IterDomain*, Val*> new_indices;
 
@@ -1061,58 +1060,67 @@ kir::TensorIndex* Index::getGlobalConsumerIndex(
 // Consumer index for either shared or local memory
 kir::TensorIndex* Index::getConsumerIndex_impl(
     TensorView* consumer_tv,
-    const std::vector<kir::ForLoop*>& active_loops,
+    const std::vector<kir::ForLoop*>& loops,
     const std::unordered_map<IterDomain*, IterDomain*>& p2c_root_map) {
-  auto domain_indices =
-      loop_utils::getIndicesForTV(consumer_tv, active_loops, p2c_root_map);
-  auto domain_ranges = loop_utils::getRangesForTV(consumer_tv, active_loops);
+  // grab all tensor views from producer_tv <- computeAtRoot
+  std::deque<TensorView*> tv_stack = getComputeAtTVStackFrom(consumer_tv);
+
+  std::unordered_map<kir::ForLoop*, Val*> loop_to_ind_map =
+      indexMapFromTV(consumer_tv, loops);
+
+  auto index_and_extent_map = generateIndexAndExtentMap(
+      tv_stack,
+      std::deque<kir::ForLoop*>(loops.begin(), loops.end()),
+      loop_to_ind_map);
+
+  auto index_map = index_and_extent_map.first;
+  auto extent_map = index_and_extent_map.second;
+
+  // Indices should now be mapped onto IterDomains in producer, so just grab
+  // and use them.
+  auto zero = new Int(0);
 
   auto root_dom = consumer_tv->getMaybeRFactorDomain();
 
-  std::vector<Val*> root_indices = IndexCompute::get(
-      consumer_tv->domain(),
-      domain_indices,
-      consumer_tv->domain()->contiguity());
-
-  TORCH_INTERNAL_ASSERT(
-      root_indices.size() == root_dom.size(),
-      "Dimensionality error in code generator while computing indexing.");
-
-  std::vector<Val*> root_ranges = RangeCompute::get(
-      consumer_tv->domain(),
-      domain_ranges,
-      consumer_tv->domain()->contiguity());
-
-  TORCH_INTERNAL_ASSERT(
-      root_ranges.size() == root_dom.size(),
-      "Dimensionality error in code generator while computing indexing.");
-
   std::vector<Val*> strided_inds;
   for (size_t i = 0; i < root_dom.size(); i++) {
-    if (root_dom[i]->isReduction() ||
-        root_dom[i]->getIterType() == IterType::BroadcastWithoutStride) {
+    if (root_dom[i]->isReduction() || root_dom[i]->isBroadcast()) {
       continue;
-    } else if (root_indices[i]->isZeroInt() && root_ranges[i]->isZeroInt()) {
+    }
+
+    TORCH_INTERNAL_ASSERT(index_map.find(root_dom[i]) != index_map.end());
+    auto root_ind_i = index_map.at(root_dom[i]);
+
+    if (root_ind_i->isZeroInt()) {
       continue;
-    } else if (root_indices[i]->isZeroInt()) {
-      continue;
-    } else {
-      Val* stride = nullptr;
-      for (size_t j = i + 1; j < root_ranges.size(); j++) {
-        if (!root_ranges[j]->isZeroInt() && !root_dom[j]->isBroadcast() &&
-            !root_dom[j]->isReduction()) {
-          if (stride == nullptr) {
-            stride = root_ranges[j];
-          } else {
-            stride = mul(stride, root_ranges[j]);
-          }
+    }
+
+    // Compute striding for this index.
+    Val* stride = nullptr;
+    for (size_t j = i + 1; j < root_dom.size(); j++) {
+      if (root_dom[j]->isBroadcast() || root_dom[j]->isReduction()) {
+        continue;
+      }
+
+      TORCH_INTERNAL_ASSERT(
+          index_map.find(root_dom[j]) != index_map.end() &&
+          extent_map.find(root_dom[j]) != extent_map.end());
+      auto root_ind_j = index_map.at(root_dom[j]);
+      auto root_ext_j = extent_map.at(root_dom[j]);
+
+      if (!root_ind_j->isZeroInt()) {
+        if (stride == nullptr) {
+          stride = root_ext_j;
+        } else {
+          stride = mul(stride, root_ext_j);
         }
       }
-      if (stride != nullptr) {
-        strided_inds.push_back(mul(root_indices[i], stride));
-      } else {
-        strided_inds.push_back(root_indices[i]);
-      }
+    }
+
+    if (stride != nullptr) {
+      strided_inds.push_back(mul(root_ind_i, stride));
+    } else {
+      strided_inds.push_back(root_ind_i);
     }
   }
 
