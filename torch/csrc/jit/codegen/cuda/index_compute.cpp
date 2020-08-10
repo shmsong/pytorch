@@ -705,12 +705,13 @@ void print_set(std::unordered_set<T1> set) {
   std::cout << " }" << std::endl;
 }
 
-std::unordered_map<IterDomain*, Val*> generateIndexMap(
+std::pair<
+    std::unordered_map<IterDomain*, Val*>,
+    std::unordered_map<IterDomain*, Val*>>
+generateIndexAndExtentMap(
     std::deque<TensorView*> tv_stack,
     std::deque<kir::ForLoop*> loops,
     const std::unordered_map<kir::ForLoop*, Val*>& loop_to_ind_map) {
-  bool is_t4 = tv_stack.back()->name() == 4;
-
   // Go through our stack, and map the intermediate IterDomains from common
   // transformations from consumer to producer
   std::deque<std::unordered_map<IterDomain*, IterDomain*>> ID_maps_c2p;
@@ -732,7 +733,9 @@ std::unordered_map<IterDomain*, Val*> generateIndexMap(
   }
 
   if (tv_stack.empty())
-    return std::unordered_map<IterDomain*, Val*>();
+    return std::make_pair(
+        std::unordered_map<IterDomain*, Val*>(),
+        std::unordered_map<IterDomain*, Val*>());
 
   // Setup initial IndexCompute:
   auto tv = tv_stack.front();
@@ -789,7 +792,7 @@ std::unordered_map<IterDomain*, Val*> generateIndexMap(
       ID_maps_c2p.pop_front();
     }
   }
-  return index_compute.indexMap();
+  return std::make_pair(index_compute.indexMap(), index_compute.extentMap());
 }
 
 } // namespace
@@ -820,10 +823,11 @@ kir::TensorIndex* Index::getGlobalProducerIndex(
       std::inserter(loop_to_ind_map, loop_to_ind_map.begin()),
       [](kir::ForLoop* fl) { return std::make_pair(fl, fl->index()); });
 
-  auto index_map = generateIndexMap(
-      tv_stack,
-      std::deque<kir::ForLoop*>(loops.begin(), loops.end()),
-      loop_to_ind_map);
+  auto index_map = generateIndexAndExtentMap(
+                       tv_stack,
+                       std::deque<kir::ForLoop*>(loops.begin(), loops.end()),
+                       loop_to_ind_map)
+                       .first;
 
   // Indices should now be mapped onto IterDomains in producer, so just grab
   // and use them.
@@ -848,17 +852,17 @@ kir::TensorIndex* Index::getGlobalProducerIndex(
     }
 
     TORCH_INTERNAL_ASSERT(index_map.find(root_dom[i]) != index_map.end());
-    auto ind = index_map.at(root_dom[i]);
+    auto root_ind = index_map.at(root_dom[i]);
 
     if (i == root_dom.size() - 1 && inner_most_dim_contig) {
-      strided_inds.push_back(ind);
-    } else if (ind->isZeroInt()) {
+      strided_inds.push_back(root_ind);
+    } else if (root_ind->isZeroInt()) {
       stride_i++;
     } else {
       std::stringstream ss;
       ss << "T" << producer_tv->name() << ".stride[" << stride_i++ << "]";
       strided_inds.push_back(
-          mul(ind, new NamedScalar(ss.str(), DataType::Int)));
+          mul(root_ind, new NamedScalar(ss.str(), DataType::Int)));
     }
   }
 
@@ -889,10 +893,6 @@ std::unordered_map<kir::ForLoop*, Val*> indexMapFromTV(
   std::unordered_map<kir::ForLoop*, Val*> loop_to_ind_map;
 
   for (auto loop : loops) {
-    if (!within_alloc && loop == alloc_loop) {
-      within_alloc = true;
-    }
-
     if (!within_alloc) {
       loop_to_ind_map[loop] = zero;
     } else if (loop->iter_domain()->isBlockDim() && is_shared) {
@@ -901,6 +901,10 @@ std::unordered_map<kir::ForLoop*, Val*> indexMapFromTV(
       loop_to_ind_map[loop] = zero;
     } else {
       loop_to_ind_map[loop] = loop->index();
+    }
+
+    if (!within_alloc && loop == alloc_loop) {
+      within_alloc = true;
     }
   }
   return loop_to_ind_map;
@@ -923,78 +927,66 @@ kir::TensorIndex* Index::getProducerIndex_impl(
   // indices. The guard will reset the domain when this scope ends.
   ir_utils::TVDomainGuard domain_guard(producer_tv, producerAsC);
 
-  // // grab all tensor views from producer_tv <- computeAtRoot
-  // std::deque<TensorView*> tv_stack = getComputeAtTVStackFrom(consumer_tv);
-  // tv_stack.push_back(producer_tv);
+  // grab all tensor views from producer_tv <- computeAtRoot
+  std::deque<TensorView*> tv_stack = getComputeAtTVStackFrom(consumer_tv);
+  tv_stack.push_back(producer_tv);
 
-  // std::unordered_map<kir::ForLoop*, Val*> loop_to_ind_map =
-  // indexMapFromTV(producer_tv, loops);
+  std::unordered_map<kir::ForLoop*, Val*> loop_to_ind_map =
+      indexMapFromTV(producer_tv, loops);
 
-  // auto index_map = generateIndexMap(
-  //     tv_stack,
-  //     std::deque<kir::ForLoop*>(loops.begin(), loops.end()),
-  //     loop_to_ind_map);
+  auto index_and_extent_map = generateIndexAndExtentMap(
+      tv_stack,
+      std::deque<kir::ForLoop*>(loops.begin(), loops.end()),
+      loop_to_ind_map);
+  auto index_map = index_and_extent_map.first;
+  auto extent_map = index_and_extent_map.second;
 
-  // // Indices should now be mapped onto IterDomains in producer, so just grab
-  // // and use them.
-  // auto zero = new Int(0);
-
-  // auto root_dom = producer_tv->getRootDomain();
-
-  auto domain_indices = loop_utils::getIndicesForTV(
-      producer_tv,
-      loops,
-      p2c_root_map,
-      false,
-      loop_utils::mapIdPtoC(producer_tv, consumer_tv));
-
-  auto domain_ranges = loop_utils::getRangesForTV(
-      producer_tv, loops, loop_utils::mapIdPtoC(producer_tv, consumer_tv));
+  // Indices should now be mapped onto IterDomains in producer, so just grab
+  // and use them.
+  auto zero = new Int(0);
 
   auto root_dom = producer_tv->getMaybeRFactorDomain();
 
-  // TODO: Remove contiguity entry from IndexCompute::get
-  std::vector<Val*> root_indices = IndexCompute::get(
-      producerAsC, domain_indices, producer_tv->domain()->contiguity());
-
-  TORCH_INTERNAL_ASSERT(
-      root_indices.size() == root_dom.size(),
-      "Dimensionality error in code generator while computing indexing.");
-
-  std::vector<Val*> root_ranges = RangeCompute::get(
-      producerAsC, domain_ranges, producer_tv->domain()->contiguity());
-
-  TORCH_INTERNAL_ASSERT(
-      root_ranges.size() == root_dom.size(),
-      "Dimensionality error in code generator while computing indexing.");
-
   std::vector<Val*> strided_inds;
+
   for (size_t i = 0; i < root_dom.size(); i++) {
-    if (root_dom[i]->isReduction() ||
-        root_dom[i]->getIterType() == IterType::BroadcastWithoutStride) {
+    if (root_dom[i]->isReduction() || root_dom[i]->isBroadcast()) {
       continue;
-    } else if (root_indices[i]->isZeroInt() && root_ranges[i]->isZeroInt()) {
+    }
+
+    TORCH_INTERNAL_ASSERT(index_map.find(root_dom[i]) != index_map.end());
+    auto root_ind_i = index_map.at(root_dom[i]);
+
+    if (root_ind_i->isZeroInt()) {
       continue;
-    } else if (root_indices[i]->isZeroInt()) {
-      continue;
-    } else {
-      Val* stride = nullptr;
-      for (size_t j = i + 1; j < root_ranges.size(); j++) {
-        if (!root_ranges[j]->isZeroInt() && !root_dom[j]->isBroadcast() &&
-            !root_dom[j]->isReduction()) {
-          if (stride == nullptr) {
-            stride = root_ranges[j];
-          } else {
-            stride = mul(stride, root_ranges[j]);
-          }
+    }
+
+    // Compute striding for this index.
+    Val* stride = nullptr;
+    for (size_t j = i + 1; j < root_dom.size(); j++) {
+      if (root_dom[j]->isBroadcast() || root_dom[j]->isReduction()) {
+        continue;
+      }
+
+      TORCH_INTERNAL_ASSERT(
+          index_map.find(root_dom[j]) != index_map.end() &&
+          extent_map.find(root_dom[j]) != extent_map.end());
+      auto root_ind_j = index_map.at(root_dom[j]);
+      auto root_ext_j = extent_map.at(root_dom[j]);
+
+      if (!root_ind_j->isZeroInt()) {
+        if (stride == nullptr) {
+          stride = root_ext_j;
+        } else {
+          stride = mul(stride, root_ext_j);
         }
       }
+    }
 
-      if (stride != nullptr) {
-        strided_inds.push_back(mul(root_indices[i], stride));
-      } else {
-        strided_inds.push_back(root_indices[i]);
-      }
+    if (stride != nullptr) {
+      strided_inds.push_back(mul(root_ind_i, stride));
+    } else {
+      strided_inds.push_back(root_ind_i);
     }
   }
 
@@ -1018,10 +1010,11 @@ kir::TensorIndex* Index::getGlobalConsumerIndex(
       std::inserter(loop_to_ind_map, loop_to_ind_map.begin()),
       [](kir::ForLoop* fl) { return std::make_pair(fl, fl->index()); });
 
-  auto index_map = generateIndexMap(
-      tv_stack,
-      std::deque<kir::ForLoop*>(loops.begin(), loops.end()),
-      loop_to_ind_map);
+  auto index_map = generateIndexAndExtentMap(
+                       tv_stack,
+                       std::deque<kir::ForLoop*>(loops.begin(), loops.end()),
+                       loop_to_ind_map)
+                       .first;
 
   // Indices should now be mapped onto IterDomains in consumer, so just grab
   // and use them.
