@@ -1,4 +1,4 @@
-// #if defined(USE_CUDA)
+#if defined(USE_CUDA)
 
 #include <test/cpp/jit/test_base.h>
 
@@ -3015,11 +3015,6 @@ void testGPU_FusionSimpleBCast() {
     tv0->computeAt(tv3, -1);
     tv1->computeAt(tv3, -1);
 
-    // fusion.printMath();
-    // fusion.printKernel();
-
-    // GPULower lower(&fusion);
-
     tv3->axis(0)->parallelize(ParallelType::BIDx);
     tv3->axis(-1)->parallelize(ParallelType::TIDx);
     tv3->axis(-2)->parallelize(ParallelType::Unroll);
@@ -3046,7 +3041,7 @@ void testGPU_FusionSimpleBCast() {
     Fusion fusion;
     FusionGuard fg(&fusion);
 
-    constexpr int m = 2, n = 3, k = 4;
+    constexpr int m = 2, k = 3, n = 4;
 
     auto zero = new Int(0);
     auto M = new IterDomain(zero, new Int(m));
@@ -5710,4 +5705,4 @@ void testGPU_FusionThreadPredicate() {
 } // namespace jit
 } // namespace torch
 
-// #endif // #if defined(USE_CUDA)
+#endif // #if defined(USE_CUDA)
