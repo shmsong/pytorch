@@ -352,14 +352,35 @@ void IndexCompute::handle(Split* split) {
   bool outer_zero = outer_ind->isZeroInt();
   bool inner_zero = inner_ind->isZeroInt();
 
+  bool outer_bcast = outer_id->isBroadcast();
+  bool inner_bcast = inner_id->isBroadcast();
+
+  // Zero inds because a dim is bcast is part of normal traversal, if it's not
+  // bcast but is zero ind then it's from local or smem. In the latter case we
+  // want to propagate this property.
+  if ((outer_zero && !outer_bcast) || (inner_zero && !inner_bcast) ||
+      hasZeroMerged(inner_id) || hasZeroMerged(outer_id)) {
+    zero_merged_in_.emplace(in_id);
+  } else {
+    // Maybe clear in_id as it could have been mapped over from another
+    // IndexCompute. Uncertain if this is needed but seems to be safe.
+    if (hasZeroMerged(in_id)) {
+      zero_merged_in_.erase(in_id);
+    }
+  }
+
   if (outer_zero && inner_zero) {
     index_map_[in_id] = new Int(0);
   } else if (outer_zero) {
     index_map_[in_id] = inner_ind;
+    zero_merged_in_.emplace(in_id);
+    extent_map_[in_id] = getExtent(inner_id);
   } else if (inner_zero) {
     index_map_[in_id] = outer_ind;
+    zero_merged_in_.emplace(in_id);
+    extent_map_[in_id] = getExtent(outer_id);
   } else {
-    index_map_[in_id] = add(mul(outer_ind, split->factor()), inner_ind);
+    index_map_[in_id] = add(mul(outer_ind, getExtent(inner_id)), inner_ind);
   }
 }
 
@@ -373,14 +394,18 @@ void IndexCompute::handle(Merge* merge) {
     return;
 
   auto out_ind = out_it->second;
+
   auto zero = new Int(0);
+
   if (out_ind->isZeroInt()) {
     index_map_[outer_id] = zero;
     index_map_[inner_id] = zero;
+    extent_map_[outer_id] = zero;
+    extent_map_[inner_id] = zero;
     return;
   }
 
-  if (contig_ids.find(out_id) != contig_ids.end()) {
+  if (!hasZeroMerged(out_id) && contig_ids.find(out_id) != contig_ids.end()) {
     auto input_ids =
         ir_utils::iterDomainInputsOfOrderedAs({out_id}, td_->getRootDomain());
 
@@ -395,26 +420,31 @@ void IndexCompute::handle(Merge* merge) {
     return;
   }
 
-  Val* inner_extent = nullptr;
-  if (extent_map_.find(inner_id) != extent_map_.end()) {
-    inner_extent = extent_map_.at(inner_id);
-  } else {
-    inner_extent = inner_id->extent();
-  }
-
-  Val* outer_extent = nullptr;
-  if (extent_map_.find(inner_id) != extent_map_.end()) {
-    outer_extent = extent_map_.at(inner_id);
-  } else {
-    outer_extent = inner_id->extent();
-  }
+  Val* inner_extent = getExtent(inner_id);
+  Val* outer_extent = getExtent(outer_id);
 
   if (inner_id->isBroadcast() && inner_extent->isOneInt()) {
     index_map_[outer_id] = out_ind;
     index_map_[inner_id] = zero;
+
+    extent_map_[outer_id] = getExtent(out_id);
+
   } else if (outer_id->isBroadcast() && outer_extent->isOneInt()) {
     index_map_[outer_id] = zero;
+
     index_map_[inner_id] = out_ind;
+    extent_map_[inner_id] = getExtent(out_id);
+
+  } else if (hasZeroMerged(out_id)) {
+    index_map_[inner_id] = out_ind;
+    extent_map_[inner_id] = getExtent(out_id);
+
+    index_map_[outer_id] = zero;
+    extent_map_[outer_id] = zero;
+
+    zero_merged_in_.emplace(inner_id);
+    zero_merged_in_.emplace(outer_id);
+
   } else {
     Val* I = inner_extent;
 
@@ -442,13 +472,29 @@ void IndexCompute::handle(Expr* e) {
 // using TransformIter::runBackward;
 IndexCompute::IndexCompute(
     const TensorDomain* _td,
-    std::unordered_map<IterDomain*, Val*> initial_index_map,
-    const std::unordered_map<IterDomain*, Val*>& _extent_map)
-    : td_(_td), index_map_(initial_index_map), extent_map_(_extent_map) {
+    const std::unordered_map<IterDomain*, Val*>& initial_index_map,
+    const std::unordered_map<IterDomain*, Val*>& _extent_map,
+    const std::unordered_set<IterDomain*>& _zero_merged_in)
+    : td_(_td),
+      index_map_(initial_index_map),
+      extent_map_(_extent_map),
+      zero_merged_in_(_zero_merged_in) {
   const std::vector<Val*> domain_vals(
       td_->domain().begin(), td_->domain().end());
 
   traverseFrom(td_->fusion(), domain_vals, false);
+}
+
+Val* IndexCompute::getExtent(IterDomain* id) {
+  if (extent_map_.find(id) != extent_map_.end()) {
+    return extent_map_.at(id);
+  } else {
+    return id->extent();
+  }
+}
+
+bool IndexCompute::hasZeroMerged(IterDomain* id) {
+  return zero_merged_in_.find(id) != zero_merged_in_.end();
 }
 
 IndexCompute::IndexCompute(
@@ -512,6 +558,33 @@ IndexCompute::IndexCompute(
       indices_.push_back(it->second);
     }
   }
+}
+
+IndexCompute IndexCompute::updateIndexCompute(
+    const TensorDomain* new_td,
+    std::unordered_map<IterDomain*, IterDomain*> id_map,
+    std::unordered_map<IterDomain*, Val*> new_index_entries) {
+  std::unordered_map<IterDomain*, Val*> updated_index_map(new_index_entries);
+  std::unordered_map<IterDomain*, Val*> updated_extent_map;
+  std::unordered_set<IterDomain*> updated_zero_merged_in;
+
+  for (auto id_entry : id_map) {
+    IterDomain* prev_id = id_entry.first;
+    IterDomain* new_id = id_entry.second;
+
+    if (index_map_.find(prev_id) != index_map_.end()) {
+      updated_index_map[new_id] = index_map_.at(prev_id);
+    }
+
+    updated_extent_map[new_id] = getExtent(prev_id);
+
+    if (zero_merged_in_.find(prev_id) != zero_merged_in_.end()) {
+      updated_zero_merged_in.emplace(new_id);
+    }
+  }
+
+  return IndexCompute(
+      new_td, updated_index_map, updated_extent_map, updated_zero_merged_in);
 }
 
 std::vector<Val*> IndexCompute::get(
@@ -601,10 +674,43 @@ std::deque<TensorView*> getComputeAtTVStackFrom(TensorView* from_tv) {
   return tv_stack;
 }
 
+template <typename T1, typename T2>
+void print_map(std::unordered_map<T1, T2> map) {
+  std::cout << "{ " << std::endl;
+  for (auto entry : map) {
+    std::cout << "  ( " << entry.first << " -> " << entry.second << " ) "
+              << std::endl;
+  }
+  std::cout << " }" << std::endl;
+}
+
+template <typename T1, typename T2>
+void print_map_inline(std::unordered_map<T1, T2> map) {
+  IRPrinter print(std::cout);
+  std::cout << "{ " << std::endl;
+  for (auto entry : map) {
+    std::cout << "  ( " << entry.first << " -> ";
+    print.print_inline(entry.second);
+    std::cout << " ) " << std::endl;
+  }
+  std::cout << " }" << std::endl;
+}
+
+template <typename T1>
+void print_set(std::unordered_set<T1> set) {
+  std::cout << "{ " << std::endl;
+  for (auto entry : set) {
+    std::cout << "  ( " << entry << " ) " << std::endl;
+  }
+  std::cout << " }" << std::endl;
+}
+
 std::unordered_map<IterDomain*, Val*> generateIndexMap(
     std::deque<TensorView*> tv_stack,
     std::deque<kir::ForLoop*> loops,
     const std::unordered_map<kir::ForLoop*, Val*>& loop_to_ind_map) {
+  bool is_t4 = tv_stack.back()->name() == 4;
+
   // Go through our stack, and map the intermediate IterDomains from common
   // transformations from consumer to producer
   std::deque<std::unordered_map<IterDomain*, IterDomain*>> ID_maps_c2p;
@@ -625,14 +731,35 @@ std::unordered_map<IterDomain*, Val*> generateIndexMap(
     ID_maps_c2p.push_back(replay.getReplay());
   }
 
+  if (tv_stack.empty())
+    return std::unordered_map<IterDomain*, Val*>();
+
+  // Setup initial IndexCompute:
+  auto tv = tv_stack.front();
+  tv_stack.pop_front();
+  auto td = tv->domain()->domain();
+
   // Map from all IterDomain's to corresponding index as we process each tv in
   // the stack
-  std::unordered_map<IterDomain*, Val*> index_map;
+  std::unordered_map<IterDomain*, Val*> initial_index_map;
 
-  // Want to map extents of IterationDomains backwards consumer <- producer.
-  // So when we index into a tensor the size of the IterDomains have based on
-  // what broadcast dimensions will be broadcasted to.
-  std::unordered_map<IterDomain*, Val*> extent_map;
+  // Match loops to this TV if the loop matchis this TV's ID (could reduce
+  // complexity here)
+  while (!loops.empty() &&
+         std::find(td.begin(), td.end(), loops.front()->iter_domain()) !=
+             td.end()) {
+    TORCH_INTERNAL_ASSERT(
+        loop_to_ind_map.find(loops.front()) != loop_to_ind_map.end());
+    initial_index_map[loops.front()->iter_domain()] =
+        loop_to_ind_map.at(loops.front());
+    loops.pop_front();
+  }
+
+  IndexCompute index_compute(
+      tv->domain(),
+      initial_index_map,
+      std::unordered_map<IterDomain*, Val*>(),
+      std::unordered_set<IterDomain*>());
 
   // Go through the tv entire stack
   while (!tv_stack.empty()) {
@@ -642,6 +769,8 @@ std::unordered_map<IterDomain*, Val*> generateIndexMap(
 
     auto td = tv->domain()->domain();
 
+    std::unordered_map<IterDomain*, Val*> new_indices;
+
     // Match loops to this TV if the loop matchis this TV's ID (could reduce
     // complexity here)
     while (!loops.empty() &&
@@ -649,53 +778,18 @@ std::unordered_map<IterDomain*, Val*> generateIndexMap(
                td.end()) {
       TORCH_INTERNAL_ASSERT(
           loop_to_ind_map.find(loops.front()) != loop_to_ind_map.end());
-      index_map[loops.front()->iter_domain()] =
+      new_indices[loops.front()->iter_domain()] =
           loop_to_ind_map.at(loops.front());
       loops.pop_front();
     }
 
-    // With indices mapped into this domain, and indices mapped into
-    // intermediate IterDomains try to continue the indexing computation.
-    IndexCompute index(tv->domain(), index_map, extent_map);
-
-    if (ID_maps_c2p.empty()) {
-      index_map = index.indexMap();
-    } else {
-      // Grab the newly mapped indices from continuing the index computation
-      auto computed_index_map = index.indexMap();
-
-      // Going to generate the index_map for the next TV
-      auto old_index_map = index_map;
-      index_map = std::unordered_map<IterDomain*, Val*>();
-
-      // Going to generate the extent_map for the next TV
-      std::unordered_map<IterDomain*, Val*> old_extent_map = extent_map;
-      auto updated_extent_map = std::unordered_map<IterDomain*, Val*>();
-
-      // Grab intermediate map to map into next tensor view
-      auto to_producer_id_map = ID_maps_c2p.front();
+    if (!ID_maps_c2p.empty()) {
+      index_compute = index_compute.updateIndexCompute(
+          tv->domain(), ID_maps_c2p.front(), new_indices);
       ID_maps_c2p.pop_front();
-
-      // Go through all indices in updated_index_map
-      for (auto consumer_entry : computed_index_map) {
-        auto c_id = consumer_entry.first;
-        auto ind = consumer_entry.second;
-
-        // Map the index onto an IterationDomain in the next TV
-        if (to_producer_id_map.find(c_id) != to_producer_id_map.end()) {
-          auto p_id = to_producer_id_map.at(c_id);
-
-          index_map[p_id] = ind;
-          if (old_extent_map.find(c_id) != old_extent_map.end()) {
-            extent_map[p_id] = old_extent_map.at(c_id);
-          } else {
-            extent_map[p_id] = c_id->extent();
-          }
-        }
-      }
     }
   }
-  return index_map;
+  return index_compute.indexMap();
 }
 
 } // namespace
@@ -735,7 +829,7 @@ kir::TensorIndex* Index::getGlobalProducerIndex(
   // and use them.
   auto zero = new Int(0);
 
-  auto root_dom = producer_tv->getRootDomain();
+  auto root_dom = producer_tv->getMaybeRFactorDomain();
 
   bool inner_most_dim_contig =
       root_dom[root_dom.size() - 1]->getIterType() == IterType::Iteration &&
@@ -774,6 +868,45 @@ kir::TensorIndex* Index::getGlobalProducerIndex(
   return new kir::TensorIndex(producer_tv, strided_inds);
 }
 
+namespace {
+
+std::unordered_map<kir::ForLoop*, Val*> indexMapFromTV(
+    TensorView* tv,
+    const std::vector<kir::ForLoop*>& loops) {
+  auto alloc_point = loop_utils::getAllocPoint(tv, loops);
+  auto alloc_loop = alloc_point.first;
+
+  bool within_alloc = false;
+  if (alloc_loop == nullptr) {
+    within_alloc = true;
+  }
+
+  Val* zero = new Int(0);
+
+  bool is_shared = tv->getMemoryType() == MemoryType::Shared;
+  bool is_local = tv->getMemoryType() == MemoryType::Local;
+
+  std::unordered_map<kir::ForLoop*, Val*> loop_to_ind_map;
+
+  for (auto loop : loops) {
+    if (!within_alloc && loop == alloc_loop) {
+      within_alloc = true;
+    }
+
+    if (!within_alloc) {
+      loop_to_ind_map[loop] = zero;
+    } else if (loop->iter_domain()->isBlockDim() && is_shared) {
+      loop_to_ind_map[loop] = zero;
+    } else if (loop->iter_domain()->isThread() && is_local) {
+      loop_to_ind_map[loop] = zero;
+    } else {
+      loop_to_ind_map[loop] = loop->index();
+    }
+  }
+  return loop_to_ind_map;
+}
+} // namespace
+
 // Producer index for either shared or local memory
 kir::TensorIndex* Index::getProducerIndex_impl(
     TensorView* producer_tv,
@@ -789,6 +922,24 @@ kir::TensorIndex* Index::getProducerIndex_impl(
   // Set producer_tv with the domain replayed as consumer to grab the right
   // indices. The guard will reset the domain when this scope ends.
   ir_utils::TVDomainGuard domain_guard(producer_tv, producerAsC);
+
+  // // grab all tensor views from producer_tv <- computeAtRoot
+  // std::deque<TensorView*> tv_stack = getComputeAtTVStackFrom(consumer_tv);
+  // tv_stack.push_back(producer_tv);
+
+  // std::unordered_map<kir::ForLoop*, Val*> loop_to_ind_map =
+  // indexMapFromTV(producer_tv, loops);
+
+  // auto index_map = generateIndexMap(
+  //     tv_stack,
+  //     std::deque<kir::ForLoop*>(loops.begin(), loops.end()),
+  //     loop_to_ind_map);
+
+  // // Indices should now be mapped onto IterDomains in producer, so just grab
+  // // and use them.
+  // auto zero = new Int(0);
+
+  // auto root_dom = producer_tv->getRootDomain();
 
   auto domain_indices = loop_utils::getIndicesForTV(
       producer_tv,
@@ -876,7 +1027,7 @@ kir::TensorIndex* Index::getGlobalConsumerIndex(
   // and use them.
   auto zero = new Int(0);
 
-  auto root_dom = consumer_tv->getRootDomain();
+  auto root_dom = consumer_tv->getMaybeRFactorDomain();
 
   bool inner_most_dim_contig =
       root_dom[root_dom.size() - 1]->getIterType() == IterType::Iteration &&
