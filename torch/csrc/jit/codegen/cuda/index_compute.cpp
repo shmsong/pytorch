@@ -29,41 +29,14 @@ class ContigIDs : public OptInDispatch {
 
   // Mark if ids are result of contigous merges
   std::unordered_set<IterDomain*> contig_ids;
+  // Given contiguous domain, return all iter domains within its history.
+  std::unordered_map<IterDomain*, std::unordered_set<IterDomain*>>
+      within_contig_ids;
   const std::vector<IterDomain*>& root_domain_;
   const std::vector<bool>& root_contiguity_;
   std::unordered_map<IterDomain*, bool> is_contig_root;
 
   ContigIDs() = delete;
-
-  ContigIDs(
-      const std::vector<IterDomain*>& ids,
-      const std::vector<IterDomain*>& _root_domain,
-      const std::vector<bool>& _root_contiguity)
-      : root_domain_(_root_domain), root_contiguity_(_root_contiguity) {
-    if (ids.empty()) {
-      return;
-    }
-
-    TORCH_INTERNAL_ASSERT(
-        root_domain_.size() == root_contiguity_.size(),
-        "Arguments don't match ",
-        root_domain_.size(),
-        " != ",
-        root_contiguity_.size());
-
-    for (size_t i = 0; i < root_domain_.size(); i++) {
-      if (root_contiguity_[i]) {
-        contig_ids.emplace(root_domain_[i]);
-      }
-      is_contig_root[root_domain_[i]] = root_contiguity_[i];
-    }
-
-    auto exprs = ExprSort::getExprs(ids[0]->fusion(), {ids.begin(), ids.end()});
-
-    for (auto expr : exprs) {
-      handle(expr);
-    }
-  }
 
   bool inRoot(const std::vector<IterDomain*>& ids) {
     return std::all_of(ids.begin(), ids.end(), [this](IterDomain* id) {
@@ -139,9 +112,36 @@ class ContigIDs : public OptInDispatch {
       }
     }
 
-    // If we matched all inputs, the output is contiguous
+    // If we matched all inputs, the output is contiguous. Only want to keep the
+    // top contig ID, lower ids should be placed in the "within_contig_ids" map
+    // of top id.
     if (ordered_inputs.empty()) {
+      if (contig_ids.find(merge->inner()) != contig_ids.end()) {
+        contig_ids.erase(merge->inner());
+      }
+
+      if (contig_ids.find(merge->outer()) != contig_ids.end()) {
+        contig_ids.erase(merge->outer());
+      }
+
       contig_ids.emplace(merge->out());
+
+      std::unordered_set<IterDomain*> within_out;
+      within_out.emplace(merge->inner());
+      if (within_contig_ids.find(merge->inner()) != within_contig_ids.end()) {
+        auto in_inner = within_contig_ids.at(merge->inner());
+        within_out.insert(in_inner.begin(), in_inner.end());
+        within_contig_ids.erase(merge->inner());
+      }
+
+      within_out.emplace(merge->outer());
+      if (within_contig_ids.find(merge->outer()) != within_contig_ids.end()) {
+        auto in_outer = within_contig_ids.at(merge->outer());
+        within_out.insert(in_outer.begin(), in_outer.end());
+        within_contig_ids.erase(merge->outer());
+      }
+
+      within_contig_ids[merge->out()] = within_out;
     }
   }
 
@@ -149,12 +149,44 @@ class ContigIDs : public OptInDispatch {
   // Check through thie history of ids whose inputs map to root_domain with
   // contiguity root_contiguity. Return unordered_set of all merges that are
   // contiguous.
-  static std::unordered_set<IterDomain*> find(
+  ContigIDs(
       const std::vector<IterDomain*>& ids,
-      const std::vector<IterDomain*>& root_domain,
-      const std::vector<bool>& root_contiguity) {
-    ContigIDs finder(ids, root_domain, root_contiguity);
-    return finder.contig_ids;
+      const std::vector<IterDomain*>& _root_domain,
+      const std::vector<bool>& _root_contiguity)
+      : root_domain_(_root_domain), root_contiguity_(_root_contiguity) {
+    if (ids.empty()) {
+      return;
+    }
+
+    TORCH_INTERNAL_ASSERT(
+        root_domain_.size() == root_contiguity_.size(),
+        "Arguments don't match ",
+        root_domain_.size(),
+        " != ",
+        root_contiguity_.size());
+
+    for (size_t i = 0; i < root_domain_.size(); i++) {
+      if (root_contiguity_[i]) {
+        contig_ids.emplace(root_domain_[i]);
+        within_contig_ids[root_domain_[i]] = std::unordered_set<IterDomain*>();
+      }
+      is_contig_root[root_domain_[i]] = root_contiguity_[i];
+    }
+
+    auto exprs = ExprSort::getExprs(ids[0]->fusion(), {ids.begin(), ids.end()});
+
+    for (auto expr : exprs) {
+      handle(expr);
+    }
+  }
+
+  const std::unordered_set<IterDomain*> contigIDs() const {
+    return contig_ids;
+  }
+
+  const std::unordered_map<IterDomain*, std::unordered_set<IterDomain*>>
+  withinContigIDs() const {
+    return within_contig_ids;
   }
 };
 
@@ -256,8 +288,8 @@ class RangeCompute : public BackwardVisitor {
       const std::vector<Val*>& ranges,
       std::vector<bool> _root_contiguity)
       : td_(_td) {
-    contig_ids =
-        ContigIDs::find(td_->domain(), td_->getRootDomain(), _root_contiguity);
+    ContigIDs finder(td_->domain(), td_->getRootDomain(), _root_contiguity);
+    contig_ids = finder.contigIDs();
 
     if (td_->nDims() == 0 || ranges.empty()) {
       ranges_.push_back(new Int(0));
@@ -474,11 +506,32 @@ IndexCompute::IndexCompute(
     const TensorDomain* _td,
     const std::unordered_map<IterDomain*, Val*>& initial_index_map,
     const std::unordered_map<IterDomain*, Val*>& _extent_map,
-    const std::unordered_set<IterDomain*>& _zero_merged_in)
+    const std::unordered_set<IterDomain*>& _zero_merged_in,
+    const std::vector<bool>& root_contiguity)
     : td_(_td),
       index_map_(initial_index_map),
       extent_map_(_extent_map),
       zero_merged_in_(_zero_merged_in) {
+  // Make sure we recompute any indices we can that map to a contiguous access
+  // in physical memory.
+  if (std::any_of(root_contiguity.begin(), root_contiguity.end(), [](bool b) {
+        return b;
+      })) {
+    ContigIDs contig_finder(
+        td_->domain(), td_->getRootDomain(), root_contiguity);
+    contig_ids = contig_finder.contigIDs();
+    auto within_contig = contig_finder.withinContigIDs();
+    for (auto contig_id : contig_ids) {
+      if (index_map_.find(contig_id) != index_map_.end()) {
+        TORCH_INTERNAL_ASSERT(
+            within_contig.find(contig_id) != within_contig.end());
+        for (auto id : within_contig.at(contig_id)) {
+          index_map_.erase(id);
+        }
+      }
+    }
+  }
+
   const std::vector<Val*> domain_vals(
       td_->domain().begin(), td_->domain().end());
 
@@ -503,8 +556,8 @@ IndexCompute::IndexCompute(
     std::vector<bool> root_contiguity,
     bool ignore_rfactor)
     : td_(_td), extent_map_(std::unordered_map<IterDomain*, Val*>()) {
-  contig_ids =
-      ContigIDs::find(td_->domain(), td_->getRootDomain(), root_contiguity);
+  ContigIDs contig_finder(td_->domain(), td_->getRootDomain(), root_contiguity);
+  contig_ids = contig_finder.contigIDs();
 
   if (td_->nDims() == 0 || indices.empty()) {
     indices_.push_back(new Int(0));
@@ -563,7 +616,8 @@ IndexCompute::IndexCompute(
 IndexCompute IndexCompute::updateIndexCompute(
     const TensorDomain* new_td,
     std::unordered_map<IterDomain*, IterDomain*> id_map,
-    std::unordered_map<IterDomain*, Val*> new_index_entries) {
+    std::unordered_map<IterDomain*, Val*> new_index_entries,
+    const std::vector<bool>& root_contiguity) {
   std::unordered_map<IterDomain*, Val*> updated_index_map(new_index_entries);
   std::unordered_map<IterDomain*, Val*> updated_extent_map;
   std::unordered_set<IterDomain*> updated_zero_merged_in;
@@ -584,7 +638,11 @@ IndexCompute IndexCompute::updateIndexCompute(
   }
 
   return IndexCompute(
-      new_td, updated_index_map, updated_extent_map, updated_zero_merged_in);
+      new_td,
+      updated_index_map,
+      updated_extent_map,
+      updated_zero_merged_in,
+      root_contiguity);
 }
 
 std::vector<Val*> IndexCompute::get(
@@ -711,7 +769,8 @@ std::pair<
 generateIndexAndExtentMap(
     std::deque<TensorView*> tv_stack,
     std::deque<kir::ForLoop*> loops,
-    const std::unordered_map<kir::ForLoop*, Val*>& loop_to_ind_map) {
+    const std::unordered_map<kir::ForLoop*, Val*>& loop_to_ind_map,
+    const std::vector<bool>& last_tv_root_contiguity) {
   // Go through our stack, and map the intermediate IterDomains from common
   // transformations from consumer to producer
   std::deque<std::unordered_map<IterDomain*, IterDomain*>> ID_maps_c2p;
@@ -762,7 +821,9 @@ generateIndexAndExtentMap(
       tv->domain(),
       initial_index_map,
       std::unordered_map<IterDomain*, Val*>(),
-      std::unordered_set<IterDomain*>());
+      std::unordered_set<IterDomain*>(),
+      tv_stack.empty() ? last_tv_root_contiguity
+                       : std::vector<bool>(tv->getRootDomain().size(), false));
 
   // Go through the tv entire stack
   while (!tv_stack.empty()) {
@@ -787,7 +848,12 @@ generateIndexAndExtentMap(
 
     if (!ID_maps_c2p.empty()) {
       index_compute = index_compute.updateIndexCompute(
-          tv->domain(), ID_maps_c2p.front(), new_indices);
+          tv->domain(),
+          ID_maps_c2p.front(),
+          new_indices,
+          tv_stack.empty()
+              ? last_tv_root_contiguity
+              : std::vector<bool>(tv->getRootDomain().size(), false));
       ID_maps_c2p.pop_front();
     }
   }
@@ -825,7 +891,8 @@ kir::TensorIndex* Index::getGlobalProducerIndex(
   auto index_map = generateIndexAndExtentMap(
                        tv_stack,
                        std::deque<kir::ForLoop*>(loops.begin(), loops.end()),
-                       loop_to_ind_map)
+                       loop_to_ind_map,
+                       producer_tv->domain()->contiguity())
                        .first;
 
   // Indices should now be mapped onto IterDomains in producer, so just grab
@@ -850,7 +917,14 @@ kir::TensorIndex* Index::getGlobalProducerIndex(
       continue;
     }
 
-    TORCH_INTERNAL_ASSERT(index_map.find(root_dom[i]) != index_map.end());
+    TORCH_INTERNAL_ASSERT(
+        index_map.find(root_dom[i]) != index_map.end(),
+        "Couldn't find root mapping for TV",
+        consumer_tv->name(),
+        " dim: ",
+        i,
+        " id: ",
+        root_dom[i]);
     auto root_ind = index_map.at(root_dom[i]);
 
     if (i == root_dom.size() - 1 && inner_most_dim_contig) {
@@ -936,7 +1010,8 @@ kir::TensorIndex* Index::getProducerIndex_impl(
   auto index_and_extent_map = generateIndexAndExtentMap(
       tv_stack,
       std::deque<kir::ForLoop*>(loops.begin(), loops.end()),
-      loop_to_ind_map);
+      loop_to_ind_map,
+      std::vector<bool>(producer_tv->getRootDomain().size(), false));
   auto index_map = index_and_extent_map.first;
   auto extent_map = index_and_extent_map.second;
 
@@ -1012,7 +1087,8 @@ kir::TensorIndex* Index::getGlobalConsumerIndex(
   auto index_map = generateIndexAndExtentMap(
                        tv_stack,
                        std::deque<kir::ForLoop*>(loops.begin(), loops.end()),
-                       loop_to_ind_map)
+                       loop_to_ind_map,
+                       consumer_tv->domain()->contiguity())
                        .first;
 
   // Indices should now be mapped onto IterDomains in consumer, so just grab
@@ -1071,7 +1147,8 @@ kir::TensorIndex* Index::getConsumerIndex_impl(
   auto index_and_extent_map = generateIndexAndExtentMap(
       tv_stack,
       std::deque<kir::ForLoop*>(loops.begin(), loops.end()),
-      loop_to_ind_map);
+      loop_to_ind_map,
+      std::vector<bool>(consumer_tv->getRootDomain().size(), false));
 
   auto index_map = index_and_extent_map.first;
   auto extent_map = index_and_extent_map.second;

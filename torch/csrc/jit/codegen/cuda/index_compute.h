@@ -122,7 +122,8 @@ class IndexCompute : public BackwardVisitor {
       const TensorDomain* _td,
       const std::unordered_map<IterDomain*, Val*>& initial_index_map,
       const std::unordered_map<IterDomain*, Val*>& _extent_map,
-      const std::unordered_set<IterDomain*>& _zero_merged_in);
+      const std::unordered_set<IterDomain*>& _zero_merged_in,
+      const std::vector<bool>& _root_contiguity);
 
   // Updates index_map, extent_map, and zero_merged_in based on id_map and
   // returns a new IndexCompute ready to be used. new_index_entries are not
@@ -130,7 +131,8 @@ class IndexCompute : public BackwardVisitor {
   IndexCompute updateIndexCompute(
       const TensorDomain* new_td,
       std::unordered_map<IterDomain*, IterDomain*> id_map,
-      std::unordered_map<IterDomain*, Val*> new_index_entries);
+      std::unordered_map<IterDomain*, Val*> new_index_entries,
+      const std::vector<bool>& _root_contiguity);
 
   static std::vector<Val*> get(
       const TensorDomain* _td,
