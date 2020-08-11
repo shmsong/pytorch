@@ -747,7 +747,15 @@ kir::TensorIndex* Index::getProducerIndex_impl(
       continue;
     }
 
-    TORCH_INTERNAL_ASSERT(index_map.find(root_dom[i]) != index_map.end());
+    TORCH_INTERNAL_ASSERT(
+        index_map.find(root_dom[i]) != index_map.end(),
+        "Couldn't find root mapping for TV",
+        consumer_tv->name(),
+        " dim: ",
+        i,
+        " id: ",
+        root_dom[i]);
+
     auto root_ind_i = index_map.at(root_dom[i]);
 
     if (root_ind_i->isZeroInt()) {
@@ -763,7 +771,14 @@ kir::TensorIndex* Index::getProducerIndex_impl(
 
       TORCH_INTERNAL_ASSERT(
           index_map.find(root_dom[j]) != index_map.end() &&
-          extent_map.find(root_dom[j]) != extent_map.end());
+              extent_map.find(root_dom[j]) != extent_map.end(),
+          "Couldn't find root mapping for TV",
+          consumer_tv->name(),
+          " dim: ",
+          i,
+          " id: ",
+          root_dom[i]);
+
       auto root_ind_j = index_map.at(root_dom[j]);
       auto root_ext_j = extent_map.at(root_dom[j]);
 
@@ -830,7 +845,14 @@ kir::TensorIndex* Index::getGlobalConsumerIndex(
       continue;
     }
 
-    TORCH_INTERNAL_ASSERT(index_map.find(root_dom[i]) != index_map.end());
+    TORCH_INTERNAL_ASSERT(
+        index_map.find(root_dom[i]) != index_map.end(),
+        "Couldn't find root mapping for TV",
+        consumer_tv->name(),
+        " dim: ",
+        i,
+        " id: ",
+        root_dom[i]);
     auto ind = index_map.at(root_dom[i]);
 
     if (i == root_dom.size() - 1 && inner_most_dim_contig) {
@@ -882,7 +904,14 @@ kir::TensorIndex* Index::getConsumerIndex_impl(
       continue;
     }
 
-    TORCH_INTERNAL_ASSERT(index_map.find(root_dom[i]) != index_map.end());
+    TORCH_INTERNAL_ASSERT(
+        index_map.find(root_dom[i]) != index_map.end(),
+        "Couldn't find root mapping for TV",
+        consumer_tv->name(),
+        " dim: ",
+        i,
+        " id: ",
+        root_dom[i]);
     auto root_ind_i = index_map.at(root_dom[i]);
 
     if (root_ind_i->isZeroInt()) {
@@ -898,7 +927,14 @@ kir::TensorIndex* Index::getConsumerIndex_impl(
 
       TORCH_INTERNAL_ASSERT(
           index_map.find(root_dom[j]) != index_map.end() &&
-          extent_map.find(root_dom[j]) != extent_map.end());
+              extent_map.find(root_dom[j]) != extent_map.end(),
+          "Couldn't find root mapping for TV",
+          consumer_tv->name(),
+          " dim: ",
+          i,
+          " id: ",
+          root_dom[i]);
+
       auto root_ind_j = index_map.at(root_dom[j]);
       auto root_ext_j = extent_map.at(root_dom[j]);
 
