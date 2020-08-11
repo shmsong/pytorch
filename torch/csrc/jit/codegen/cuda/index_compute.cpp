@@ -1062,20 +1062,37 @@ kir::TensorIndex* Index::getConsumerIndex(
 
 // Basically just copy getGlobalConsumerIndex, just don't do the striding and
 // return std::vector of Vals
-std::vector<Val*> Index::getAllConsumerRootIndices(
+std::vector<Val*> Index::getConsumerRootPredIndices(
     TensorView* consumer_tv,
     const std::vector<kir::ForLoop*>& loops,
     const std::unordered_map<IterDomain*, IterDomain*>& p2c_root_map,
-    const std::vector<bool>& root_contiguity) {
+    const std::vector<bool>& root_contiguity,
+    bool unroll) {
   // grab all tensor views from producer_tv <- computeAtRoot
   std::deque<TensorView*> tv_stack = getComputeAtTVStackFrom(consumer_tv);
 
   std::unordered_map<kir::ForLoop*, Val*> loop_to_ind_map;
+
   std::transform(
       loops.begin(),
       loops.end(),
       std::inserter(loop_to_ind_map, loop_to_ind_map.begin()),
       [](kir::ForLoop* fl) { return std::make_pair(fl, fl->index()); });
+
+  if (unroll) {
+    bool within_unroll = false;
+    Val* one = new Int(1);
+    for (size_t loop_i = 0; loop_i < loops.size(); loop_i++) {
+      auto loop = loops[loop_i];
+      if (loop->iter_domain()->getParallelType() == ParallelType::Unroll) {
+        within_unroll = true;
+      }
+
+      if (within_unroll && !loop->iter_domain()->isThread()) {
+        loop_to_ind_map[loop] = sub(loop->iter_domain()->extent(), one);
+      }
+    }
+  }
 
   auto index_map = generateIndexAndExtentMap(
                        tv_stack,

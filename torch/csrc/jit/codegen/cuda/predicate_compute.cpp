@@ -110,7 +110,7 @@ kir::Bool* PredicateCompute::getInlinePredicate(
     }
   }
 
-  auto root_indices = Index::getAllConsumerRootIndices(
+  auto root_indices = Index::getConsumerRootPredIndices(
       out_tv, loops, p2c_root_map, pred_contiguity);
   auto pred_ti = new kir::TensorIndex(out_tv, root_indices);
   auto all_preds = PredicateCompute::computePredicates(pred_ti);
@@ -202,10 +202,13 @@ void UnrollPredicate::predicateOn(Expr* tv_expr) {
     }
   }
 
-  auto domain_indices =
-      loop_utils::getUnrollPredIndicesForTV(out_tv, for_loops);
-  auto root_indices = IndexCompute::get(
-      out_tv->domain(), domain_indices, pred_contiguity, true);
+  auto root_indices = Index::getConsumerRootPredIndices(
+      out_tv,
+      for_loops,
+      std::unordered_map<IterDomain*, IterDomain*>(),
+      pred_contiguity,
+      true);
+
   auto pred_ti = new kir::TensorIndex(out_tv, root_indices);
   auto all_preds = PredicateCompute::computePredicates(pred_ti);
 
