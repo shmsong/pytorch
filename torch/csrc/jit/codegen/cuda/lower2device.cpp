@@ -78,21 +78,15 @@ void GPULower::lower() {
   // Compute thread predicates
   ThreadPredicateMap preds(fusion_);
 
-  auto sorted_exprs = fusion_->exprs(true);
-  auto p2c_root_map = loop_utils::p2cRootMap(sorted_exprs);
-
   // Run our passes keeping the lowered expressions and forwarding
   // them.
-  LoopNestGenerator lng(fusion_, preds, sorted_exprs);
-
-  // TODO: I think we can get rid of lng.initExprs
-  const auto loops = lng.loweredExprs();
+  LoopNestGenerator lng(fusion_, preds, fusion_->exprs(true));
 
   const auto unrolled_loops =
-      UnrollPass::runPass(fusion_, loops, lng.initExprs(), preds, p2c_root_map);
+      UnrollPass::runPass(fusion_, lng.loweredExprs(), lng.initExprs(), preds);
 
   const auto indexed_loops =
-      IndexLowering::getIndexedExprs(fusion_, unrolled_loops, p2c_root_map);
+      IndexLowering::getIndexedExprs(fusion_, unrolled_loops);
 
   // Store the final lowered IR
   lowered_exprs_ = indexed_loops;

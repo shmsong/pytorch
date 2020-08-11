@@ -79,8 +79,7 @@ std::vector<kir::Bool*> PredicateCompute::computePredicates(
 kir::Bool* PredicateCompute::getInlinePredicate(
     Expr* expr,
     const std::vector<kir::ForLoop*>& loops,
-    kir::Bool* thread_pred,
-    const std::unordered_map<IterDomain*, IterDomain*>& p2c_root_map) {
+    kir::Bool* thread_pred) {
   if (loops.empty())
     return new kir::Bool(true);
 
@@ -110,8 +109,8 @@ kir::Bool* PredicateCompute::getInlinePredicate(
     }
   }
 
-  auto root_indices = Index::getConsumerRootPredIndices(
-      out_tv, loops, p2c_root_map, pred_contiguity);
+  auto root_indices =
+      Index::getConsumerRootPredIndices(out_tv, loops, pred_contiguity);
   auto pred_ti = new kir::TensorIndex(out_tv, root_indices);
   auto all_preds = PredicateCompute::computePredicates(pred_ti);
 
@@ -180,8 +179,6 @@ void UnrollPredicate::predicateOn(Expr* tv_expr) {
 
   auto out_tv = ir_utils::getTVOutput(tv_expr);
 
-  bool pred_reductions = loop_utils::loopsHasReductions(out_tv, for_loops);
-
   auto pred_contiguity = out_tv->domain()->contiguity();
 
   for (auto inp : tv_expr->inputs()) {
@@ -203,11 +200,7 @@ void UnrollPredicate::predicateOn(Expr* tv_expr) {
   }
 
   auto root_indices = Index::getConsumerRootPredIndices(
-      out_tv,
-      for_loops,
-      std::unordered_map<IterDomain*, IterDomain*>(),
-      pred_contiguity,
-      true);
+      out_tv, for_loops, pred_contiguity, true);
 
   auto pred_ti = new kir::TensorIndex(out_tv, root_indices);
   auto all_preds = PredicateCompute::computePredicates(pred_ti);

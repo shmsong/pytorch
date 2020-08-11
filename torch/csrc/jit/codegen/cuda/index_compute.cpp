@@ -689,8 +689,7 @@ generateIndexAndExtentMap(
 kir::TensorIndex* Index::getGlobalProducerIndex(
     TensorView* producer_tv,
     TensorView* consumer_tv,
-    const std::vector<kir::ForLoop*>& loops,
-    const std::unordered_map<IterDomain*, IterDomain*>& p2c_root_map) {
+    const std::vector<kir::ForLoop*>& loops) {
   // Replay producer to look like consumer so we can index on producer since our
   // loop nests look like consumer
   auto producerAsC = TransformReplay::replayPasC(
@@ -812,8 +811,7 @@ std::unordered_map<kir::ForLoop*, Val*> indexMapFromTV(
 kir::TensorIndex* Index::getProducerIndex_impl(
     TensorView* producer_tv,
     TensorView* consumer_tv,
-    const std::vector<kir::ForLoop*>& loops,
-    const std::unordered_map<IterDomain*, IterDomain*>& p2c_root_map) {
+    const std::vector<kir::ForLoop*>& loops) {
   // producer_tv->domain() is not replayed as the loop strucutre we were
   // provided, so replay it to match consumer_tv which is.
   auto producerAsC = TransformReplay::replayPasC(
@@ -896,8 +894,7 @@ kir::TensorIndex* Index::getProducerIndex_impl(
 
 kir::TensorIndex* Index::getGlobalConsumerIndex(
     TensorView* consumer_tv,
-    const std::vector<kir::ForLoop*>& loops,
-    const std::unordered_map<IterDomain*, IterDomain*>& p2c_root_map) {
+    const std::vector<kir::ForLoop*>& loops) {
   // grab all tensor views from producer_tv <- computeAtRoot
   std::deque<TensorView*> tv_stack = getComputeAtTVStackFrom(consumer_tv);
 
@@ -960,8 +957,7 @@ kir::TensorIndex* Index::getGlobalConsumerIndex(
 // Consumer index for either shared or local memory
 kir::TensorIndex* Index::getConsumerIndex_impl(
     TensorView* consumer_tv,
-    const std::vector<kir::ForLoop*>& loops,
-    const std::unordered_map<IterDomain*, IterDomain*>& p2c_root_map) {
+    const std::vector<kir::ForLoop*>& loops) {
   // grab all tensor views from producer_tv <- computeAtRoot
   std::deque<TensorView*> tv_stack = getComputeAtTVStackFrom(consumer_tv);
 
@@ -1035,29 +1031,27 @@ kir::TensorIndex* Index::getConsumerIndex_impl(
 kir::TensorIndex* Index::getProducerIndex(
     TensorView* producer,
     TensorView* consumer,
-    const std::vector<kir::ForLoop*>& loops,
-    const std::unordered_map<IterDomain*, IterDomain*>& p2c_root_map) {
+    const std::vector<kir::ForLoop*>& loops) {
   if (producer->domain()->noReductions().size() == 0) {
     return new kir::TensorIndex(producer, {});
   }
 
   if (producer->getMemoryType() == MemoryType::Global)
-    return getGlobalProducerIndex(producer, consumer, loops, p2c_root_map);
-  return getProducerIndex_impl(producer, consumer, loops, p2c_root_map);
+    return getGlobalProducerIndex(producer, consumer, loops);
+  return getProducerIndex_impl(producer, consumer, loops);
 }
 
 // Consumer is the output of an expression
 kir::TensorIndex* Index::getConsumerIndex(
     TensorView* consumer,
-    const std::vector<kir::ForLoop*>& loops,
-    const std::unordered_map<IterDomain*, IterDomain*>& p2c_root_map) {
+    const std::vector<kir::ForLoop*>& loops) {
   if (consumer->domain()->noReductions().size() == 0) {
     return new kir::TensorIndex(consumer, {});
   }
 
   if (consumer->getMemoryType() == MemoryType::Global)
-    return getGlobalConsumerIndex(consumer, loops, p2c_root_map);
-  return getConsumerIndex_impl(consumer, loops, p2c_root_map);
+    return getGlobalConsumerIndex(consumer, loops);
+  return getConsumerIndex_impl(consumer, loops);
 }
 
 // Basically just copy getGlobalConsumerIndex, just don't do the striding and
@@ -1065,7 +1059,6 @@ kir::TensorIndex* Index::getConsumerIndex(
 std::vector<Val*> Index::getConsumerRootPredIndices(
     TensorView* consumer_tv,
     const std::vector<kir::ForLoop*>& loops,
-    const std::unordered_map<IterDomain*, IterDomain*>& p2c_root_map,
     const std::vector<bool>& root_contiguity,
     bool unroll) {
   // grab all tensor views from producer_tv <- computeAtRoot

@@ -156,33 +156,27 @@ class IndexCompute : public BackwardVisitor {
 // can make the below tensorviews const.
 class Index {
  private:
-  // TODO: Remove p2c_root_map from everything
-
   // Producer indexing if it's in shared or local memory
   static kir::TensorIndex* getProducerIndex_impl(
       TensorView* producer,
       TensorView* consumer,
-      const std::vector<kir::ForLoop*>& loops,
-      const std::unordered_map<IterDomain*, IterDomain*>& p2c_root_map);
+      const std::vector<kir::ForLoop*>& loops);
 
   // Consumer indexing if it's in shared or local memory
   static kir::TensorIndex* getConsumerIndex_impl(
       TensorView* consumer,
-      const std::vector<kir::ForLoop*>& loops,
-      const std::unordered_map<IterDomain*, IterDomain*>& p2c_root_map);
+      const std::vector<kir::ForLoop*>& loops);
 
   // Producer if it's in global memory
   static kir::TensorIndex* getGlobalProducerIndex(
       TensorView* producer,
       TensorView* consumer,
-      const std::vector<kir::ForLoop*>& loops,
-      const std::unordered_map<IterDomain*, IterDomain*>& p2c_root_map);
+      const std::vector<kir::ForLoop*>& loops);
 
   // Consumer indexing if it's in global memory
   static kir::TensorIndex* getGlobalConsumerIndex(
       TensorView* consumer,
-      const std::vector<kir::ForLoop*>& loops,
-      const std::unordered_map<IterDomain*, IterDomain*>& p2c_root_map);
+      const std::vector<kir::ForLoop*>& loops);
 
  public:
   // Indexing functions
@@ -192,21 +186,18 @@ class Index {
   static kir::TensorIndex* getProducerIndex(
       TensorView* producer,
       TensorView* consumer,
-      const std::vector<kir::ForLoop*>& loops,
-      const std::unordered_map<IterDomain*, IterDomain*>& p2c_root_map);
+      const std::vector<kir::ForLoop*>& loops);
 
   // Consumer index dispatch
   static kir::TensorIndex* getConsumerIndex(
       TensorView* consumer,
-      const std::vector<kir::ForLoop*>& loops,
-      const std::unordered_map<IterDomain*, IterDomain*>& p2c_root_map);
+      const std::vector<kir::ForLoop*>& loops);
 
   // Consumer indices for predicates, keep all indices matching in root domain.
   // Even those not used for physical addressing.
   static std::vector<Val*> getConsumerRootPredIndices(
       TensorView* consumer,
       const std::vector<kir::ForLoop*>& loops,
-      const std::unordered_map<IterDomain*, IterDomain*>& p2c_root_map,
       const std::vector<bool>& root_contiguity,
       bool unroll = false);
 };

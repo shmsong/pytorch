@@ -33,10 +33,7 @@ void UnrollPass::handle(Expr* expr) {
     TORCH_INTERNAL_ASSERT(for_loops.size() != 0);
 
     auto pred = PredicateCompute::getInlinePredicate(
-        expr,
-        for_loops,
-        getThreadPredicate(ir_utils::getTVOutput(expr)),
-        p2c_root_map_);
+        expr, for_loops, getThreadPredicate(ir_utils::getTVOutput(expr)));
 
     // If we need a predicate, put expr inside an if then else
     if (!(pred->isConst()) || !(pred->isConst() && pred->value().value())) {
@@ -72,7 +69,7 @@ void UnrollPass::handle(kir::ForLoop* fl) {
     return;
   }
 
-  auto unroll_pred = UnrollPredicate::get(for_loops, fl, p2c_root_map_);
+  auto unroll_pred = UnrollPredicate::get(for_loops, fl, p2c_root_map);
 
   kir::IfThenElse* unroll_ite =
       new kir::IfThenElse(unroll_pred, {}, {}, for_loops.back());
@@ -113,10 +110,9 @@ std::vector<Expr*> UnrollPass::runPass(
     Fusion* fusion,
     const std::vector<Expr*>& exprs,
     const std::unordered_set<Expr*>& init_exprs,
-    const ThreadPredicateMap& thread_predicates,
-    const std::unordered_map<IterDomain*, IterDomain*>& p2c_root_map) {
+    const ThreadPredicateMap& thread_predicates) {
   FusionGuard fg(fusion);
-  UnrollPass up(fusion, exprs, init_exprs, thread_predicates, p2c_root_map);
+  UnrollPass up(fusion, exprs, init_exprs, thread_predicates);
   up.computeMap();
   std::vector<Expr*> mutated_exprs;
   for (Expr* expr : exprs) {

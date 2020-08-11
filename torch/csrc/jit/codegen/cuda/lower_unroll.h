@@ -69,7 +69,7 @@ class TORCH_CUDA_API UnrollPass : public OptOutDispatch {
   // Map from TensorView
   const ThreadPredicateMap& thread_predicates_;
 
-  const std::unordered_map<IterDomain*, IterDomain*>& p2c_root_map_;
+  std::unordered_map<IterDomain*, IterDomain*> p2c_root_map;
 
   // keep track if we're within an unrolled loop
   bool look_for_unroll = true;
@@ -85,13 +85,13 @@ class TORCH_CUDA_API UnrollPass : public OptOutDispatch {
       Fusion* _fusion,
       const std::vector<Expr*>& _incoming_exprs,
       const std::unordered_set<Expr*>& _incoming_init_exprs,
-      const ThreadPredicateMap& _thread_predicates,
-      const std::unordered_map<IterDomain*, IterDomain*>& _p2c_root_map)
+      const ThreadPredicateMap& _thread_predicates)
       : fusion_(_fusion),
         incoming_exprs_(_incoming_exprs),
         incoming_init_exprs_(_incoming_init_exprs),
-        thread_predicates_(_thread_predicates),
-        p2c_root_map_(_p2c_root_map) {}
+        thread_predicates_(_thread_predicates) {
+    auto p2c_root_map = loop_utils::p2cRootMap(_fusion->exprs(true));
+  }
 
   // Generate the for Expr replacement map
   void computeMap();
@@ -103,8 +103,7 @@ class TORCH_CUDA_API UnrollPass : public OptOutDispatch {
       Fusion* fusion,
       const std::vector<Expr*>& exprs,
       const std::unordered_set<Expr*>& init_exprs,
-      const ThreadPredicateMap& thread_predicates,
-      const std::unordered_map<IterDomain*, IterDomain*>& p2c_root_map);
+      const ThreadPredicateMap& thread_predicates);
 };
 
 } // namespace fuser
