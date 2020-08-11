@@ -43,7 +43,7 @@ namespace cuda {
 // * note computational graph
 // In theory, computational graph should refer to only the computational nodes
 // in a subgraph and should remain agnostic to input meta info, like
-// shape, strides, type e.t.c.. However, the contract right here is fuzzy. 
+// shape, strides, type e.t.c.. However, the contract right here is fuzzy.
 // Different executor applies their own protocol of what is a unique
 // computational graph. e.g. Legacy Executor embeds tensor type & dimensionality
 // in the graph, while Profiling Executor keeps symbolic shape as well as stride

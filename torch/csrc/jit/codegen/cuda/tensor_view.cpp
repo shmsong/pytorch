@@ -57,9 +57,7 @@ TensorView::TensorView(const std::shared_ptr<c10::TensorType>& tensor_type)
   // we iterate through stride_index_, which goes from fastest changing
   // dimension to slowest, instead of iterating through sizes. This allows
   // easier contiguity check;
-  for (size_t i = 0;
-       i < tensor_type->dim().value();
-       i++) {
+  for (size_t i = 0; i < tensor_type->dim().value(); i++) {
     // if we don't have contiguous dimension at current stride index, don't
     // bother;
     const auto& stride_property_i = tensor_type->stride_properties()[i];
