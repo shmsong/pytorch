@@ -427,17 +427,20 @@ class TestCudaFuser(JitTestCase):
             print("inp2   : ", b[index])
         return close
 
+    # Permutation helper that applies binary operation between two tensors:
+    #   1. applies separate permutation `perm0` & `perm1` to two inputs
+    #   2. reduce dimension `broadcast_axis` of operand two to size 1
+    # The purpose of this test is to ensure permutation works well in
+    # complicated cases with arbitrary stride order and broadcasting dimensions
     def _permutation_helper(self, sizes, broadcast_axis, dtype, device, perm0, perm1):
-        class MyBinaryOps(torch.nn.Module):
-            def forward(self, x: torch.Tensor, y: torch.Tensor):
-                o = torch.add(x, y)
-                o = torch.relu(o)
-                return o
-
-        t = MyBinaryOps()
+        def t(x: torch.Tensor, y: torch.Tensor):
+            o = torch.add(x, y)
+            o = torch.relu(o)
+            return o
 
         x = torch.randn([sizes[i] for i in perm0], dtype=dtype, device=device).permute([perm0.index(i) for i in range(len(sizes))])
-        sizes[broadcast_axis] = 1
+        if broadcast_axis >= 0:
+            sizes[broadcast_axis] = 1
         y = torch.randn([sizes[i] for i in perm1], dtype=dtype, device=device).permute([perm1.index(i) for i in range(len(sizes))])
         t_jit = torch.jit.script(t)
         jit_o = t_jit(x, y)
@@ -445,11 +448,13 @@ class TestCudaFuser(JitTestCase):
         o = t(x, y)
         for oo, jit_oo in zip(o, jit_o):
             self.assertEqual(oo.dtype, jit_oo.dtype)
-            # numerical issues here due to our scheduling.
-            # can't use `self.assertEqual(oo, jit_oo)`
-            self.assertTrue(self._compare("comparing output failed", oo, jit_oo, 1e-4))
+            self.assertEqual(oo, jit_oo)
         self.assertGraphContains(t_jit.graph_for(x, y), FUSION_GROUP)
 
+    # end-2-end test of permutation & contiguity handling in integration.
+    # we are testing inputs with all combination of permutation order, just to
+    # ensure that integration would be able to generate functionally correct
+    # kernels
     @unittest.skipIf(not RUN_CUDA, "requires CUDA")
     @unittest.skipIf(GRAPH_EXECUTOR != ProfilingMode.PROFILING and GRAPH_EXECUTOR !=
                      ProfilingMode.LEGACY, "Requires fusion optimization pass to be effective")
@@ -458,7 +463,7 @@ class TestCudaFuser(JitTestCase):
         # note that num_dim is exclusive from len(x), so we are not reducing
         # to single element (codegen limitation at this moment)
         x = [7, 8, 12]
-        for b_axis in range(0, len(x)):
+        for b_axis in range(-1, len(x)):
             for perm0 in itertools.permutations(range(len(x))):
                 for perm1 in itertools.permutations(range(len(x))):
                     x = [7, 8, 12]

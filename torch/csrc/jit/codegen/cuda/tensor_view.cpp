@@ -57,16 +57,17 @@ TensorView::TensorView(const std::shared_ptr<c10::TensorType>& tensor_type)
   // we iterate through stride_index_, which goes from fastest changing
   // dimension to slowest, instead of iterating through sizes. This allows
   // easier contiguity check;
-  for (decltype(tensor_type->dim().value()) i = 0;
+  for (size_t i = 0;
        i < tensor_type->dim().value();
        i++) {
     // if we don't have contiguous dimension at current stride index, don't
     // bother;
-    if (tensor_type->stride_properties()[i].has_value() &&
-        tensor_type->stride_properties()[i]->stride_index_.has_value() &&
-        tensor_type->stride_properties()[i]->contiguous_.has_value() &&
-        tensor_type->stride_properties()[i]->contiguous_.value() == true) {
-      size_t index = tensor_type->stride_properties()[i]->stride_index_.value();
+    const auto& stride_property_i = tensor_type->stride_properties()[i];
+    if (stride_property_i.has_value() &&
+        stride_property_i->stride_index_.has_value() &&
+        stride_property_i->contiguous_.has_value() &&
+        stride_property_i->contiguous_.value() == true) {
+      const size_t index = stride_property_i->stride_index_.value();
       // TODO: this is a temporary WAR to avoid contiguous_ flag on broadcasted
       //       dim, which results in wrong indexing math. issue #230
       if (sizes[index]->isBroadcast()) {

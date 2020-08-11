@@ -15,8 +15,7 @@ namespace {
 
 // TODO: temporary hack to resolve my is_constructible issue;
 std::vector<size_t> toVector(const at::DimVector& small_vec) {
-  std::vector<size_t> std_vec(small_vec.begin(), small_vec.end());
-  return std_vec;
+  return std::vector<size_t>(small_vec.begin(), small_vec.end());
 }
 
 void debugPrint(const TensorTypePtr& type) {
@@ -140,7 +139,7 @@ at::DimVector getPermutationPerSortedStride(const TensorTypePtr& type) {
   return permute_seq;
 }
 
-at::DimVector reversePermutation(
+at::DimVector inversePermutation(
     const at::DimVector& permuted,
     const std::vector<size_t>& reduction_axes) {
   if (permuted.empty()) {
@@ -219,16 +218,6 @@ std::vector<at::Tensor> FusionExecutorCache::runFusionWithInputs(
   return fusion_executor_cache_.back()->runFusion(inputs);
 }
 
-// FusionExecutorCache::FusionExecutorCache(
-//     Fusion* fusion,
-//     CompileOptions options) {
-//   TORCH_INTERNAL_ASSERT(
-//       entry == nullptr,
-//       "At this time FusionExecutorCache only supports one entry.");
-//   entry = new FusionExecutor();
-//   entry->compileFusion(fusion, options);
-// }
-
 GraphCache::InputsRequirement::InputsRequirement(
     const std::shared_ptr<Graph>& graph,
     const std::vector<size_t>& reduction_axes) {
@@ -251,7 +240,7 @@ GraphCache::InputsRequirement::InputsRequirement(
     }
   }
   input_permutation_ = getPermutationPerSortedStride(acc_type);
-  output_permutation_ = reversePermutation(input_permutation_, reduction_axes);
+  output_permutation_ = inversePermutation(input_permutation_, reduction_axes);
   TORCH_CHECK(
       acc_type->device().has_value(), "requires fixed device for all inputs");
   device_ = acc_type->device();
@@ -282,21 +271,21 @@ GraphCache::InputsRequirement::InputsRequirement(
     }
   }
   input_permutation_ = getPermutationPerSortedStride(acc_type);
-  output_permutation_ = reversePermutation(input_permutation_, reduction_axes);
+  output_permutation_ = inversePermutation(input_permutation_, reduction_axes);
   TORCH_CHECK(
       acc_type->device().has_value(), "requires fixed device for all inputs");
   device_ = acc_type->device();
 }
 
 bool GraphCache::InputsRequirement::requiresPermutation() {
-  size_t input_rank = input_permutation_.size();
+  const size_t input_rank = input_permutation_.size();
   for (size_t i = 0; i < input_rank; i++) {
     if (input_permutation_[i] != i) {
       return true;
     }
   }
   // Check if output agrees
-  size_t output_rank = output_permutation_.size();
+  const size_t output_rank = output_permutation_.size();
   for (size_t i = 0; i < output_rank; i++) {
     TORCH_INTERNAL_ASSERT(
         output_permutation_[i] == i,
@@ -317,53 +306,56 @@ bool GraphCache::InputsRequirement::complyWith(
 
   // trick here is, `this` is always well defined while `expect` could has
   // missing options;
-  for (int i = 0; i < static_cast<int>(vec_optional_ttp.size()); i++) {
+  for (size_t i = 0; i < vec_optional_ttp.size(); i++) {
     // TensorType has to match, otherwise it's not compatible to our graph.
+    auto expect_vec_optional_ttp_i = expect.vec_optional_ttp[i];
     TORCH_INTERNAL_ASSERT(
         vec_optional_ttp[i].has_value() ==
-        expect.vec_optional_ttp[i].has_value());
-    if (expect.vec_optional_ttp[i].has_value()) {
+        expect_vec_optional_ttp_i.has_value());
+    if (expect_vec_optional_ttp_i.has_value()) {
       // We assume that dimensionality should always match.
       TORCH_INTERNAL_ASSERT(
-          (*expect.vec_optional_ttp[i])->symbolic_sizes().sizes().has_value() &&
-              (*expect.vec_optional_ttp[i])
+          (*expect_vec_optional_ttp_i)->symbolic_sizes().sizes().has_value() &&
+              (*expect_vec_optional_ttp_i)
                   ->stride_properties()
                   .sizes()
                   .has_value() &&
-              (*expect.vec_optional_ttp[i])->dim().has_value() &&
+              (*expect_vec_optional_ttp_i)->dim().has_value() &&
               (*vec_optional_ttp[i])->dim().value() &&
-              (*expect.vec_optional_ttp[i])->dim().value() ==
+              (*expect_vec_optional_ttp_i)->dim().value() ==
                   (*vec_optional_ttp[i])->dim().value(),
           "expect fixed rank of tensors");
 
-      int rank = static_cast<int>((*expect.vec_optional_ttp[i])->dim().value());
+      int rank = static_cast<int>((*expect_vec_optional_ttp_i)->dim().value());
       auto vec_shape_symbol_ex =
-          (*expect.vec_optional_ttp[i])->symbolic_sizes().sizes().value();
+          (*expect_vec_optional_ttp_i)->symbolic_sizes().sizes().value();
       auto vec_optional_stride_ex =
-          (*expect.vec_optional_ttp[i])->stride_properties().sizes().value();
+          (*expect_vec_optional_ttp_i)->stride_properties().sizes().value();
       auto vec_shape_symbol =
           (*vec_optional_ttp[i])->symbolic_sizes().sizes().value();
       auto vec_optional_stride =
           (*vec_optional_ttp[i])->stride_properties().sizes().value();
-      for (int i = 0; i < rank; i++) {
+      for (int j = 0; j < rank; j++) {
         // if broadcast rule differs, compliance is broken;
-        if ((vec_shape_symbol_ex[i].is_static() &&
-             vec_shape_symbol_ex[i].static_size() == 1) ^
-            (vec_shape_symbol[i].is_static() &&
-             vec_shape_symbol[i].static_size() == 1)) {
+        if ((vec_shape_symbol_ex[j].is_static() &&
+             vec_shape_symbol_ex[j].static_size() == 1) ^
+            (vec_shape_symbol[j].is_static() &&
+             vec_shape_symbol[j].static_size() == 1)) {
           return false;
         }
 
+        const auto& vec_optional_stride_ex_j = vec_optional_stride_ex[j];
+        const auto& vec_optional_stride_j = vec_optional_stride[j];
         // if contiguity / stride index differ, compliance is broken;
-        if (vec_optional_stride_ex[i].has_value() !=
-            vec_optional_stride[i].has_value()) {
+        if (vec_optional_stride_ex_j.has_value() !=
+            vec_optional_stride_j.has_value()) {
           return false;
         }
-        if (vec_optional_stride_ex[i].has_value() &&
-            (vec_optional_stride_ex[i]->stride_index_ !=
-                 vec_optional_stride[i]->stride_index_ ||
-             vec_optional_stride_ex[i]->contiguous_ !=
-                 vec_optional_stride[i]->contiguous_)) {
+        if (vec_optional_stride_ex_j.has_value() &&
+            (vec_optional_stride_ex_j->stride_index_ !=
+                 vec_optional_stride_j->stride_index_ ||
+             vec_optional_stride_ex_j->contiguous_ !=
+                 vec_optional_stride_j->contiguous_)) {
           return false;
         }
       }
@@ -436,7 +428,7 @@ FusionExecutorCache* GraphCache::createFusionExecutorCache(
           permuted_vec_ss,
           permuted_vec_optional_stride,
           type->requires_grad());
-    };
+    }; // closing lambda
 
     for (auto input : parsing_graph->inputs()) {
       if (auto input_type = input->type()->cast<TensorType>()) {
@@ -480,9 +472,9 @@ FusionExecutorCache* GraphCache::createFusionExecutorCache(
   TORCH_INTERNAL_ASSERT(
       input_stacks_.back().device_.has_value(),
       "device is not set for fusion executor, something went wrong in NvFuser");
-  fec_cache_.emplace_back(std::make_unique<FusionExecutorCache>(
+  fe_cache_.emplace_back(std::make_unique<FusionExecutorCache>(
       parseJitIR(parsing_graph), input_stacks_.back().device_.value()));
-  return fec_cache_.back().get();
+  return fe_cache_.back().get();
 }
 
 GraphCache::GraphCache(std::shared_ptr<Graph> graph)
@@ -513,9 +505,9 @@ std::vector<at::Tensor> GraphCache::runGraphWithInputs(
   FusionExecutorCache* fusion_executor_cache = nullptr;
 
   // TODO: hash indexing;
-  for (int i = 0; i < static_cast<int>(fec_cache_.size()); i++) {
+  for (size_t i = 0; i < fe_cache_.size(); i++) {
     if (input_stack.complyWith(input_stacks_[i])) {
-      fusion_executor_cache = fec_cache_[i].get();
+      fusion_executor_cache = fe_cache_[i].get();
       break;
     }
   }

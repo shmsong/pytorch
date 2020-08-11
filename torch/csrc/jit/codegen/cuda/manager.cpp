@@ -22,18 +22,12 @@ namespace jit {
 namespace fuser {
 namespace cuda {
 
-// [ Note -- cache level ]
-//
-// 2 level hierarchical cache behind PyTorch IR node `prim::CudaFusionGroup`:
-//     a. GraphCache
-//        cache on graph computation and (ideally) contiguity / broadcast;
-//     b. FusionExecutorCache
-//        cache on input sizes -> heuristic cache?;
+// [ Note -- cache entry indexing ]
 //
 // CudaFusionManager holds the cache and handles interfacing to CudaFusionGroup
 // node, including selection, construction and execution of FusionExecutors.
 //
-// CudaFusionManager bridges CudaFusionGroup to GraphCache.
+// CudaFusionManager bridges PyTorch IR node CudaFusionGroup to GraphCache.
 // Therefore, we want to cache on stringified graph. But it is expensive to
 // stringify and hash on a computational graph, we cache the hash of a
 // stringified graph on node via cache_id.
@@ -52,6 +46,7 @@ namespace cuda {
 // graph_cache indexing;
 
 namespace {
+
 c10::Device getDevice(const at::ArrayRef<IValue>& inputs) {
   // find device in inputs.
   for (const auto& input : inputs) {
@@ -66,6 +61,9 @@ c10::Device getDevice(const at::ArrayRef<IValue>& inputs) {
       false, "Could not detect device of inputs to a fusion.");
 }
 
+// CudaFusionManager is not thread safe!
+// TODO: we should make the tradeoff here to use thread_local instead of global
+// singleton;
 class CudaFusionManager {
  public:
   static CudaFusionManager& getManager() {
@@ -92,7 +90,7 @@ class CudaFusionManager {
     if (graph_cache_ids_.count(repr) == 0) {
       int32_t kernel_id = getNextUniqueID();
       graph_cache_ids_[repr] = kernel_id;
-      graph_cache_[kernel_id] = std::make_unique<GraphCache>(graph);
+      TORCH_CHECK(graph_cache_.insert({kernel_id], std::make_unique<GraphCache>(graph)}).second);
     }
     return graph_cache_ids_[repr];
   };
@@ -208,7 +206,6 @@ class CudaFusionManager {
   };
 
   std::unordered_map<std::string, int32_t> graph_cache_ids_;
-  std::unordered_map<int64_t, std::unique_ptr<FusionExecutor>> kernel_cache_;
   std::unordered_map<int64_t, std::unique_ptr<GraphCache>> graph_cache_;
 
   int32_t next_unique_id_ = 0;
