@@ -210,8 +210,7 @@ void IndexLowering::handle(ReductionOp* rop) {
             }),
         sync_ids.end());
 
-    Val* sync_size =
-        sync_ids.empty() ? new Int(1) : sync_ids[0]->rawExtent();
+    Val* sync_size = sync_ids.empty() ? new Int(1) : sync_ids[0]->rawExtent();
     for (size_t i = 1; i < sync_ids.size(); i++) {
       sync_size = mul(sync_size, sync_ids[i]->rawExtent());
     }
