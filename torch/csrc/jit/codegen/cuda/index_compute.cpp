@@ -374,69 +374,6 @@ bool IndexCompute::hasZeroMerged(IterDomain* id) {
   return zero_merged_in_.find(id) != zero_merged_in_.end();
 }
 
-IndexCompute::IndexCompute(
-    const TensorDomain* _td,
-    const std::vector<Val*>& indices,
-    std::vector<bool> root_contiguity,
-    bool ignore_rfactor)
-    : td_(_td), extent_map_(std::unordered_map<IterDomain*, Val*>()) {
-  ContigIDs contig_finder(td_->domain(), td_->getRootDomain(), root_contiguity);
-  contig_ids = contig_finder.contigIDs();
-
-  if (td_->nDims() == 0 || indices.empty()) {
-    indices_.push_back(new Int(0));
-    return;
-  }
-
-  // TODO: We will always provide reduction indices, even though they may be 0
-
-  // We may or may not have indices associated with reductions.
-  const bool exclude_reduction = td_->nDims() > indices.size();
-
-  TORCH_INTERNAL_ASSERT(
-      td_->noReductions().size() == indices.size() ||
-          td_->nDims() == indices.size(),
-      "For IndexCompute the number of axes should match the number of dimensions in the TensorDomain.");
-
-  {
-    size_t i = 0;
-    for (auto id : td_->domain()) {
-      if (exclude_reduction && id->isReduction())
-        continue;
-      index_map_[id] = indices[i++];
-    }
-  }
-
-  const std::vector<Val*> domain_vals(
-      td_->domain().begin(), td_->domain().end());
-
-  // Run the split/merge operations backwards. This will modify the index_map_
-  // so it can be used to index the root TensorDomain. Each entry in the root
-  // TensorDomain should have an entry in index_map_ We might not want to run
-  // these indices at the root of the domain, but actually at the rfactor root.
-  // Fortunately we can run them all the way back, but grab the indices from the
-  // map at the rfactor IterDomains.
-  traverseFrom(td_->fusion(), domain_vals, false);
-
-  // TODO: Don't exclude reduction axes
-  auto root_dom =
-      ignore_rfactor ? td_->getRootDomain() : td_->getMaybeRFactorDomain();
-  for (auto id : root_dom) {
-    if (exclude_reduction && id->isReduction()) {
-      continue;
-    } else if (id->getIterType() == IterType::BroadcastWithStride) {
-      // TODO: Why not do this for any broadcast dim? Would they be non-zero?
-      indices_.push_back(new Int(0));
-    } else {
-      auto it = index_map_.find(id);
-      TORCH_INTERNAL_ASSERT(
-          it != index_map_.end(),
-          "Error during index compute, missed computing a value.");
-      indices_.push_back(it->second);
-    }
-  }
-}
-
 IndexCompute IndexCompute::updateIndexCompute(
     const TensorDomain* new_td,
     std::unordered_map<IterDomain*, IterDomain*> id_map,
@@ -467,15 +404,6 @@ IndexCompute IndexCompute::updateIndexCompute(
       updated_extent_map,
       updated_zero_merged_in,
       root_contiguity);
-}
-
-std::vector<Val*> IndexCompute::get(
-    const TensorDomain* td,
-    const std::vector<Val*>& _indices,
-    const std::vector<bool>& _root_contiguity,
-    bool ignore_rfactor) {
-  IndexCompute ic(td, _indices, _root_contiguity, ignore_rfactor);
-  return ic.indices_;
 }
 
 std::vector<bool> IndexCompute::contiguityAnd(

@@ -64,14 +64,6 @@ class IndexCompute : public BackwardVisitor {
   void handle(Merge*) override;
   void handle(Expr*) override;
 
-  // Otherwise warning on runBackward as it hides an overloaded virtual
-  // using TransformIter::runBackward;
-  IndexCompute(
-      const TensorDomain* _td,
-      const std::vector<Val*>& indices,
-      std::vector<bool> _root_contiguity,
-      bool ignore_rfactor);
-
   // return extent_map_[id] if exists, else return id->extent()
   Val* getExtent(IterDomain* id);
 
@@ -100,7 +92,6 @@ class IndexCompute : public BackwardVisitor {
   // specially.
   std::unordered_set<IterDomain*> zero_merged_in_;
 
-  std::vector<Val*> indices_;
   // IDs that are a result of contiguous merges
   std::unordered_set<IterDomain*> contig_ids;
 
@@ -133,12 +124,6 @@ class IndexCompute : public BackwardVisitor {
       std::unordered_map<IterDomain*, IterDomain*> id_map,
       std::unordered_map<IterDomain*, Val*> new_index_entries,
       const std::vector<bool>& _root_contiguity);
-
-  static std::vector<Val*> get(
-      const TensorDomain* _td,
-      const std::vector<Val*>& _indices,
-      const std::vector<bool>& _root_contiguity,
-      bool ignore_rfactor = false);
 
   // Map producer contiguity information to consumer, if entries don't match
   // mark as false
