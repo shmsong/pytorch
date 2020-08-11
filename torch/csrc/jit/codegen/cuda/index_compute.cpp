@@ -484,37 +484,6 @@ std::deque<TensorView*> getComputeAtTVStackFrom(TensorView* from_tv) {
   return tv_stack;
 }
 
-template <typename T1, typename T2>
-void print_map(std::unordered_map<T1, T2> map) {
-  std::cout << "{ " << std::endl;
-  for (auto entry : map) {
-    std::cout << "  ( " << entry.first << " -> " << entry.second << " ) "
-              << std::endl;
-  }
-  std::cout << " }" << std::endl;
-}
-
-template <typename T1, typename T2>
-void print_map_inline(std::unordered_map<T1, T2> map) {
-  IRPrinter print(std::cout);
-  std::cout << "{ " << std::endl;
-  for (auto entry : map) {
-    std::cout << "  ( " << entry.first << " -> ";
-    print.print_inline(entry.second);
-    std::cout << " ) " << std::endl;
-  }
-  std::cout << " }" << std::endl;
-}
-
-template <typename T1>
-void print_set(std::unordered_set<T1> set) {
-  std::cout << "{ " << std::endl;
-  for (auto entry : set) {
-    std::cout << "  ( " << entry << " ) " << std::endl;
-  }
-  std::cout << " }" << std::endl;
-}
-
 std::pair<
     std::unordered_map<IterDomain*, Val*>,
     std::unordered_map<IterDomain*, Val*>>
