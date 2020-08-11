@@ -156,7 +156,7 @@ void IndexCompute::handle(Merge* merge) {
       isContiguousMerge(merge, td_->rootDomain(), root_contiguity_);
 
   if (mergable_info.mergeable) {
-    TORCH_CHECK(kir::isLoweredScalar(out_ind));
+    TORCH_INTERNAL_ASSERT(kir::isLoweredScalar(out_ind));
     index_map_[mergable_info.last_root_id] = out_ind;
     for (auto root_ind : mergable_info.zero_root_ids) {
       index_map_[root_ind] = new kir::Int(0);

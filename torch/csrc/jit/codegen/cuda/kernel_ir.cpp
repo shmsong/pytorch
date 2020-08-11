@@ -99,6 +99,7 @@ TensorDomain::TensorDomain(const fuser::TensorDomain* tensor_domain)
   const auto lowerIterDomains =
       [](const std::vector<fuser::IterDomain*>& domains) {
         std::vector<IterDomain*> lowered_domains;
+        lowered_domains.reserve(domains.size());
         for (const auto iter_domain : domains) {
           lowered_domains.push_back(lowerValue(iter_domain)->as<IterDomain>());
         }
