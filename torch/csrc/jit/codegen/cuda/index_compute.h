@@ -200,6 +200,14 @@ class Index {
       TensorView* consumer,
       const std::vector<kir::ForLoop*>& loops,
       const std::unordered_map<IterDomain*, IterDomain*>& p2c_root_map);
+
+  // Consumer indices for predicates, keep all indices matching in root domain.
+  // Even those not used for physical addressing.
+  static std::vector<Val*> getAllConsumerRootIndices(
+      TensorView* consumer,
+      const std::vector<kir::ForLoop*>& loops,
+      const std::unordered_map<IterDomain*, IterDomain*>& p2c_root_map,
+      const std::vector<bool>& root_contiguity);
 };
 
 } // namespace fuser

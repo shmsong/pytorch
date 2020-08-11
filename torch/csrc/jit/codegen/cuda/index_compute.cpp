@@ -1060,6 +1060,55 @@ kir::TensorIndex* Index::getConsumerIndex(
   return getConsumerIndex_impl(consumer, loops, p2c_root_map);
 }
 
+// Basically just copy getGlobalConsumerIndex, just don't do the striding and
+// return std::vector of Vals
+std::vector<Val*> Index::getAllConsumerRootIndices(
+    TensorView* consumer_tv,
+    const std::vector<kir::ForLoop*>& loops,
+    const std::unordered_map<IterDomain*, IterDomain*>& p2c_root_map,
+    const std::vector<bool>& root_contiguity) {
+  // grab all tensor views from producer_tv <- computeAtRoot
+  std::deque<TensorView*> tv_stack = getComputeAtTVStackFrom(consumer_tv);
+
+  std::unordered_map<kir::ForLoop*, Val*> loop_to_ind_map;
+  std::transform(
+      loops.begin(),
+      loops.end(),
+      std::inserter(loop_to_ind_map, loop_to_ind_map.begin()),
+      [](kir::ForLoop* fl) { return std::make_pair(fl, fl->index()); });
+
+  auto index_map = generateIndexAndExtentMap(
+                       tv_stack,
+                       std::deque<kir::ForLoop*>(loops.begin(), loops.end()),
+                       loop_to_ind_map,
+                       root_contiguity)
+                       .first;
+
+  // Indices should now be mapped onto IterDomains in consumer, so just grab
+  // and use them.
+
+  // TODO: During initialization should this be rfactor, then during reduction
+  // root?
+  auto root_dom = consumer_tv->getRootDomain();
+
+  bool inner_most_dim_contig =
+      root_dom[root_dom.size() - 1]->getIterType() == IterType::Iteration &&
+      root_contiguity[root_dom.size() - 1];
+
+  auto zero = new Int(0);
+  std::vector<Val*> root_inds(root_dom.size(), zero);
+  for (size_t i = 0; i < root_dom.size(); i++) {
+    if (root_dom[i]->isBroadcast()) {
+      continue;
+    }
+    if (index_map.find(root_dom[i]) != index_map.end()) {
+      root_inds[i] = index_map.at(root_dom[i]);
+    }
+  }
+
+  return root_inds;
+}
+
 } // namespace fuser
 } // namespace jit
 } // namespace torch

@@ -20,7 +20,11 @@ bool PredicateCompute::hasPredicates(const kir::TensorIndex* ti) {
 std::vector<kir::Bool*> PredicateCompute::computePredicates(
     const kir::TensorIndex* ti) {
   const TensorView* tv = ti->view();
-  const std::vector<IterDomain*>& root = tv->getRootDomain();
+
+  const std::vector<IterDomain*>& root =
+      tv->getMaybeRFactorDomain().size() == ti->nDims()
+      ? tv->getMaybeRFactorDomain()
+      : tv->getRootDomain();
 
   std::vector<kir::Bool*> preds(root.size(), new kir::Bool(true));
 
@@ -106,10 +110,8 @@ kir::Bool* PredicateCompute::getInlinePredicate(
     }
   }
 
-  auto domain_indices =
-      loop_utils::getIndicesForTV(out_tv, loops, p2c_root_map, true);
-  auto root_indices = IndexCompute::get(
-      out_tv->domain(), domain_indices, pred_contiguity, true);
+  auto root_indices = Index::getAllConsumerRootIndices(
+      out_tv, loops, p2c_root_map, pred_contiguity);
   auto pred_ti = new kir::TensorIndex(out_tv, root_indices);
   auto all_preds = PredicateCompute::computePredicates(pred_ti);
 
