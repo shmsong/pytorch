@@ -162,76 +162,6 @@ namespace loop_utils {
 // there) then into lower_loops where we sort exprs.
 // TODO: We should fix this when we have some time.
 
-// If we're initializing a reduction buffer, we won't have the reduction
-// loops. If we're actually performing the reduction, we will. Grab a reduction
-// root dimension in tv and see if it maps to any loop, returns if it maps or
-// not.
-bool loopsHasReductions(
-    TensorView* tv,
-    const std::vector<kir::ForLoop*>& loops,
-    const std::unordered_map<IterDomain*, IterDomain*>& ca_id_map =
-        std::unordered_map<IterDomain*, IterDomain*>());
-
-// Go through the iter domains in loops, and (in order) grab the ones that match
-// tv->getComputeAtAxis(...), map from the IterDomain in
-// tv->getComputeAtAxis(...) to its corresponding loop. If there are reduction
-// axes in the loops, assume we need to match reduction axes, otherwise assume
-// we ignore them. Provided map (if needed) maps iteration domains in
-// tv->getComputeAtAxes(...) to those in loops[...]->iter_domain. This map is
-// typically needed if tv is a producer.
-std::unordered_map<IterDomain*, kir::ForLoop*> computeAtToLoopMap(
-    TensorView* tv,
-    const std::vector<kir::ForLoop*>& loops,
-    const std::unordered_map<IterDomain*, IterDomain*>& ca_id_map =
-        std::unordered_map<IterDomain*, IterDomain*>());
-
-// Return inverse map of computeAtToLoopMap.
-std::unordered_map<kir::ForLoop*, IterDomain*> loopToComputeAtMap(
-    TensorView* tv,
-    const std::vector<kir::ForLoop*>& loops,
-    const std::unordered_map<IterDomain*, IterDomain*>& ca_id_map =
-        std::unordered_map<IterDomain*, IterDomain*>());
-
-// Given producer with producer->domain() replayed like consumer, map
-// producer->getComputeAtAxis(...) to consumer->getComputeAtAxis(...) for all
-// IterDomain's in producer->domain().
-std::unordered_map<IterDomain*, IterDomain*> mapIdPtoC(
-    TensorView* producer,
-    TensorView* consumer);
-
-// Run through loops which should have all indices needed to index into tv.
-// Validate these indices, and potentially modify them for use with the tv. Take
-// into consideration allocation point and memory type. tv->domain() is expected
-// to match the loop structure in loops. Provided map (if needed) maps iteration
-// domains in tv->getComputeAtAxes(...) to those in loops[...]->iter_domain.
-// This map is typically needed if tv is a producer. If for_predicates is true
-// don't filter indices based on memory type.
-std::vector<Val*> getIndicesForTV(
-    TensorView* tv,
-    const std::vector<kir::ForLoop*>& loops,
-    const std::unordered_map<IterDomain*, IterDomain*>& p2c_root_map,
-    bool for_predicates = false,
-    const std::unordered_map<IterDomain*, IterDomain*>& ca_id_map =
-        std::unordered_map<IterDomain*, IterDomain*>());
-
-// Similar to get indices for tv, but within unroll loop, will return
-// loop->extent() - 1. Only callable on a consumer.
-std::vector<Val*> getUnrollPredIndicesForTV(
-    TensorView* consumer_tv,
-    const std::vector<kir::ForLoop*>& loops);
-
-// Run through loops, match which ones are used for indexing tv, return the
-// extents of these loops. Take into consideration allocation point and memory
-// type. tv->domain() is expected to match the loop structure in loops. Provided
-// map (if needed) maps iteration domains in tv->getComputeAtAxes(...) to those
-// in loops[...]->iter_domain. This map is typically needed if tv is a producer.
-// tv must be set to shared or local memory.
-std::vector<Val*> getRangesForTV(
-    TensorView* tv,
-    const std::vector<kir::ForLoop*>& loops,
-    const std::unordered_map<IterDomain*, IterDomain*>& ca_id_map =
-        std::unordered_map<IterDomain*, IterDomain*>());
-
 // Figure out which loop the allocation needs to be in. Returns nullptr if
 // outside the first loop in loops. Also find out which index in tv the
 // first dimension that needs to be allocated is. Meaning we need to allocate
@@ -241,12 +171,13 @@ std::pair<kir::ForLoop*, int64_t> getAllocPoint(
     const std::vector<kir::ForLoop*>& loops);
 
 // Go through exprs mapping root domains from producer to consumer. Provides a
-// ground truth for how root domains map through our expressions
+// ground truth for how root domains map through our expressions. Needed for
+// unrolling.
 std::unordered_map<IterDomain*, IterDomain*> p2cRootMap(
     std::vector<Expr*> exprs);
 
 // Given a root IterationDomain and a p2c_root_map find the root IterationDomain
-// furthest down in the sorted expr list it maps to
+// furthest down in the sorted expr list it maps to. Needed for unrolling.
 IterDomain* getTermIDInMap(
     IterDomain* root_id,
     std::unordered_map<IterDomain*, IterDomain*> p2c_root_map);
