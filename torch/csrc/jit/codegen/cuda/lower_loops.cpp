@@ -125,10 +125,6 @@ void LoopNestGenerator::initReduction(
   // is one)
   auto init_stmt = new UnaryOp(UnaryOpType::Set, clone, init_val);
 
-  // Track that this is the init statement so we can process differently for
-  // predicate generation
-  init_exprs_.insert(init_stmt);
-
   // Init a pointer that will become the entirety of the initialization
   Expr* init_loop_nest = nullptr;
 

@@ -109,10 +109,9 @@ void UnrollPass::computeMap() {
 std::vector<Expr*> UnrollPass::runPass(
     Fusion* fusion,
     const std::vector<Expr*>& exprs,
-    const std::unordered_set<Expr*>& init_exprs,
     const ThreadPredicateMap& thread_predicates) {
   FusionGuard fg(fusion);
-  UnrollPass up(fusion, exprs, init_exprs, thread_predicates);
+  UnrollPass up(fusion, exprs, thread_predicates);
   up.computeMap();
   std::vector<Expr*> mutated_exprs;
   for (Expr* expr : exprs) {
