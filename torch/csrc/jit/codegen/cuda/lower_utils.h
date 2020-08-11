@@ -172,7 +172,7 @@ std::pair<kir::ForLoop*, int64_t> getAllocPoint(
 // ground truth for how root domains map through our expressions. Needed for
 // unrolling.
 std::unordered_map<IterDomain*, IterDomain*> p2cRootMap(
-    std::vector<Expr*> exprs);
+    const std::vector<Expr*>& exprs);
 
 // Given a root IterationDomain and a p2c_root_map find the root IterationDomain
 // furthest down in the sorted expr list it maps to. Needed for unrolling.

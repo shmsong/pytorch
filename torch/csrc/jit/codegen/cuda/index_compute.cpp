@@ -36,8 +36,6 @@ class ContigIDs : public OptInDispatch {
   const std::vector<bool>& root_contiguity_;
   std::unordered_map<IterDomain*, bool> is_contig_root;
 
-  ContigIDs() = delete;
-
   bool inRoot(const std::vector<IterDomain*>& ids) {
     return std::all_of(ids.begin(), ids.end(), [this](IterDomain* id) {
       return is_contig_root.find(id) != is_contig_root.end();
@@ -150,6 +148,8 @@ class ContigIDs : public OptInDispatch {
   }
 
  public:
+  ContigIDs() = delete;
+
   // Check through thie history of ids whose inputs map to root_domain with
   // contiguity root_contiguity. Return unordered_set of all merges that are
   // contiguous.
@@ -338,14 +338,14 @@ void IndexCompute::handle(Expr* e) {
 // using TransformIter::runBackward;
 IndexCompute::IndexCompute(
     const TensorDomain* _td,
-    const std::unordered_map<kir::IterDomain*, Val*>& initial_index_map,
-    const std::unordered_map<kir::IterDomain*, Val*>& _extent_map,
-    const std::unordered_set<kir::IterDomain*>& _zero_merged_in,
+    std::unordered_map<kir::IterDomain*, Val*> initial_index_map,
+    std::unordered_map<kir::IterDomain*, Val*> _extent_map,
+    std::unordered_set<kir::IterDomain*> _zero_merged_in,
     const std::vector<bool>& root_contiguity)
     : td_(_td),
-      index_map_(initial_index_map),
-      extent_map_(_extent_map),
-      zero_merged_in_(_zero_merged_in) {
+      index_map_(std::move(initial_index_map)),
+      extent_map_(std::move(_extent_map)),
+      zero_merged_in_(std::move(_zero_merged_in)) {
   // Make sure we recompute any indices we can that map to a contiguous access
   // in physical memory.
   if (std::any_of(root_contiguity.begin(), root_contiguity.end(), [](bool b) {
@@ -386,11 +386,11 @@ bool IndexCompute::hasZeroMerged(kir::IterDomain* id) {
 
 IndexCompute IndexCompute::updateIndexCompute(
     const TensorDomain* new_td,
-    std::unordered_map<IterDomain*, IterDomain*> id_map,
+    const std::unordered_map<IterDomain*, IterDomain*>& id_map,
     std::unordered_map<kir::IterDomain*, Val*> new_index_entries,
     const std::vector<bool>& root_contiguity) {
-  std::unordered_map<kir::IterDomain*, Val*> updated_index_map(
-      new_index_entries);
+  std::unordered_map<kir::IterDomain*, Val*> updated_index_map =
+      std::move(new_index_entries);
   std::unordered_map<kir::IterDomain*, Val*> updated_extent_map;
   std::unordered_set<kir::IterDomain*> updated_zero_merged_in;
 
@@ -1058,8 +1058,7 @@ std::pair<std::vector<Val*>, bool> Index::getConsumerRootPredIndices(
   if (unroll) {
     bool within_unroll = false;
     Val* one = new kir::Int(1);
-    for (size_t loop_i = 0; loop_i < loops.size(); loop_i++) {
-      auto loop = loops[loop_i];
+    for (auto loop : loops) {
       if (loop->iter_domain()->getParallelType() == ParallelType::Unroll) {
         within_unroll = true;
       }

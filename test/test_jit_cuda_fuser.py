@@ -413,6 +413,7 @@ class TestCudaFuser(JitTestCase):
                      ProfilingMode.LEGACY, "Requires fusion optimization pass to be effective")
     def test_dynamic_size(self):
         torch._C._jit_set_bailout_depth(2)
+
         def t(x: torch.Tensor, y: torch.Tensor, z: float):
             o = x + y
             o = o + z

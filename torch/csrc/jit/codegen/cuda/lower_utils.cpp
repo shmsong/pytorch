@@ -692,7 +692,7 @@ std::pair<kir::ForLoop*, int64_t> getAllocPoint(
 }
 
 std::unordered_map<IterDomain*, IterDomain*> p2cRootMap(
-    std::vector<Expr*> exprs) {
+    const std::vector<Expr*>& exprs) {
   std::unordered_map<IterDomain*, IterDomain*> p2c_root_map;
 
   for (auto expr : exprs) {

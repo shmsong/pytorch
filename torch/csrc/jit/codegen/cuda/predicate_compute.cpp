@@ -230,10 +230,10 @@ void UnrollPredicate::openLoop(kir::ForLoop* fl) {
 }
 
 UnrollPredicate::UnrollPredicate(
-    const std::vector<kir::ForLoop*>& outer_loops,
+    std::vector<kir::ForLoop*> outer_loops,
     kir::ForLoop* unrolled_loop,
     const std::unordered_map<IterDomain*, IterDomain*>& _p2c_root_map)
-    : for_loops(outer_loops), p2c_root_map_(_p2c_root_map) {
+    : for_loops(std::move(outer_loops)), p2c_root_map_(_p2c_root_map) {
   openLoop(unrolled_loop);
 }
 

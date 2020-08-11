@@ -57,7 +57,7 @@ class TORCH_CUDA_API UnrollPredicate {
 
  private:
   UnrollPredicate(
-      const std::vector<kir::ForLoop*>& outer_loops,
+      std::vector<kir::ForLoop*> outer_loops,
       kir::ForLoop* unrolled_loop,
       const std::unordered_map<IterDomain*, IterDomain*>& _p2c_root_map);
 
