@@ -9,43 +9,33 @@ namespace torch {
 namespace jit {
 namespace fuser {
 
-bool PredicateCompute::hasPredicates(const kir::TensorIndex* ti) {
-  std::vector<Bool*> preds;
-  for (auto ind : ti->indices())
-    if (FusionGuard::getCurFusion()->origin(ind) != nullptr)
-      return true;
-  return false;
-}
-
 std::vector<kir::Bool*> PredicateCompute::computePredicates(
-    const kir::TensorIndex* ti) {
-  const TensorView* tv = ti->view();
-
+    const TensorView* tv,
+    const std::vector<Val*>& indices) {
   const std::vector<IterDomain*>& root =
-      tv->getMaybeRFactorDomain().size() == ti->nDims()
+      tv->getMaybeRFactorDomain().size() == indices.size()
       ? tv->getMaybeRFactorDomain()
       : tv->getRootDomain();
 
-  std::vector<kir::Bool*> preds(root.size(), new kir::Bool(true));
+  TORCH_INTERNAL_ASSERT(root.size() == indices.size());
 
   bool no_pred_needed = true;
-  for (auto id : tv->domain()->domain())
-    if (id->getOrigin() != nullptr)
+  for (auto id : tv->domain()->domain()) {
+    if (id->getOrigin() != nullptr) {
       no_pred_needed = false;
-
-  if (no_pred_needed) {
-    return preds;
+    }
   }
 
-  TORCH_INTERNAL_ASSERT(
-      root.size() == ti->nDims(),
-      "Predicate compute received mismatched TensorView and TensorIndex.");
+  if (no_pred_needed) {
+    return {};
+  }
 
+  std::vector<kir::Bool*> preds(root.size(), new kir::Bool(true));
   Val* extent = nullptr;
 
-  for (size_t i = 0; i < ti->nDims(); i++) {
-    bool zero_ind = ti->index(i)->isZeroInt();
-    bool simple_ind = ti->index(i)->getOrigin() == nullptr;
+  for (size_t i = 0; i < indices.size(); i++) {
+    const bool zero_ind = indices[i]->isZeroInt();
+    const bool simple_ind = indices[i]->getOrigin() == nullptr;
 
     if (root[i]->isBroadcast()) {
       continue;
@@ -56,16 +46,16 @@ std::vector<kir::Bool*> PredicateCompute::computePredicates(
       if (root[i]->extent()->isOneInt())
         continue;
       if (extent == nullptr) {
-        extent = root[i]->extent();
+        extent = kir::lowerValue(root[i]->extent());
       } else {
-        extent = mul(extent, root[i]->extent());
+        extent = kir::mulExpr(extent, kir::lowerValue(root[i]->extent()));
       }
     } else {
-      auto local_extent = root[i]->extent();
+      auto local_extent = kir::lowerValue(root[i]->extent());
       if (extent != nullptr) {
-        local_extent = mul(extent, local_extent);
+        local_extent = kir::mulExpr(extent, local_extent);
       }
-      auto pred = kir::ltExpr(ti->index(i), local_extent);
+      auto pred = kir::ltExpr(indices[i], local_extent);
       extent = nullptr;
       TORCH_INTERNAL_ASSERT(
           pred->getValType().value() == ValType::KirScalar &&
@@ -111,8 +101,7 @@ kir::Bool* PredicateCompute::getInlinePredicate(
 
   auto root_indices =
       Index::getConsumerRootPredIndices(out_tv, loops, pred_contiguity);
-  auto pred_ti = new kir::TensorIndex(out_tv, root_indices);
-  auto all_preds = PredicateCompute::computePredicates(pred_ti);
+  auto all_preds = PredicateCompute::computePredicates(out_tv, root_indices);
 
   // If we have thread predicates, add those
   if (thread_pred != nullptr) {
@@ -202,8 +191,7 @@ void UnrollPredicate::predicateOn(Expr* tv_expr) {
   auto root_indices = Index::getConsumerRootPredIndices(
       out_tv, for_loops, pred_contiguity, true);
 
-  auto pred_ti = new kir::TensorIndex(out_tv, root_indices);
-  auto all_preds = PredicateCompute::computePredicates(pred_ti);
+  auto all_preds = PredicateCompute::computePredicates(out_tv, root_indices);
 
   TORCH_INTERNAL_ASSERT(
       all_preds.size() == out_tv->getRootDomain().size(),

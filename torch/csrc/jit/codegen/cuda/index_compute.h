@@ -65,9 +65,9 @@ class IndexCompute : public BackwardVisitor {
   void handle(Expr*) override;
 
   // return extent_map_[id] if exists, else return id->extent()
-  Val* getExtent(IterDomain* id);
+  Val* getExtent(kir::IterDomain* id);
 
-  bool hasZeroMerged(IterDomain* id);
+  bool hasZeroMerged(kir::IterDomain* id);
 
   // Tensor domain we're mapping back to root
   const TensorDomain* td_;
@@ -76,13 +76,13 @@ class IndexCompute : public BackwardVisitor {
   // propagation. Initial indices are mapped with this map at tv->domain()
   // and are back propagated to tv->rootDomain(). This index_map_ keeps the
   // indices at intermediate IterDomain's in that back propagation.
-  std::unordered_map<IterDomain*, Val*> index_map_;
+  std::unordered_map<kir::IterDomain*, Val*> index_map_;
 
   // Map from IterDomain to their broadcasted extent. If a TV has I0*I1 but its
   // producer has B0*I1 this map will contain a mapping from the ID{B0*I1} to
   // the extent I0*I1. Also contains updated extents if we merge in a 0 index.
   // See zero_merged_in_.
-  std::unordered_map<IterDomain*, Val*> extent_map_;
+  std::unordered_map<kir::IterDomain*, Val*> extent_map_;
 
   // This set keeps track of IterDomain's that have had a zero index merged into
   // them. This happens if we do something like tv->axis(0)->split(4) then
@@ -90,30 +90,30 @@ class IndexCompute : public BackwardVisitor {
   // indexing would be (0, i) then when we do the backward computation that zero
   // and i would attempt to be merged together. We handle indices like these
   // specially.
-  std::unordered_set<IterDomain*> zero_merged_in_;
+  std::unordered_set<kir::IterDomain*> zero_merged_in_;
 
   // IDs that are a result of contiguous merges
-  std::unordered_set<IterDomain*> contig_ids;
+  std::unordered_set<kir::IterDomain*> contig_ids;
 
  public:
-  const std::unordered_map<IterDomain*, Val*> indexMap() const {
+  const std::unordered_map<kir::IterDomain*, Val*> indexMap() const {
     return index_map_;
   }
 
-  const std::unordered_map<IterDomain*, Val*> extentMap() const {
+  const std::unordered_map<kir::IterDomain*, Val*> extentMap() const {
     return extent_map_;
   }
 
-  std::unordered_set<IterDomain*> zeroMergedIn() const {
+  std::unordered_set<kir::IterDomain*> zeroMergedIn() const {
     return zero_merged_in_;
   }
 
   // Propagate back from _td using initial_index_map
   IndexCompute(
       const TensorDomain* _td,
-      const std::unordered_map<IterDomain*, Val*>& initial_index_map,
-      const std::unordered_map<IterDomain*, Val*>& _extent_map,
-      const std::unordered_set<IterDomain*>& _zero_merged_in,
+      const std::unordered_map<kir::IterDomain*, Val*>& initial_index_map,
+      const std::unordered_map<kir::IterDomain*, Val*>& _extent_map,
+      const std::unordered_set<kir::IterDomain*>& _zero_merged_in,
       const std::vector<bool>& _root_contiguity);
 
   // Updates index_map, extent_map, and zero_merged_in based on id_map and
@@ -122,7 +122,7 @@ class IndexCompute : public BackwardVisitor {
   IndexCompute updateIndexCompute(
       const TensorDomain* new_td,
       std::unordered_map<IterDomain*, IterDomain*> id_map,
-      std::unordered_map<IterDomain*, Val*> new_index_entries,
+      std::unordered_map<kir::IterDomain*, Val*> new_index_entries,
       const std::vector<bool>& _root_contiguity);
 
   // Map producer contiguity information to consumer, if entries don't match

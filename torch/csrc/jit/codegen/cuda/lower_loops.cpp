@@ -109,12 +109,12 @@ void LoopNestGenerator::initReduction(
   // dimensions. Everything else will be iterated over to cover the entire
   // buffer. Index compute will ignore [block, grid]Dims depending on buffer
   // memory location
-  std::vector<IterDomain*> ids;
+  std::vector<kir::IterDomain*> ids;
   for (auto i = alloc_pos; i < tv->nDims(); i++) {
     IterDomain* dim = tv->getComputeAtAxis(i).first;
     if (dim->isReduction())
       continue;
-    ids.push_back(dim);
+    ids.push_back(kir::lowerValue(dim)->as<kir::IterDomain>());
   }
 
   // Unsafe clone, as we want an exact replica of tv so we can create a UnaryOp
@@ -145,10 +145,10 @@ void LoopNestGenerator::initReduction(
       std::stringstream ss;
       ss << id->getParallelType();
       new_fl = new kir::ForLoop(
-          new NamedScalar(ss.str(), DataType::Int), id, {}, inner_fl);
+          new kir::NamedScalar(ss.str(), DataType::Int), id, {}, inner_fl);
     } else {
       // Otherwise it's just a new int-
-      new_fl = new kir::ForLoop(new Int(), id, {}, inner_fl);
+      new_fl = new kir::ForLoop(new kir::Int(c10::nullopt), id, {}, inner_fl);
     }
 
     if (init_loop_nest == nullptr) {
@@ -211,7 +211,7 @@ void LoopNestGenerator::handle(Expr* expr) {
           " cannot lower ",
           out->getValType().value());
 
-      pushBack(new kir::Allocate(out, MemoryType::Local, new Int(1)));
+      pushBack(new kir::Allocate(out, MemoryType::Local, new kir::Int(1)));
     }
     pushBack(expr);
     return;
@@ -308,7 +308,8 @@ void LoopNestGenerator::handle(Expr* expr) {
       // Nothing to open
       break;
     }
-    if (loops_to_open.front().first == existing_loop->iter_domain()) {
+    if (kir::lowerValue(loops_to_open.front().first)->as<kir::IterDomain>() ==
+        existing_loop->iter_domain()) {
       loops_to_open.pop_front();
     }
   }
@@ -348,7 +349,8 @@ void LoopNestGenerator::handle(Expr* expr) {
     auto ca_axis = out->getThisComputeAtAxis() - 1;
     while (for_loops.size() > 0 &&
            for_loops.back()->iter_domain() !=
-               out->getComputeAtAxis(ca_axis).first) {
+               kir::lowerValue(out->getComputeAtAxis(ca_axis).first)
+                   ->as<kir::IterDomain>()) {
       popFor();
     }
   }
@@ -388,7 +390,13 @@ void findTargetTensor(Expr* expr, TensorView*& target, unsigned& score) {
 
   auto axis = out_tv->getRelativeComputeAtAxis();
   target = out_tv->getComputeAtView();
-  std::tie(axis, target) = target->getComputeAtPos(axis);
+  while (target->hasComputeAt()) {
+    if (target->getThisComputeAtAxis() < axis)
+      break;
+    TORCH_INTERNAL_ASSERT(target->getThisComputeAtAxis() == axis);
+    axis = target->getComputeAtRelPos(axis);
+    target = target->getComputeAtView();
+  }
 
   score = axis;
 }

@@ -28,9 +28,9 @@ class ContigIDs : public OptInDispatch {
   using OptInDispatch::handle;
 
   // Mark if ids are result of contigous merges
-  std::unordered_set<IterDomain*> contig_ids;
+  std::unordered_set<kir::IterDomain*> contig_ids;
   // Given contiguous domain, return all iter domains within its history.
-  std::unordered_map<IterDomain*, std::unordered_set<IterDomain*>>
+  std::unordered_map<kir::IterDomain*, std::unordered_set<kir::IterDomain*>>
       within_contig_ids;
   const std::vector<IterDomain*>& root_domain_;
   const std::vector<bool>& root_contiguity_;
@@ -44,7 +44,7 @@ class ContigIDs : public OptInDispatch {
     });
   }
 
-  bool isContig(IterDomain* id) {
+  bool isContig(kir::IterDomain* id) {
     return contig_ids.find(id) != contig_ids.end();
   }
 
@@ -55,7 +55,8 @@ class ContigIDs : public OptInDispatch {
     // If either input is non-contiguous so is output.
     auto inner = merge->inner();
     auto outer = merge->outer();
-    if (!isContig(inner) || !isContig(outer)) {
+    if (!isContig(kir::lowerValue(inner)->as<kir::IterDomain>()) ||
+        !isContig(kir::lowerValue(outer)->as<kir::IterDomain>())) {
       return;
     }
 
@@ -115,33 +116,36 @@ class ContigIDs : public OptInDispatch {
     // If we matched all inputs, the output is contiguous. Only want to keep the
     // top contig ID, lower ids should be placed in the "within_contig_ids" map
     // of top id.
+    auto kir_inner = kir::lowerValue(merge->inner())->as<kir::IterDomain>();
+    auto kir_outer = kir::lowerValue(merge->outer())->as<kir::IterDomain>();
+    auto kir_out = kir::lowerValue(merge->out())->as<kir::IterDomain>();
     if (ordered_inputs.empty()) {
-      if (contig_ids.find(merge->inner()) != contig_ids.end()) {
-        contig_ids.erase(merge->inner());
+      if (contig_ids.find(kir_inner) != contig_ids.end()) {
+        contig_ids.erase(kir_inner);
       }
 
-      if (contig_ids.find(merge->outer()) != contig_ids.end()) {
-        contig_ids.erase(merge->outer());
+      if (contig_ids.find(kir_outer) != contig_ids.end()) {
+        contig_ids.erase(kir_outer);
       }
 
-      contig_ids.emplace(merge->out());
+      contig_ids.emplace(kir_out);
 
-      std::unordered_set<IterDomain*> within_out;
-      within_out.emplace(merge->inner());
-      if (within_contig_ids.find(merge->inner()) != within_contig_ids.end()) {
-        auto in_inner = within_contig_ids.at(merge->inner());
+      std::unordered_set<kir::IterDomain*> within_out;
+      within_out.emplace(kir_inner);
+      if (within_contig_ids.find(kir_inner) != within_contig_ids.end()) {
+        auto in_inner = within_contig_ids.at(kir_inner);
         within_out.insert(in_inner.begin(), in_inner.end());
-        within_contig_ids.erase(merge->inner());
+        within_contig_ids.erase(kir_inner);
       }
 
-      within_out.emplace(merge->outer());
-      if (within_contig_ids.find(merge->outer()) != within_contig_ids.end()) {
-        auto in_outer = within_contig_ids.at(merge->outer());
+      within_out.emplace(kir_outer);
+      if (within_contig_ids.find(kir_outer) != within_contig_ids.end()) {
+        auto in_outer = within_contig_ids.at(kir_outer);
         within_out.insert(in_outer.begin(), in_outer.end());
-        within_contig_ids.erase(merge->outer());
+        within_contig_ids.erase(kir_outer);
       }
 
-      within_contig_ids[merge->out()] = within_out;
+      within_contig_ids[kir_out] = within_out;
     }
   }
 
@@ -167,8 +171,11 @@ class ContigIDs : public OptInDispatch {
 
     for (size_t i = 0; i < root_domain_.size(); i++) {
       if (root_contiguity_[i]) {
-        contig_ids.emplace(root_domain_[i]);
-        within_contig_ids[root_domain_[i]] = std::unordered_set<IterDomain*>();
+        auto kir_root_domain_i =
+            kir::lowerValue(root_domain_[i])->as<kir::IterDomain>();
+        contig_ids.emplace(kir_root_domain_i);
+        within_contig_ids[kir_root_domain_i] =
+            std::unordered_set<kir::IterDomain*>();
       }
       is_contig_root[root_domain_[i]] = root_contiguity_[i];
     }
@@ -180,12 +187,13 @@ class ContigIDs : public OptInDispatch {
     }
   }
 
-  const std::unordered_set<IterDomain*> contigIDs() const {
+  const std::unordered_set<kir::IterDomain*> contigIDs() const {
     return contig_ids;
   }
 
-  const std::unordered_map<IterDomain*, std::unordered_set<IterDomain*>>
-  withinContigIDs() const {
+  const std::
+      unordered_map<kir::IterDomain*, std::unordered_set<kir::IterDomain*>>
+      withinContigIDs() const {
     return within_contig_ids;
   }
 };
@@ -193,9 +201,9 @@ class ContigIDs : public OptInDispatch {
 } // namespace
 
 void IndexCompute::handle(Split* split) {
-  auto in_id = split->in();
-  auto outer_id = split->outer();
-  auto inner_id = split->inner();
+  auto in_id = kir::lowerValue(split->in())->as<kir::IterDomain>();
+  auto outer_id = kir::lowerValue(split->outer())->as<kir::IterDomain>();
+  auto inner_id = kir::lowerValue(split->inner())->as<kir::IterDomain>();
 
   auto outer_it = index_map_.find(outer_id);
   auto inner_it = index_map_.find(inner_id);
@@ -226,7 +234,7 @@ void IndexCompute::handle(Split* split) {
   }
 
   if (outer_zero && inner_zero) {
-    index_map_[in_id] = new Int(0);
+    index_map_[in_id] = new kir::Int(0);
   } else if (outer_zero) {
     index_map_[in_id] = inner_ind;
     zero_merged_in_.emplace(in_id);
@@ -236,14 +244,15 @@ void IndexCompute::handle(Split* split) {
     zero_merged_in_.emplace(in_id);
     extent_map_[in_id] = getExtent(outer_id);
   } else {
-    index_map_[in_id] = add(mul(outer_ind, getExtent(inner_id)), inner_ind);
+    index_map_[in_id] =
+        kir::addExpr(kir::mulExpr(outer_ind, getExtent(inner_id)), inner_ind);
   }
 }
 
 void IndexCompute::handle(Merge* merge) {
-  auto out_id = merge->out();
-  auto outer_id = merge->outer();
-  auto inner_id = merge->inner();
+  auto out_id = kir::lowerValue(merge->out())->as<kir::IterDomain>();
+  auto outer_id = kir::lowerValue(merge->outer())->as<kir::IterDomain>();
+  auto inner_id = kir::lowerValue(merge->inner())->as<kir::IterDomain>();
 
   auto out_it = index_map_.find(out_id);
   if (out_it == index_map_.end())
@@ -251,7 +260,7 @@ void IndexCompute::handle(Merge* merge) {
 
   auto out_ind = out_it->second;
 
-  auto zero = new Int(0);
+  auto zero = new kir::Int(0);
 
   if (out_ind->isZeroInt()) {
     index_map_[outer_id] = zero;
@@ -262,17 +271,18 @@ void IndexCompute::handle(Merge* merge) {
   }
 
   if (!hasZeroMerged(out_id) && contig_ids.find(out_id) != contig_ids.end()) {
-    auto input_ids =
-        ir_utils::iterDomainInputsOfOrderedAs({out_id}, td_->getRootDomain());
+    auto input_ids = ir_utils::iterDomainInputsOfOrderedAs(
+        {merge->out()}, td_->getRootDomain());
 
     // Shouldn't hit this, but don't want to segfault if somehow we do.
     TORCH_INTERNAL_ASSERT(!input_ids.empty());
 
     for (auto root_id : input_ids) {
-      index_map_[root_id] = zero;
+      index_map_[kir::lowerValue(root_id)->as<kir::IterDomain>()] = zero;
     }
 
-    index_map_[*(input_ids.end() - 1)] = out_ind;
+    index_map_[kir::lowerValue(*(input_ids.end() - 1))->as<kir::IterDomain>()] =
+        out_ind;
     return;
   }
 
@@ -304,8 +314,8 @@ void IndexCompute::handle(Merge* merge) {
   } else {
     Val* I = inner_extent;
 
-    Val* outer_ind = div(out_ind, I);
-    Val* inner_ind = mod(out_ind, I);
+    Val* outer_ind = kir::divExpr(out_ind, I);
+    Val* inner_ind = kir::modExpr(out_ind, I);
 
     index_map_[outer_id] = outer_ind;
     index_map_[inner_id] = inner_ind;
@@ -328,9 +338,9 @@ void IndexCompute::handle(Expr* e) {
 // using TransformIter::runBackward;
 IndexCompute::IndexCompute(
     const TensorDomain* _td,
-    const std::unordered_map<IterDomain*, Val*>& initial_index_map,
-    const std::unordered_map<IterDomain*, Val*>& _extent_map,
-    const std::unordered_set<IterDomain*>& _zero_merged_in,
+    const std::unordered_map<kir::IterDomain*, Val*>& initial_index_map,
+    const std::unordered_map<kir::IterDomain*, Val*>& _extent_map,
+    const std::unordered_set<kir::IterDomain*>& _zero_merged_in,
     const std::vector<bool>& root_contiguity)
     : td_(_td),
       index_map_(initial_index_map),
@@ -362,7 +372,7 @@ IndexCompute::IndexCompute(
   traverseFrom(td_->fusion(), domain_vals, false);
 }
 
-Val* IndexCompute::getExtent(IterDomain* id) {
+Val* IndexCompute::getExtent(kir::IterDomain* id) {
   if (extent_map_.find(id) != extent_map_.end()) {
     return extent_map_.at(id);
   } else {
@@ -370,22 +380,25 @@ Val* IndexCompute::getExtent(IterDomain* id) {
   }
 }
 
-bool IndexCompute::hasZeroMerged(IterDomain* id) {
+bool IndexCompute::hasZeroMerged(kir::IterDomain* id) {
   return zero_merged_in_.find(id) != zero_merged_in_.end();
 }
 
 IndexCompute IndexCompute::updateIndexCompute(
     const TensorDomain* new_td,
     std::unordered_map<IterDomain*, IterDomain*> id_map,
-    std::unordered_map<IterDomain*, Val*> new_index_entries,
+    std::unordered_map<kir::IterDomain*, Val*> new_index_entries,
     const std::vector<bool>& root_contiguity) {
-  std::unordered_map<IterDomain*, Val*> updated_index_map(new_index_entries);
-  std::unordered_map<IterDomain*, Val*> updated_extent_map;
-  std::unordered_set<IterDomain*> updated_zero_merged_in;
+  std::unordered_map<kir::IterDomain*, Val*> updated_index_map(
+      new_index_entries);
+  std::unordered_map<kir::IterDomain*, Val*> updated_extent_map;
+  std::unordered_set<kir::IterDomain*> updated_zero_merged_in;
 
   for (auto id_entry : id_map) {
-    IterDomain* prev_id = id_entry.first;
-    IterDomain* new_id = id_entry.second;
+    kir::IterDomain* prev_id =
+        kir::lowerValue(id_entry.first)->as<kir::IterDomain>();
+    kir::IterDomain* new_id =
+        kir::lowerValue(id_entry.second)->as<kir::IterDomain>();
 
     if (index_map_.find(prev_id) != index_map_.end()) {
       updated_index_map[new_id] = index_map_.at(prev_id);
@@ -485,8 +498,8 @@ std::deque<TensorView*> getComputeAtTVStackFrom(TensorView* from_tv) {
 }
 
 std::pair<
-    std::unordered_map<IterDomain*, Val*>,
-    std::unordered_map<IterDomain*, Val*>>
+    std::unordered_map<kir::IterDomain*, Val*>,
+    std::unordered_map<kir::IterDomain*, Val*>>
 generateIndexAndExtentMap(
     std::deque<TensorView*> tv_stack,
     std::deque<kir::ForLoop*> loops,
@@ -514,23 +527,31 @@ generateIndexAndExtentMap(
 
   if (tv_stack.empty())
     return std::make_pair(
-        std::unordered_map<IterDomain*, Val*>(),
-        std::unordered_map<IterDomain*, Val*>());
+        std::unordered_map<kir::IterDomain*, Val*>(),
+        std::unordered_map<kir::IterDomain*, Val*>());
 
   // Setup initial IndexCompute:
   auto tv = tv_stack.front();
   tv_stack.pop_front();
   auto td = tv->domain()->domain();
 
+  std::vector<kir::IterDomain*> k_td;
+
+  std::transform(
+      td.begin(), td.end(), std::back_inserter(k_td), [](IterDomain* id) {
+        return kir::lowerValue(id)->as<kir::IterDomain>();
+      });
+
   // Map from all IterDomain's to corresponding index as we process each tv in
   // the stack
-  std::unordered_map<IterDomain*, Val*> initial_index_map;
+  std::unordered_map<kir::IterDomain*, Val*> initial_index_map;
 
   // Match loops to this TV if the loop matchis this TV's ID (could reduce
   // complexity here)
+
   while (!loops.empty() &&
-         std::find(td.begin(), td.end(), loops.front()->iter_domain()) !=
-             td.end()) {
+         std::find(k_td.begin(), k_td.end(), loops.front()->iter_domain()) !=
+             k_td.end()) {
     TORCH_INTERNAL_ASSERT(
         loop_to_ind_map.find(loops.front()) != loop_to_ind_map.end());
     initial_index_map[loops.front()->iter_domain()] =
@@ -541,8 +562,8 @@ generateIndexAndExtentMap(
   IndexCompute index_compute(
       tv->domain(),
       initial_index_map,
-      std::unordered_map<IterDomain*, Val*>(),
-      std::unordered_set<IterDomain*>(),
+      std::unordered_map<kir::IterDomain*, Val*>(),
+      std::unordered_set<kir::IterDomain*>(),
       tv_stack.empty() ? last_tv_root_contiguity
                        : std::vector<bool>(tv->getRootDomain().size(), false));
 
@@ -553,13 +574,20 @@ generateIndexAndExtentMap(
     tv_stack.pop_front();
     td = tv->domain()->domain();
 
-    std::unordered_map<IterDomain*, Val*> new_indices;
+    std::unordered_map<kir::IterDomain*, Val*> new_indices;
 
     // Match loops to this TV if the loop matchis this TV's ID (could reduce
     // complexity here)
+    k_td.clear();
+
+    std::transform(
+        td.begin(), td.end(), std::back_inserter(k_td), [](IterDomain* id) {
+          return kir::lowerValue(id)->as<kir::IterDomain>();
+        });
+
     while (!loops.empty() &&
-           std::find(td.begin(), td.end(), loops.front()->iter_domain()) !=
-               td.end()) {
+           std::find(k_td.begin(), k_td.end(), loops.front()->iter_domain()) !=
+               k_td.end()) {
       TORCH_INTERNAL_ASSERT(
           loop_to_ind_map.find(loops.front()) != loop_to_ind_map.end());
       new_indices[loops.front()->iter_domain()] =
@@ -617,7 +645,7 @@ kir::TensorIndex* Index::getGlobalProducerIndex(
 
   // Indices should now be mapped onto IterDomains in producer, so just grab
   // and use them.
-  auto zero = new Int(0);
+  auto zero = new kir::Int(0);
 
   auto root_dom = producer_tv->getMaybeRFactorDomain();
 
@@ -637,15 +665,19 @@ kir::TensorIndex* Index::getGlobalProducerIndex(
       continue;
     }
 
+    auto kir_root_dom_i = kir::lowerValue(root_dom[i])->as<kir::IterDomain>();
+
     TORCH_INTERNAL_ASSERT(
-        index_map.find(root_dom[i]) != index_map.end(),
+        index_map.find(kir_root_dom_i) != index_map.end(),
         "Couldn't find root mapping for TV",
         consumer_tv->name(),
         " dim: ",
         i,
         " id: ",
-        root_dom[i]);
-    auto root_ind = index_map.at(root_dom[i]);
+        kir_root_dom_i);
+
+    auto root_ind = index_map.at(kir_root_dom_i);
+    TORCH_INTERNAL_ASSERT(kir::isLoweredScalar(root_ind));
 
     if (i == root_dom.size() - 1 && inner_most_dim_contig) {
       strided_inds.push_back(root_ind);
@@ -654,13 +686,13 @@ kir::TensorIndex* Index::getGlobalProducerIndex(
     } else {
       std::stringstream ss;
       ss << "T" << producer_tv->name() << ".stride[" << stride_i++ << "]";
-      strided_inds.push_back(
-          mul(root_ind, new NamedScalar(ss.str(), DataType::Int)));
+      strided_inds.push_back(kir::mulExpr(
+          root_ind, new kir::NamedScalar(ss.str(), DataType::Int)));
     }
   }
 
   if (strided_inds.size() == 0)
-    strided_inds.push_back(new Int(0));
+    strided_inds.push_back(new kir::Int(0));
 
   return new kir::TensorIndex(producer_tv, strided_inds);
 }
@@ -678,7 +710,7 @@ std::unordered_map<kir::ForLoop*, Val*> indexMapFromTV(
     within_alloc = true;
   }
 
-  Val* zero = new Int(0);
+  Val* zero = new kir::Int(0);
 
   bool is_shared = tv->getMemoryType() == MemoryType::Shared;
   bool is_local = tv->getMemoryType() == MemoryType::Local;
@@ -736,7 +768,7 @@ kir::TensorIndex* Index::getProducerIndex_impl(
 
   // Indices should now be mapped onto IterDomains in producer, so just grab
   // and use them.
-  auto zero = new Int(0);
+  auto zero = new kir::Int(0);
 
   auto root_dom = producer_tv->getMaybeRFactorDomain();
 
@@ -747,16 +779,19 @@ kir::TensorIndex* Index::getProducerIndex_impl(
       continue;
     }
 
+    auto kir_root_dom_i = kir::lowerValue(root_dom[i])->as<kir::IterDomain>();
+
     TORCH_INTERNAL_ASSERT(
-        index_map.find(root_dom[i]) != index_map.end(),
+        index_map.find(kir_root_dom_i) != index_map.end(),
         "Couldn't find root mapping for TV",
         consumer_tv->name(),
         " dim: ",
         i,
         " id: ",
-        root_dom[i]);
+        kir_root_dom_i);
 
-    auto root_ind_i = index_map.at(root_dom[i]);
+    auto root_ind_i = index_map.at(kir_root_dom_i);
+    TORCH_INTERNAL_ASSERT(kir::isLoweredScalar(root_ind_i));
 
     if (root_ind_i->isZeroInt()) {
       continue;
@@ -769,9 +804,11 @@ kir::TensorIndex* Index::getProducerIndex_impl(
         continue;
       }
 
+      auto kir_root_dom_j = kir::lowerValue(root_dom[j])->as<kir::IterDomain>();
+
       TORCH_INTERNAL_ASSERT(
-          index_map.find(root_dom[j]) != index_map.end() &&
-              extent_map.find(root_dom[j]) != extent_map.end(),
+          index_map.find(kir_root_dom_j) != index_map.end() &&
+              extent_map.find(kir_root_dom_j) != extent_map.end(),
           "Couldn't find root mapping for TV",
           consumer_tv->name(),
           " dim: ",
@@ -779,27 +816,29 @@ kir::TensorIndex* Index::getProducerIndex_impl(
           " id: ",
           root_dom[i]);
 
-      auto root_ind_j = index_map.at(root_dom[j]);
-      auto root_ext_j = extent_map.at(root_dom[j]);
+      auto root_ind_j = index_map.at(kir_root_dom_j);
+      auto root_ext_j = extent_map.at(kir_root_dom_j);
+
+      TORCH_INTERNAL_ASSERT(kir::isLoweredScalar(root_ext_j));
 
       if (!root_ind_j->isZeroInt()) {
         if (stride == nullptr) {
           stride = root_ext_j;
         } else {
-          stride = mul(stride, root_ext_j);
+          stride = kir::mulExpr(stride, root_ext_j);
         }
       }
     }
 
     if (stride != nullptr) {
-      strided_inds.push_back(mul(root_ind_i, stride));
+      strided_inds.push_back(kir::mulExpr(root_ind_i, stride));
     } else {
       strided_inds.push_back(root_ind_i);
     }
   }
 
   if (strided_inds.size() == 0)
-    strided_inds.push_back(new Int(0));
+    strided_inds.push_back(new kir::Int(0));
 
   return new kir::TensorIndex(producer_tv, strided_inds);
 }
@@ -826,7 +865,7 @@ kir::TensorIndex* Index::getGlobalConsumerIndex(
 
   // Indices should now be mapped onto IterDomains in consumer, so just grab
   // and use them.
-  auto zero = new Int(0);
+  auto zero = new kir::Int(0);
 
   auto root_dom = consumer_tv->getMaybeRFactorDomain();
 
@@ -845,15 +884,17 @@ kir::TensorIndex* Index::getGlobalConsumerIndex(
       continue;
     }
 
+    auto kir_root_dom_i = kir::lowerValue(root_dom[i])->as<kir::IterDomain>();
+
     TORCH_INTERNAL_ASSERT(
-        index_map.find(root_dom[i]) != index_map.end(),
+        index_map.find(kir_root_dom_i) != index_map.end(),
         "Couldn't find root mapping for TV",
         consumer_tv->name(),
         " dim: ",
         i,
         " id: ",
-        root_dom[i]);
-    auto ind = index_map.at(root_dom[i]);
+        kir_root_dom_i);
+    auto ind = index_map.at(kir_root_dom_i);
 
     if (i == root_dom.size() - 1 && inner_most_dim_contig) {
       strided_inds.push_back(ind);
@@ -863,12 +904,12 @@ kir::TensorIndex* Index::getGlobalConsumerIndex(
       std::stringstream ss;
       ss << "T" << consumer_tv->name() << ".stride[" << stride_i++ << "]";
       strided_inds.push_back(
-          mul(ind, new NamedScalar(ss.str(), DataType::Int)));
+          kir::mulExpr(ind, new kir::NamedScalar(ss.str(), DataType::Int)));
     }
   }
 
   if (strided_inds.size() == 0)
-    strided_inds.push_back(new Int(0));
+    strided_inds.push_back(new kir::Int(0));
 
   return new kir::TensorIndex(consumer_tv, strided_inds);
 }
@@ -894,7 +935,7 @@ kir::TensorIndex* Index::getConsumerIndex_impl(
 
   // Indices should now be mapped onto IterDomains in producer, so just grab
   // and use them.
-  auto zero = new Int(0);
+  auto zero = new kir::Int(0);
 
   auto root_dom = consumer_tv->getMaybeRFactorDomain();
 
@@ -904,15 +945,18 @@ kir::TensorIndex* Index::getConsumerIndex_impl(
       continue;
     }
 
+    auto kir_root_dom_i = kir::lowerValue(root_dom[i])->as<kir::IterDomain>();
+
     TORCH_INTERNAL_ASSERT(
-        index_map.find(root_dom[i]) != index_map.end(),
+        index_map.find(kir_root_dom_i) != index_map.end(),
         "Couldn't find root mapping for TV",
         consumer_tv->name(),
         " dim: ",
         i,
         " id: ",
-        root_dom[i]);
-    auto root_ind_i = index_map.at(root_dom[i]);
+        kir_root_dom_i);
+    auto root_ind_i = index_map.at(kir_root_dom_i);
+    TORCH_INTERNAL_ASSERT(kir::isLoweredScalar(root_ind_i));
 
     if (root_ind_i->isZeroInt()) {
       continue;
@@ -925,9 +969,11 @@ kir::TensorIndex* Index::getConsumerIndex_impl(
         continue;
       }
 
+      auto kir_root_dom_j = kir::lowerValue(root_dom[j])->as<kir::IterDomain>();
+
       TORCH_INTERNAL_ASSERT(
-          index_map.find(root_dom[j]) != index_map.end() &&
-              extent_map.find(root_dom[j]) != extent_map.end(),
+          index_map.find(kir_root_dom_j) != index_map.end() &&
+              extent_map.find(kir_root_dom_j) != extent_map.end(),
           "Couldn't find root mapping for TV",
           consumer_tv->name(),
           " dim: ",
@@ -935,27 +981,27 @@ kir::TensorIndex* Index::getConsumerIndex_impl(
           " id: ",
           root_dom[i]);
 
-      auto root_ind_j = index_map.at(root_dom[j]);
-      auto root_ext_j = extent_map.at(root_dom[j]);
-
+      auto root_ind_j = index_map.at(kir_root_dom_j);
+      auto root_ext_j = extent_map.at(kir_root_dom_j);
+      TORCH_INTERNAL_ASSERT(kir::isLoweredScalar(root_ext_j));
       if (!root_ind_j->isZeroInt()) {
         if (stride == nullptr) {
           stride = root_ext_j;
         } else {
-          stride = mul(stride, root_ext_j);
+          stride = kir::mulExpr(stride, root_ext_j);
         }
       }
     }
 
     if (stride != nullptr) {
-      strided_inds.push_back(mul(root_ind_i, stride));
+      strided_inds.push_back(kir::mulExpr(root_ind_i, stride));
     } else {
       strided_inds.push_back(root_ind_i);
     }
   }
 
   if (strided_inds.size() == 0)
-    strided_inds.push_back(new Int(0));
+    strided_inds.push_back(new kir::Int(0));
 
   return new kir::TensorIndex(consumer_tv, strided_inds);
 }
@@ -969,8 +1015,10 @@ kir::TensorIndex* Index::getProducerIndex(
     return new kir::TensorIndex(producer, {});
   }
 
-  if (producer->getMemoryType() == MemoryType::Global)
+  if (producer->getMemoryType() == MemoryType::Global) {
     return getGlobalProducerIndex(producer, consumer, loops);
+  }
+
   return getProducerIndex_impl(producer, consumer, loops);
 }
 
@@ -982,8 +1030,10 @@ kir::TensorIndex* Index::getConsumerIndex(
     return new kir::TensorIndex(consumer, {});
   }
 
-  if (consumer->getMemoryType() == MemoryType::Global)
+  if (consumer->getMemoryType() == MemoryType::Global) {
     return getGlobalConsumerIndex(consumer, loops);
+  }
+
   return getConsumerIndex_impl(consumer, loops);
 }
 
@@ -1007,7 +1057,7 @@ std::vector<Val*> Index::getConsumerRootPredIndices(
 
   if (unroll) {
     bool within_unroll = false;
-    Val* one = new Int(1);
+    Val* one = new kir::Int(1);
     for (size_t loop_i = 0; loop_i < loops.size(); loop_i++) {
       auto loop = loops[loop_i];
       if (loop->iter_domain()->getParallelType() == ParallelType::Unroll) {
@@ -1015,7 +1065,8 @@ std::vector<Val*> Index::getConsumerRootPredIndices(
       }
 
       if (within_unroll && !loop->iter_domain()->isThread()) {
-        loop_to_ind_map[loop] = sub(loop->iter_domain()->extent(), one);
+        loop_to_ind_map[loop] =
+            kir::subExpr(loop->iter_domain()->extent(), one);
       }
     }
   }
@@ -1038,14 +1089,18 @@ std::vector<Val*> Index::getConsumerRootPredIndices(
       root_dom[root_dom.size() - 1]->getIterType() == IterType::Iteration &&
       root_contiguity[root_dom.size() - 1];
 
-  auto zero = new Int(0);
+  auto zero = new kir::Int(0);
   std::vector<Val*> root_inds(root_dom.size(), zero);
   for (size_t i = 0; i < root_dom.size(); i++) {
     if (root_dom[i]->isBroadcast()) {
       continue;
     }
-    if (index_map.find(root_dom[i]) != index_map.end()) {
-      root_inds[i] = index_map.at(root_dom[i]);
+
+    auto kir_root_dom_i = kir::lowerValue(root_dom[i])->as<kir::IterDomain>();
+    if (index_map.find(kir_root_dom_i) != index_map.end()) {
+      auto ind = index_map.at(kir_root_dom_i);
+      TORCH_INTERNAL_ASSERT(kir::isLoweredScalar(ind))
+      root_inds[i] = ind;
     }
   }
 

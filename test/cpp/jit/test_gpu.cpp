@@ -1068,32 +1068,32 @@ void testGPU_FusionParser() {
 __global__ void CUDAGeneratedKernel(Tensor<float, 1> T0, Tensor<float, 1> T1, Tensor<float, 1> T3){
   float T2[4];
   if ( ( ( ( ( ( blockIdx.x * 4 ) + ( 4 - 1 ) ) * 128 ) + threadIdx.x ) < T3.size[0] ) ) {
-    for(size_t i20 = 0; i20 < 4; ++i20 ) {
-      T2[ i20 ]
-         = T0[ ( ( ( ( blockIdx.x * 4 ) + i20 ) * 128 ) + threadIdx.x ) ]
-         * T1[ ( ( ( ( blockIdx.x * 4 ) + i20 ) * 128 ) + threadIdx.x ) ];
+    for(size_t i8 = 0; i8 < 4; ++i8 ) {
+      T2[ i8 ]
+         = T0[ ( ( ( ( blockIdx.x * 4 ) + i8 ) * 128 ) + threadIdx.x ) ]
+         * T1[ ( ( ( ( blockIdx.x * 4 ) + i8 ) * 128 ) + threadIdx.x ) ];
     }
   } else {
-    for(size_t i20 = 0; i20 < 4; ++i20 ) {
-      if ( ( ( ( ( ( blockIdx.x * 4 ) + i20 ) * 128 ) + threadIdx.x ) < T3.size[0] ) ) {
-        T2[ i20 ]
-           = T0[ ( ( ( ( blockIdx.x * 4 ) + i20 ) * 128 ) + threadIdx.x ) ]
-           * T1[ ( ( ( ( blockIdx.x * 4 ) + i20 ) * 128 ) + threadIdx.x ) ];
+    for(size_t i8 = 0; i8 < 4; ++i8 ) {
+      if ( ( ( ( ( ( blockIdx.x * 4 ) + i8 ) * 128 ) + threadIdx.x ) < T3.size[0] ) ) {
+        T2[ i8 ]
+           = T0[ ( ( ( ( blockIdx.x * 4 ) + i8 ) * 128 ) + threadIdx.x ) ]
+           * T1[ ( ( ( ( blockIdx.x * 4 ) + i8 ) * 128 ) + threadIdx.x ) ];
       }
     }
   }
   if ( ( ( ( ( ( blockIdx.x * 4 ) + ( 4 - 1 ) ) * 128 ) + threadIdx.x ) < T3.size[0] ) ) {
-    for(size_t i21 = 0; i21 < 4; ++i21 ) {
-      T3[ ( ( ( ( blockIdx.x * 4 ) + i21 ) * 128 ) + threadIdx.x ) ]
-         = T2[ i21 ]
-         * T0[ ( ( ( ( blockIdx.x * 4 ) + i21 ) * 128 ) + threadIdx.x ) ];
+    for(size_t i11 = 0; i11 < 4; ++i11 ) {
+      T3[ ( ( ( ( blockIdx.x * 4 ) + i11 ) * 128 ) + threadIdx.x ) ]
+         = T2[ i11 ]
+         * T0[ ( ( ( ( blockIdx.x * 4 ) + i11 ) * 128 ) + threadIdx.x ) ];
     }
   } else {
-    for(size_t i21 = 0; i21 < 4; ++i21 ) {
-      if ( ( ( ( ( ( blockIdx.x * 4 ) + i21 ) * 128 ) + threadIdx.x ) < T3.size[0] ) ) {
-        T3[ ( ( ( ( blockIdx.x * 4 ) + i21 ) * 128 ) + threadIdx.x ) ]
-           = T2[ i21 ]
-           * T0[ ( ( ( ( blockIdx.x * 4 ) + i21 ) * 128 ) + threadIdx.x ) ];
+    for(size_t i11 = 0; i11 < 4; ++i11 ) {
+      if ( ( ( ( ( ( blockIdx.x * 4 ) + i11 ) * 128 ) + threadIdx.x ) < T3.size[0] ) ) {
+        T3[ ( ( ( ( blockIdx.x * 4 ) + i11 ) * 128 ) + threadIdx.x ) ]
+           = T2[ i11 ]
+           * T0[ ( ( ( ( blockIdx.x * 4 ) + i11 ) * 128 ) + threadIdx.x ) ];
       }
     }
   }
@@ -1133,13 +1133,14 @@ void testGPU_FusionForLoop() {
   fusion.addInput(TV0);
   fusion.addInput(TV1);
 
-  auto ID0 = new IterDomain(new Int(0), new Int(8));
+  auto ID0 = new kir::IterDomain(new IterDomain(new Int(0), new Int(8)));
 
   TensorView* TV2 = add(TV0, TV1);
   BinaryOp* op = static_cast<BinaryOp*>(TV2->getOrigin());
   fusion.addOutput(TV2);
 
-  auto fl = new kir::ForLoop(new Int(), ID0, {op});
+  auto fl = new kir::ForLoop(new kir::Int(c10::nullopt), ID0, {op});
+
   std::stringstream result;
   std::stringstream ref;
   result << fl;
@@ -2823,6 +2824,63 @@ void testGPU_FusionReductionTFT() {
 
   auto aten_output = input.sum({1});
   TORCH_CHECK(aten_output.allclose(cg_output));
+}
+
+void testGPU_FusionBranches() {
+  Fusion fusion;
+  FusionGuard fg(&fusion);
+
+  // Set up your input tensor views
+  TensorView* tv0 = makeDummyTensor(2);
+  TensorView* tv1 = makeDummyTensor(2);
+  TensorView* tv2 = makeDummyTensor(2);
+  fusion.addInput(tv0);
+  fusion.addInput(tv1);
+  fusion.addInput(tv2);
+
+  auto tv3 = add(tv0, new Float(1.0));
+  auto tv4 = add(tv3, tv1);
+  auto tv5 = add(tv3, tv2);
+  auto tv6 = add(tv4, tv5);
+
+  fusion.addOutput(tv6);
+
+  constexpr int x = 63, y = 33;
+
+  auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
+
+  at::Tensor t0 = at::randn({x, y}, options);
+  at::Tensor t1 = at::randn({x, y}, options);
+  at::Tensor t2 = at::randn({x, y}, options);
+
+  torch::jit::fuser::cuda::FusionExecutor fe;
+  tv6->merge(0);
+  tv6->split(0, 128);
+  tv6->split(0, 4);
+
+  tv6->axis(0)->parallelize(ParallelType::BIDx);
+
+  tv0->computeAt(tv6, 1);
+  tv1->computeAt(tv6, 1);
+  tv2->computeAt(tv6, 1);
+
+  tv3->axis(-2)->parallelize(ParallelType::Unroll);
+  tv3->axis(-1)->parallelize(ParallelType::TIDx);
+  tv4->axis(-2)->parallelize(ParallelType::Unroll);
+  tv4->axis(-1)->parallelize(ParallelType::TIDx);
+  tv5->axis(-2)->parallelize(ParallelType::Unroll);
+  tv5->axis(-1)->parallelize(ParallelType::TIDx);
+  tv6->axis(-1)->parallelize(ParallelType::TIDx);
+
+  fe.compileFusion(&fusion);
+  auto outputs = fe.runFusion({t0, t1, t2});
+
+  auto t3 = t0.add(1.0);
+  auto t4 = t3.add(t1);
+  auto t5 = t3.add(t2);
+  auto t6 = t4.add(t5);
+
+  TORCH_CHECK(t6.allclose(outputs[0]));
 }
 
 void testGPU_FusionSimpleBCast() {

@@ -342,14 +342,15 @@ Expr* getParent(Expr* scope) {
 
 // Open a new inner most for loop
 kir::ForLoop* openFor(Expr* scope, IterDomain* id) {
+  const auto kir_id = kir::lowerValue(id)->as<kir::IterDomain>();
   kir::ForLoop* new_scope = nullptr;
   if (id->isThread()) {
     std::stringstream ss;
     ss << id->getParallelType();
     new_scope = new kir::ForLoop(
-        new NamedScalar(ss.str(), DataType::Int), id, {}, scope);
+        new kir::NamedScalar(ss.str(), DataType::Int), kir_id, {}, scope);
   } else {
-    new_scope = new kir::ForLoop(new Int(), id, {}, scope);
+    new_scope = new kir::ForLoop(new kir::Int(c10::nullopt), kir_id, {}, scope);
   }
   if (scope != nullptr)
     pushBack(scope, new_scope);
@@ -438,14 +439,6 @@ std::vector<Val*> indices(std::vector<kir::ForLoop*> loops) {
         return fl->index();
       });
   return inds;
-}
-
-std::vector<IterDomain*> iterDomains(std::vector<kir::ForLoop*> loops) {
-  std::vector<IterDomain*> ids(loops.size());
-  std::transform(loops.begin(), loops.end(), ids.begin(), [](kir::ForLoop* fl) {
-    return fl->iter_domain();
-  });
-  return ids;
 }
 
 bool isTV(const Val* val) {
@@ -629,7 +622,7 @@ ParallelTypeBitmap getParallelBroadcastDomains(
     const Val* bop_out,
     const ThreadPredicateMap& preds) {
   if (bop_out->getValType().value() == ValType::TensorIndex) {
-    bop_out = bop_out->as<kir::TensorIndex>()->view();
+    bop_out = bop_out->as<kir::TensorIndex>()->view()->fuserTv();
   }
   TORCH_INTERNAL_ASSERT(
       bop_out->getValType().value() == ValType::TensorView,
@@ -673,18 +666,21 @@ std::pair<kir::ForLoop*, int64_t> getAllocPoint(
   // Look at each axis individually in out's domain
   for (int64_t tv_i = 0; tv_i < (int64_t)tv->getThisComputeAtAxis(); tv_i++) {
     // Grab the axis ID
-    auto ca_id = tv->getComputeAtAxis(tv_i).first;
 
-    loops_it = std::find_if(loops_it, loops.end(), [&ca_id](const auto& loop) {
-      return ca_id == loop->iter_domain() ||
-          loop->iter_domain()->getParallelType() == ParallelType::Unroll;
-    });
+    auto ca_id = tv->getComputeAtAxis(tv_i).first;
+    auto kir_ca_id = kir::lowerValue(ca_id)->as<kir::IterDomain>();
+
+    loops_it =
+        std::find_if(loops_it, loops.end(), [&kir_ca_id](const auto& loop) {
+          return kir_ca_id == loop->iter_domain() ||
+              loop->iter_domain()->getParallelType() == ParallelType::Unroll;
+        });
 
     TORCH_INTERNAL_ASSERT(
         loops_it != loops.end(),
         "Could not find all required axes for indexing.");
 
-    if ((*loops_it)->iter_domain()->getParallelType() == ParallelType::Unroll) {
+    if (kir_ca_id->getParallelType() == ParallelType::Unroll) {
       return std::make_pair(alloc_loop, tv_i);
     }
 
