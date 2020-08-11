@@ -508,17 +508,18 @@ class TORCH_CUDA_API TensorDomain : public Val {
   }
 
   // Create a map from producer root IterDomains -> consumer root IterDomains.
-  // Only those root producer IDs present in producer_root_dims_to_map
+  // Only those root producer IDs present in producer_maybe_rfactor_dims_to_map
   // will be attempted to map to their corresponding consumer IDs.
   static std::unordered_map<IterDomain*, IterDomain*> mapRootPtoC(
       const TensorDomain* producer,
       const TensorDomain* consumer,
-      const std::unordered_set<IterDomain*>& producer_root_dims_to_map);
+      const std::unordered_set<IterDomain*>&
+          producer_maybe_rfactor_dims_to_map);
 
   static std::unordered_map<IterDomain*, IterDomain*> mapRootPtoC(
       const TensorDomain* producer,
       const TensorDomain* consumer) {
-    auto p_root = producer->getRootDomain();
+    auto p_root = producer->getMaybeRFactorDomain();
     return mapRootPtoC(
         producer,
         consumer,

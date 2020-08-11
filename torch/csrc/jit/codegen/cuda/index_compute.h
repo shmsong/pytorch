@@ -179,8 +179,9 @@ class Index {
       const std::vector<kir::ForLoop*>& loops);
 
   // Consumer indices for predicates, keep all indices matching in root domain.
-  // Even those not used for physical addressing.
-  static std::vector<Val*> getConsumerRootPredIndices(
+  // Even those not used for physical addressing. Returns pair <root indices, if
+  // indices are mapped to rfactor dom>
+  static std::pair<std::vector<Val*>, bool> getConsumerRootPredIndices(
       TensorView* consumer,
       const std::vector<kir::ForLoop*>& loops,
       const std::vector<bool>& root_contiguity,

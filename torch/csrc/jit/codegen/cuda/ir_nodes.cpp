@@ -915,13 +915,13 @@ std::unordered_map<IterDomain*, IterDomain*> TensorDomain::mapRootCtoP(
 std::unordered_map<IterDomain*, IterDomain*> TensorDomain::mapRootPtoC(
     const TensorDomain* producer,
     const TensorDomain* consumer,
-    const std::unordered_set<IterDomain*>& producer_root_dims_to_map) {
+    const std::unordered_set<IterDomain*>& producer_maybe_rfactor_dims_to_map) {
   std::unordered_map<IterDomain*, IterDomain*> root_id_map;
   for (const auto& kv : mapRootPandC(producer, consumer)) {
     auto producer_axis = kv.first;
     auto consumer_axis = kv.second;
-    if (producer_root_dims_to_map.find(producer_axis) !=
-        producer_root_dims_to_map.end()) {
+    if (producer_maybe_rfactor_dims_to_map.find(producer_axis) !=
+        producer_maybe_rfactor_dims_to_map.end()) {
       root_id_map[producer_axis] = consumer_axis;
     }
   }

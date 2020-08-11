@@ -1039,7 +1039,7 @@ kir::TensorIndex* Index::getConsumerIndex(
 
 // Basically just copy getGlobalConsumerIndex, just don't do the striding and
 // return std::vector of Vals
-std::vector<Val*> Index::getConsumerRootPredIndices(
+std::pair<std::vector<Val*>, bool> Index::getConsumerRootPredIndices(
     TensorView* consumer_tv,
     const std::vector<kir::ForLoop*>& loops,
     const std::vector<bool>& root_contiguity,
@@ -1081,9 +1081,27 @@ std::vector<Val*> Index::getConsumerRootPredIndices(
   // Indices should now be mapped onto IterDomains in consumer, so just grab
   // and use them.
 
-  // TODO: During initialization should this be rfactor, then during reduction
-  // root?
-  auto root_dom = consumer_tv->getRootDomain();
+  // If we are generating a predicate for initialization check if we should use
+  // rfactor instead of root_dom
+  bool use_rfactor = true;
+  if (consumer_tv->hasRFactor()) {
+    auto rfactor_dom = consumer_tv->getMaybeRFactorDomain();
+    for (auto rfactor_id : rfactor_dom) {
+      if (rfactor_id->isReduction()) {
+        auto kir_rfactor_id =
+            kir::lowerValue(rfactor_id)->as<kir::IterDomain>();
+        if (index_map.find(kir_rfactor_id) != index_map.end()) {
+          if (!index_map.at(kir_rfactor_id)->isZeroInt()) {
+            use_rfactor = false;
+            break;
+          }
+        }
+      }
+    }
+  }
+
+  auto root_dom = use_rfactor ? consumer_tv->getMaybeRFactorDomain()
+                              : consumer_tv->getRootDomain();
 
   bool inner_most_dim_contig =
       root_dom[root_dom.size() - 1]->getIterType() == IterType::Iteration &&
@@ -1104,7 +1122,7 @@ std::vector<Val*> Index::getConsumerRootPredIndices(
     }
   }
 
-  return root_inds;
+  return std::make_pair(root_inds, use_rfactor);
 }
 
 } // namespace fuser

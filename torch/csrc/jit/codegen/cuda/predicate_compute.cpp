@@ -11,11 +11,10 @@ namespace fuser {
 
 std::vector<kir::Bool*> PredicateCompute::computePredicates(
     const TensorView* tv,
-    const std::vector<Val*>& indices) {
+    const std::vector<Val*>& indices,
+    bool use_rfactor) {
   const std::vector<IterDomain*>& root =
-      tv->getMaybeRFactorDomain().size() == indices.size()
-      ? tv->getMaybeRFactorDomain()
-      : tv->getRootDomain();
+      use_rfactor ? tv->getMaybeRFactorDomain() : tv->getRootDomain();
 
   TORCH_INTERNAL_ASSERT(root.size() == indices.size());
 
@@ -99,9 +98,13 @@ kir::Bool* PredicateCompute::getInlinePredicate(
     }
   }
 
-  auto root_indices =
+  auto pred_inds =
       Index::getConsumerRootPredIndices(out_tv, loops, pred_contiguity);
-  auto all_preds = PredicateCompute::computePredicates(out_tv, root_indices);
+  auto root_indices = pred_inds.first;
+  bool use_rfactor = pred_inds.second;
+
+  auto all_preds =
+      PredicateCompute::computePredicates(out_tv, root_indices, use_rfactor);
 
   // If we have thread predicates, add those
   if (thread_pred != nullptr) {
@@ -188,21 +191,26 @@ void UnrollPredicate::predicateOn(Expr* tv_expr) {
     }
   }
 
-  auto root_indices = Index::getConsumerRootPredIndices(
+  auto pred_inds = Index::getConsumerRootPredIndices(
       out_tv, for_loops, pred_contiguity, true);
+  auto root_indices = pred_inds.first;
+  auto use_rfactor = pred_inds.second;
 
-  auto all_preds = PredicateCompute::computePredicates(out_tv, root_indices);
+  auto all_preds =
+      PredicateCompute::computePredicates(out_tv, root_indices, use_rfactor);
+
+  auto root_dom =
+      use_rfactor ? out_tv->getMaybeRFactorDomain() : out_tv->getRootDomain();
 
   TORCH_INTERNAL_ASSERT(
-      all_preds.size() == out_tv->getRootDomain().size(),
+      all_preds.size() == root_dom.size(),
       "Predicates should be produced for every dimension, even if it's simply set as true.");
 
   for (size_t i = 0; i < all_preds.size(); i++) {
     if (all_preds[i]->isConst() && all_preds[i]->value().value()) {
       continue;
     }
-    auto term_id =
-        loop_utils::getTermIDInMap(out_tv->getRootDomain()[i], p2c_root_map_);
+    auto term_id = loop_utils::getTermIDInMap(root_dom[i], p2c_root_map_);
     predicates[term_id] = all_preds[i];
   }
 }
