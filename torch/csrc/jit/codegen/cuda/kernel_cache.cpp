@@ -193,8 +193,10 @@ FusionExecutorCache::FusionExecutorCache(
 // TODO: dummy cache
 std::vector<at::Tensor> FusionExecutorCache::runFusionWithInputs(
     const at::ArrayRef<IValue>& inputs) {
+  // caching strategy is different for pw-fusion and reduction-fusion.
   if (fusion_->hasReduction()) {
-    // copy the fusion;
+    // copy the fusion, since each FusionExecutor needs to manipulate the fusion
+    // in order to generate kernel.
     Fusion fusion = *fusion_;
     FusionGuard fg(&fusion);
     TensorView* red_tv = nullptr;
@@ -210,7 +212,8 @@ std::vector<at::Tensor> FusionExecutorCache::runFusionWithInputs(
         "reduction schedule failed in `scheduleReduction`");
     auto& fusion_executor = red_fusion_executor_cache_[reduction_params.value()];
     if (!fusion_executor.compiled()) {
-      // found compiled cache that's compatible with the reduction params;
+      // This means we have not found a previously generated kernel that's
+      // compatible with the new reduction params. We need to finish codegen. 
       CompileOptions options;
       options.device = device_;
       fusion_executor.compileFusion(&fusion, options);

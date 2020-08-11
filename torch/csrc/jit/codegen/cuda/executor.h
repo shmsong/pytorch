@@ -35,6 +35,8 @@ class TORCH_CUDA_API FusionExecutor {
     return runFusion(inputs, {}, launch_constraints);
   }
 
+  // function to query whether a `FusionExecutor` has a compiled kernel to
+  // execute
   bool compiled() {
     return compiled_;
   };
