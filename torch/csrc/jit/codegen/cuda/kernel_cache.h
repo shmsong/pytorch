@@ -90,7 +90,8 @@ class FusionExecutorCache {
   // `ReductionParams` for indexing. This is not very efficient. Hence the TODO:
   // add a direct cache from inputs shapes to `FusionExecutor` entries.
   std::unique_ptr<FusionExecutor> pw_fusion_executor_cache_;
-  std::unordered_map<ReductionParams, FusionExecutor, ReductionParamsHash> red_fusion_executor_cache_;
+  std::unordered_map<ReductionParams, FusionExecutor, ReductionParamsHash>
+      red_fusion_executor_cache_;
 };
 
 class GraphCache {
