@@ -487,7 +487,10 @@ class TestCudaFuser(JitTestCase):
         # note that num_dim is exclusive from len(x), so we are not reducing
         # to single element (codegen limitation at this moment)
         x = [7, 8, 12]
-        for b_axis in range(-1, len(x)):
+        b_axes = range(-1, len(x))
+        if DISABLE_BCAST:
+            b_axes = (-1,)
+        for b_axis in b_axes:
             for perm0 in itertools.permutations(range(len(x))):
                 for perm1 in itertools.permutations(range(len(x))):
                     x = [7, 8, 12]
