@@ -1159,17 +1159,17 @@ void testGPU_FusionParser() {
 __global__ void CUDAGeneratedKernel(Tensor<float, 1> T0, Tensor<float, 1> T1, Tensor<float, 1> T3){
   float T2[4];
   if ( ( ( ( ( ( blockIdx.x * 4 ) + ( 4 - 1 ) ) * 128 ) + threadIdx.x ) < T3.size[0] ) ) {
-    for(size_t i13 = 0; i13 < 4; ++i13 ) {
-      T2[ i13 ]
-         = T0[ ( ( ( ( blockIdx.x * 4 ) + i13 ) * 128 ) + threadIdx.x ) ]
-         * T1[ ( ( ( ( blockIdx.x * 4 ) + i13 ) * 128 ) + threadIdx.x ) ];
+    for(size_t i8 = 0; i8 < 4; ++i8 ) {
+      T2[ i8 ]
+         = T0[ ( ( ( ( blockIdx.x * 4 ) + i8 ) * 128 ) + threadIdx.x ) ]
+         * T1[ ( ( ( ( blockIdx.x * 4 ) + i8 ) * 128 ) + threadIdx.x ) ];
     }
   } else {
-    for(size_t i13 = 0; i13 < 4; ++i13 ) {
-      if ( ( ( ( ( ( blockIdx.x * 4 ) + i13 ) * 128 ) + threadIdx.x ) < T3.size[0] ) ) {
-        T2[ i13 ]
-           = T0[ ( ( ( ( blockIdx.x * 4 ) + i13 ) * 128 ) + threadIdx.x ) ]
-           * T1[ ( ( ( ( blockIdx.x * 4 ) + i13 ) * 128 ) + threadIdx.x ) ];
+    for(size_t i8 = 0; i8 < 4; ++i8 ) {
+      if ( ( ( ( ( ( blockIdx.x * 4 ) + i8 ) * 128 ) + threadIdx.x ) < T3.size[0] ) ) {
+        T2[ i8 ]
+           = T0[ ( ( ( ( blockIdx.x * 4 ) + i8 ) * 128 ) + threadIdx.x ) ]
+           * T1[ ( ( ( ( blockIdx.x * 4 ) + i8 ) * 128 ) + threadIdx.x ) ];
       }
     }
   }
