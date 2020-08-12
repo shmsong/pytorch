@@ -32,7 +32,6 @@ TensorView::TensorView(const std::shared_ptr<c10::TensorType>& tensor_type)
           aten_opt_type_map(tensor_type->scalarType()),
           false) {
   std::vector<IterDomain*> sizes;
-  std::vector<bool> contig_info;
 
   TORCH_CHECK(
       tensor_type->dim().has_value(), "Requires static rank for Tensor");
@@ -53,21 +52,42 @@ TensorView::TensorView(const std::shared_ptr<c10::TensorType>& tensor_type)
     }
   }
 
-  for (decltype(tensor_type->dim().value()) i = 0;
-       i < tensor_type->dim().value();
-       i++) {
-    // TODO: this is a temporary WAR to avoid contiguous_ flag on broadcasted
-    // dim, which results in wrong indexing math.
-    if (sizes[i]->isBroadcast() ||
-        (i != tensor_type->dim().value() - 1 && sizes[i + 1]->isBroadcast())) {
-      contig_info.push_back(false);
-    } else {
-      if (tensor_type->stride_properties()[i].has_value() &&
-          tensor_type->stride_properties()[i]->contiguous_.has_value() &&
-          tensor_type->stride_properties()[i]->contiguous_.value() == true) {
-        contig_info.push_back(true);
+  // default to non_contiguous;
+  std::vector<bool> contig_info(tensor_type->dim().value(), false);
+
+  // we iterate through stride_index_, which goes from fastest changing
+  // dimension to slowest, instead of iterating through sizes. This allows
+  // easier contiguity check;
+  for (size_t i = 0; i < tensor_type->dim().value(); i++) {
+    // if we don't have contiguous dimension at current stride index, don't
+    // bother;
+    const auto& stride_property_i = tensor_type->stride_properties()[i];
+    if (stride_property_i.has_value() &&
+        stride_property_i->stride_index_.has_value() &&
+        stride_property_i->contiguous_.has_value() &&
+        stride_property_i->contiguous_.value() == true) {
+      const size_t index = stride_property_i->stride_index_.value();
+      // TODO: this is a temporary WAR to avoid contiguous_ flag on broadcasted
+      //       dim, which results in wrong indexing math. issue #230
+      if (sizes[index]->isBroadcast()) {
+        continue;
+      }
+      if (i == 0) {
+        // mark fastest changing dimension collapsible only when it's the last
+        // dim;
+        contig_info[index] = (index == tensor_type->dim().value() - 1);
       } else {
-        contig_info.push_back(false);
+        // check the neighboring faster dimension;
+        if (auto left_index_opt =
+                tensor_type->stride_properties()[static_cast<int>(i) - 1]
+                    ->stride_index_) {
+          // TODO: `isBroadcast` -> issue #230
+          if (sizes[left_index_opt.value()]->isBroadcast()) {
+            continue;
+          }
+          // collapse if two axes are neighboring in both sizes & stride_index;
+          contig_info[index] = (left_index_opt.value() == (index + 1));
+        }
       }
     }
   }
@@ -100,8 +120,24 @@ bool TensorView::hasBroadcast() const {
   return domain()->hasBroadcast();
 }
 
+bool TensorView::hasRFactor() const {
+  return domain()->hasRFactor();
+}
+
+c10::optional<unsigned int> TensorView::getReductionAxis() const {
+  return domain()->getReductionAxis();
+}
+
 const std::vector<IterDomain*>& TensorView::getRootDomain() const {
-  return domain()->rootDomain();
+  return domain()->getRootDomain();
+};
+
+const std::vector<IterDomain*>& TensorView::getRFactorDomain() const {
+  return domain()->getRFactorDomain();
+};
+
+const std::vector<IterDomain*>& TensorView::getMaybeRFactorDomain() const {
+  return domain()->getMaybeRFactorDomain();
 };
 
 std::vector<IterDomain*>::size_type TensorView::nDims() const {
@@ -165,18 +201,34 @@ void TensorView::setComputeAt(
 }
 
 // Where in compute_at_view does this->axis(pos) match up?
+// TODO: This doesn't seem like the safest function as a fusion output can ref
+// another fusion output,  we may want to check that there is a direct
+// consumer/producer relationship between this and compute_at view before using
+// this function, and creating another pass to handle relative outputs.
 int TensorView::getComputeAtRelPos(int pos) {
-  if (!hasComputeAt())
+  if (!hasComputeAt()) {
     return pos;
+  }
 
-  if (!compute_at_view_->hasBroadcast())
+  if (!compute_at_view_->hasBroadcast()) {
     return pos;
+  }
 
   size_t pos_cav = 0, pos_this = 0;
+
+  // We could be in an instance where pos == 0, but consumer[0] is bcast and
+  // this[0] is not
+
+  while (compute_at_view_->axis(pos_cav)->isBroadcast() &&
+         !(axis(pos_this)->isBroadcast())) {
+    pos_cav++;
+  }
+
   while ((int)pos_this < pos) {
     TORCH_INTERNAL_ASSERT(
         pos_cav < compute_at_view_->nDims(),
         "Error computing relative position in computeAt.");
+
     if (compute_at_view_->axis(pos_cav)->isBroadcast() &&
         !(axis(pos_this)->isBroadcast())) {
       pos_cav++;
