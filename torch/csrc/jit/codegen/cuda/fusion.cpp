@@ -508,12 +508,12 @@ StmtNameType Fusion::registerLoweredExpr(Expr* expr) {
   TORCH_INTERNAL_ASSERT(!inKernelIr(expr));
 
   for (Val* input : expr->inputs()) {
-    // TORCH_CHECK(inKernelIr(input));
+    TORCH_CHECK(inKernelIr(input));
     assertInFusion(input);
   }
 
   for (Val* output : expr->outputs()) {
-    // TORCH_CHECK(inKernelIr(output));
+    TORCH_CHECK(inKernelIr(output));
     assertInFusion(output);
     TORCH_CHECK(origin_.insert({output, expr}).second);
   }
