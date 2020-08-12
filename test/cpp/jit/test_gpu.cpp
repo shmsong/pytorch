@@ -5851,6 +5851,43 @@ void testGPU_FusionThreadPredicate() {
   TORCH_CHECK(aten_output_tv3.allclose(cg_output_tv3));
 }
 
+void testGPU_FusionComplexBCastFailed() {
+  Fusion fusion;
+  FusionGuard fg(&fusion);
+
+  int w = 4, x = 8, y = 6, z = 8;
+  DataType dtype = DataType::Float;
+
+  auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
+
+  at::Tensor t0 = at::randn({x, y, z}, options);
+  at::Tensor t1 = at::randn({w, x, y, z}, options);
+
+  auto tv0 = makeDummyTensor(3);
+  auto tv1 = makeDummyTensor(4);
+
+  fusion.addInput(tv0);
+  fusion.addInput(tv1);
+
+  auto tv2 = add(tv0, new Float(0.0));
+  auto tv3 = add(tv2, tv1);
+
+  fusion.addOutput(tv3);
+
+  fuser::cuda::scheduleFusion(&fusion, {t0, t1});
+
+  torch::jit::fuser::cuda::FusionExecutor fe;
+  fe.compileFusion(&fusion);
+  auto outputs = fe.runFusion({t0, t1});
+
+  auto t2 = t0.add(0.0);
+  auto t3 = t2.add(t1);
+
+  auto diff = t3 - outputs[0];
+  std::cout << diff << std::endl;
+  TORCH_CHECK(t3.allclose(outputs[0]));
+}
+
 } // namespace jit
 } // namespace torch
 

@@ -200,6 +200,7 @@ namespace jit {
   _(GPU_FusionTraversalOrder6)                      \
   _(GPU_FusionTraversalOrder7)                      \
   _(GPU_FusionBranches)                             \
+  _(GPU_FusionComplexBCastFailed)                   \
   _(GPU_FusionThreadPredicate)
 #else
 #define TH_FORALL_TESTS_CUDA(_) \
