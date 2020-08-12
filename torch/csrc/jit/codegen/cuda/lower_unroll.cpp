@@ -72,8 +72,6 @@ void UnrollPass::handle(kir::ForLoop* fl) {
 
   auto unroll_pred = UnrollPredicate::get(for_loops, fl, p2c_root_map);
 
-  TORCH_INTERNAL_ASSERT(
-      !(unroll_pred->isConst() && unroll_pred->value().value()));
   kir::ForLoop* parent_scope = for_loops.empty() ? nullptr : for_loops.back();
 
   kir::IfThenElse* unroll_ite =
