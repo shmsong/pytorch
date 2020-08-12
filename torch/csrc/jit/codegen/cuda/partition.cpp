@@ -211,6 +211,7 @@ bool createTrickyBroadcast(const Node* fusion, const Node* node) {
 
       // TODO: merge this code with case 1.
       // check broadcasting for the n_output inside `fusion`;
+      bool use_as_output = false;
       for (const auto& use : n_output->uses()) {
         if (use.user == fusion) {
           if (fusion->kind() == prim::CudaFusionGroup) {
@@ -227,12 +228,14 @@ bool createTrickyBroadcast(const Node* fusion, const Node* node) {
               num_broadcasting++;
             }
           }
+        } else {
+          use_as_output = true;
         }
       }
-      
+
       // encounted multiple broadcasting scheme for a single TV, we will not be
       // able to schedule this, prevent the fusion;
-      if (num_broadcasting > 1) {
+      if (num_broadcasting > (use_as_output ? 0 : 1)) {
         return true;
       }
     }
