@@ -622,6 +622,8 @@ class TORCH_CUDA_API ForLoop : public Expr {
     return parent_scope_;
   }
 
+  void setParentScope(Expr* scope);
+
  private:
   Val* const index_ = nullptr;
   IterDomain* const iter_domain_;
@@ -670,6 +672,8 @@ class TORCH_CUDA_API IfThenElse : public Expr {
   Expr* parentScope() const {
     return parent_scope_;
   }
+
+  void setParentScope(Expr* scope);
 
  private:
   Bool* const cond_ = nullptr;
