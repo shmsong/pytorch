@@ -10,9 +10,9 @@ namespace fuser {
 // Simple mixin for suppressing copy & move operations, ex:
 //
 //  class Foo : public NonCopyable {
-//   ...  
+//   ...
 //  };
-// 
+//
 class NonCopyable {
  public:
   NonCopyable() = default;
