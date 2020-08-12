@@ -654,7 +654,7 @@ std::pair<kir::ForLoop*, int64_t> getAllocPoint(
     const std::vector<kir::ForLoop*>& loops) {
   // If in global memory, it can be all the way outside the loops.
   if (tv->getMemoryType() == MemoryType::Global) {
-    return std::make_pair(nullptr, 0);
+    return {nullptr, 0};
   }
 
   // Figure out where we want to place alloc/reduction initialization. We want
@@ -681,14 +681,14 @@ std::pair<kir::ForLoop*, int64_t> getAllocPoint(
         "Could not find all required axes for indexing.");
 
     if (kir_ca_id->getParallelType() == ParallelType::Unroll) {
-      return std::make_pair(alloc_loop, tv_i);
+      return {alloc_loop, tv_i};
     }
 
     alloc_loop = *loops_it;
     ++loops_it;
   }
 
-  return std::make_pair(alloc_loop, (int64_t)tv->getThisComputeAtAxis());
+  return {alloc_loop, (int64_t)tv->getThisComputeAtAxis()};
 }
 
 std::unordered_map<IterDomain*, IterDomain*> p2cRootMap(

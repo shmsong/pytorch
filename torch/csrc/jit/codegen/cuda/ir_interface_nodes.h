@@ -189,7 +189,7 @@ class TVDomainGuard;
 //
 // The reason we need both TensorView and TensorDomain is that we need to have a
 // record of both what is being computed and how it is being computed. For
-// Example we may have the operation: TV3[I, J, K] = TV2[I, J, K] + TV1[I, J, K]
+// example we may have the operation: TV3[I, J, K] = TV2[I, J, K] + TV1[I, J, K]
 // The mathematical operations here are on the tensor views TV1, TV2, and TV3.
 // This operation is a pointwise operation. To compute this pointwise operation
 // we iterate over the 3D TensorDomain [I, J, K], where K is the fastest

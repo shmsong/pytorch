@@ -433,6 +433,7 @@ class TORCH_CUDA_API TensorDomain : public Val {
   const std::vector<IterDomain*>& getRFactorDomain() const {
     return rfactor_domain_;
   };
+
   // If rfactor domain exists in domain() return it, otherwise return root
   // domain.
   const std::vector<IterDomain*>& getMaybeRFactorDomain() const {

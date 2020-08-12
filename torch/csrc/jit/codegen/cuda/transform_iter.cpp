@@ -221,7 +221,8 @@ BestEffortReplay::BestEffortReplay(
     leaf_ids_[entry.second] = counter++;
 
   // Grab expr history of iter domains in target_domain
-  std::vector<Expr*> t_exprs = UnsortedExprs::getFrom(
+  std::vector<Expr*> t_exprs = ExprSort::getExprs(
+      FusionGuard::getCurFusion(),
       std::vector<Val*>(target_domain.begin(), target_domain.end()));
 
   // If we check how an IterDomain was generated, it should only use an
@@ -231,7 +232,8 @@ BestEffortReplay::BestEffortReplay(
   // replay_domain map.
 
   // Maps replay domain's IterDomains to the Exprs they're used in
-  std::vector<Expr*> r_exprs = UnsortedExprs::getFrom(
+  std::vector<Expr*> r_exprs = ExprSort::getExprs(
+      FusionGuard::getCurFusion(),
       std::vector<Val*>(replay_domain.begin(), replay_domain.end()));
   std::unordered_map<IterDomain*, Expr*> replay_expr_map;
   for (auto r_expr : r_exprs) {

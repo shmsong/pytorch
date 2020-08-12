@@ -29,7 +29,8 @@ std::vector<kir::Bool*> PredicateCompute::computePredicates(
     return {};
   }
 
-  std::vector<kir::Bool*> preds(root.size(), new kir::Bool(true));
+  auto true_bool = new kir::Bool(true);
+  std::vector<kir::Bool*> preds(root.size(), true_bool);
   Val* extent = nullptr;
 
   for (size_t i = 0; i < indices.size(); i++) {
@@ -69,8 +70,9 @@ kir::Bool* PredicateCompute::getInlinePredicate(
     Expr* expr,
     const std::vector<kir::ForLoop*>& loops,
     kir::Bool* thread_pred) {
-  if (loops.empty())
+  if (loops.empty()) {
     return new kir::Bool(true);
+  }
 
   TORCH_INTERNAL_ASSERT(
       ir_utils::isTVOp(expr),

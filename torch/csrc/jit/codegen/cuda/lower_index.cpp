@@ -167,7 +167,7 @@ void IndexLowering::handle(ReductionOp* rop) {
         "Found a reduction stage that has both a non-parallelized reduction and a grid reduction.",
         " This is not supported, please use rfactor to do the serialized reduction first, then the grid reduction.");
   }
-  auto loops = scope_utils::getLoops(active_scope_expr);
+  const auto loops = scope_utils::getLoops(active_scope_expr);
 
   kir::TensorIndex* out = Index::getConsumerIndex(out_tv, loops);
   Val* in = Index::getProducerIndex(

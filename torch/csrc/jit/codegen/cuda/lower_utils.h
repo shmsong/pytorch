@@ -62,10 +62,11 @@ namespace ir_utils {
 // transformed like consumer while we index. This will set the tv with td for
 // the life of this context guard.
 class TVDomainGuard {
- public:
+ private:
   TensorView* tv_;
   TensorDomain* prev_domain;
 
+ public:
   explicit TVDomainGuard(TensorView* _tv, TensorDomain* td);
 
   ~TVDomainGuard();
