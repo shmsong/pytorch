@@ -86,19 +86,20 @@ bool createTrickyBroadcast(const Node* fusion, const Node* node) {
   // TORCH_INTERNAL_ASSERT(node->outputs().size() == 1,
   //     "not expecting multiple outputs from a node, graph partitioning logic needs to be updated");
 
-  // TODO: remove this when scheduler is more robust;
-  // we want to make sure that no intermediate is marked as output
-  // This is to simplify our scheduler.
-  for (const auto& output : node->outputs()) {
-    for (const auto& use : output->uses()) {
-      if (use.user != fusion) {
-        printf("early termination\n");
-        return true;
-      }
-    }
-  }
+  // // TODO: remove this when scheduler is more robust;
+  // // we want to make sure that no intermediate is marked as output
+  // // This is to simplify our scheduler.
+  // for (const auto& output : node->outputs()) {
+  //   for (const auto& use : output->uses()) {
+  //     if (use.user != fusion) {
+  //       printf("early termination\n");
+  //       return true;
+  //     }
+  //   }
+  // }
 
   auto has_broadcast = [] (const Node* n, const auto& shape) {
+      std::cout << "\ncheck node: " << *n << std::endl;
       TORCH_INTERNAL_ASSERT(n->outputs().size() == 1,
           "not expecting multiple outputs from a node, graph partitioning logic needs to be updated");
       // assumes that if output is not a tensor type, it's not broadcasting
@@ -200,8 +201,9 @@ bool createTrickyBroadcast(const Node* fusion, const Node* node) {
       if (node->kind() == prim::CudaFusionGroup) {
         const auto& subgraph_output = node->g(attr::Subgraph)->outputs()[i];
         for (const auto& use : subgraph_output->uses()) {
-          // TODO: does use exclude output node???
-          if (has_broadcast(use.user, n_output_shape)) {
+          // exclude output node
+          if (use.user->kind() != prim::Return &&
+              has_broadcast(use.user, n_output_shape)) {
             num_broadcasting++;
           }
         }
