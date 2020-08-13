@@ -175,6 +175,7 @@ class TestCudaFuser(JitTestCase):
                      ProfilingMode.LEGACY, "Requires fusion optimization pass to be effective")
     def test_broadcasting_partition_logic(self):
         torch._C._jit_set_bailout_depth(2)
+
         def t(x: torch.Tensor, y: torch.Tensor, z: torch.Tensor):
             x = x + 12.0
             o1 = x + y
