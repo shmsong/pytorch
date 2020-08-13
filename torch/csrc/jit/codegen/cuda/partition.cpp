@@ -97,10 +97,10 @@ bool maybeBroadcastOnShape(
       } else {
         // same rank, we need to iterate through sizes and check if size-1
         // exists in input `shape`
-        for (int i = 0; i < static_cast<int>(shape.size()); i++) {
+        for (const auto& opt_size : shape) {
           // TODO: not sure if we need to check for output size != 1, since we
           // are currently marking all size-1 dimension as broadcast in codegen.
-          if (shape[i].has_value() && shape[i].value() == 1) {
+          if (opt_size.has_value() && opt_size.value() == 1) {
             return true;
           }
         }
