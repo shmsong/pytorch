@@ -185,6 +185,25 @@ bool maybeBroadcastOnShape(const Node* n, const std::vector<c10::optional<int64_
 // conflicting broadcasting.
 bool createTrickyBroadcast(const Node* consumer, const Node* producer) {
 
+  auto count_broadcasting_in_node = [](const Node* node, const std::vector<c10::optional<int64_t>>& shape, size_t offset) {
+    int num_broadcasting = 0;
+    if (node->kind() == prim::CudaFusionGroup) {
+      // be careful here as `subgraph_input`, as its name suggests, is in a
+      // different fraph from `node`.
+      const auto& subgraph_input = node->g(attr::Subgraph)->inputs()[offset];
+      for (const auto& use : subgraph_input->uses()) {
+        if (maybeBroadcastOnShape(use.user, shape)) {
+          num_broadcasting++;
+        }
+      }
+    } else {
+      if (maybeBroadcastOnShape(node, shape)) {
+        num_broadcasting++;
+      }
+    }
+    return num_broadcasting;
+  };
+
   // case 1. We check shared inputs to `producer` & `consumer`;
   for (int i = 0; i < static_cast<int>(producer->inputs().size()); i++) {
     auto n_input = producer->input(i);
@@ -193,41 +212,22 @@ bool createTrickyBroadcast(const Node* consumer, const Node* producer) {
       std::vector<c10::optional<int64_t>> n_input_shape = n_input_type->sizes().sizes().value();
       int num_broadcasting = 0;
 
-      // check broadcasting for n_input inside `producer`;
-      if (producer->kind() == prim::CudaFusionGroup) {
-        // be careful here as `subgraph_input`, as its name suggests, is in a
-        // different fraph from `producer`.
-        const auto& subgraph_input = producer->g(attr::Subgraph)->inputs()[i];
-        for (const auto& use : subgraph_input->uses()) {
-          if (maybeBroadcastOnShape(use.user, n_input_shape)) {
-            num_broadcasting++;
-          }
-        }
-      } else {
-        if (maybeBroadcastOnShape(producer, n_input_shape)) {
-          num_broadcasting++;
-        }
-      }
 
       // check broadcasting for the n_input inside `consumer`;
       for (const auto& use : n_input->uses()) {
         if (use.user == consumer) {
-          if (consumer->kind() == prim::CudaFusionGroup) {
-            // be careful here as `subgraph_input`, as its name suggests, is in a
-            // different fraph from `consumer`.
-            const auto& subgraph_input = consumer->g(attr::Subgraph)->inputs()[use.offset];
-            for (const auto& use : subgraph_input->uses()) {
-              if (maybeBroadcastOnShape(use.user, n_input_shape)) {
-                num_broadcasting++;
-              }
-            }
-          } else {
-            if (maybeBroadcastOnShape(consumer, n_input_shape)) {
-              num_broadcasting++;
-            }
-          }
+          num_broadcasting += count_broadcasting_in_node(consumer, n_input_shape, use.offset);
         }
       }
+
+      // if no broadcasting happened for consumer, there's no point check
+      // multiple broadcasting in producer alone;
+      if (num_broadcasting == 0) {
+        continue;
+      }
+
+      // check broadcasting for n_input inside `producer`;
+      num_broadcasting += count_broadcasting_in_node(producer, n_input_shape, i);
 
       // encounted multiple broadcasting scheme for a single TV, we will not be
 			// able to schedule this, prevent the fusion; (case 1)
@@ -244,40 +244,17 @@ bool createTrickyBroadcast(const Node* consumer, const Node* producer) {
     if (n_output_type != nullptr && n_output_type->sizes().sizes()) {
       std::vector<c10::optional<int64_t>> n_output_shape = n_output_type->sizes().sizes().value();
       int num_broadcasting = 0;
-
-      // TODO: this is actually not necessary, as we prevent broadcasting on
-      //       outputs already;
-      // check broadcasting for n_output inside `producer`;
-      // if (producer->kind() == prim::CudaFusionGroup) {
-      //   const auto& subgraph_output = producer->g(attr::Subgraph)->outputs()[i];
-      //   for (const auto& use : subgraph_output->uses()) {
-      //     // exclude output node
-      //     if (use.user->kind() != prim::Return &&
-      //         maybeBroadcastOnShape(use.user, n_output_shape)) {
-      //       num_broadcasting++;
-      //     }
-      //   }
-      // }
+      // If we only look at case 1 & case 2, we need to check broadcast of
+      // `n_output` inside `producer`, if it is a `prim::CudaFusionGroup`.
+      // this is actually not necessary when we consider case 3, as we avoid
+      // broadcasting on outputs already;
 
       // TODO: merge this code with case 1.
       // check broadcasting for the n_output inside `consumer`;
       bool use_as_output = false;
       for (const auto& use : n_output->uses()) {
         if (use.user == consumer) {
-          if (consumer->kind() == prim::CudaFusionGroup) {
-            // be careful here as `subgraph_input`, as its name suggests, is in a
-            // different fraph from `consumer`.
-            const auto& subgraph_input = consumer->g(attr::Subgraph)->inputs()[use.offset];
-            for (const auto& use : subgraph_input->uses()) {
-              if (maybeBroadcastOnShape(use.user, n_output_shape)) {
-                num_broadcasting++;
-              }
-            }
-          } else {
-            if (maybeBroadcastOnShape(consumer, n_output_shape)) {
-              num_broadcasting++;
-            }
-          }
+          num_broadcasting += count_broadcasting_in_node(consumer, n_output_shape, use.offset);
         } else {
           // case 3. output is used by other nodes not the consumer, no
           //         broadcasting is allowed;
@@ -311,32 +288,8 @@ bool isFusableCudaFusionGroup(const Node* fusion, const Node* node) {
   // TODO: lift the restriction of not fusing producer containing reduction when
   //       we have proper scheduling.
   if (isFusableCudaFusionGroup(node) && !hasReductionOperation(node) &&
-      !createTrickyBroadcast(fusion, node) // disabling this due until we properly support it
+      !createTrickyBroadcast(fusion, node)
      ) {
-    // TODO: ensure legit fusion.
-    // issue 0: currently codegen doesn't support broadcasting, except in the
-    //          form of stride 0.
-    // We WAR by explicitly extend all tensor to be the broadcasted size. This
-    // however requires that we have identical tensor shape for all output
-    // tensors.
-    // We previously have a check, where for any `node` that we try to fuse, all
-    // `auto output : node->outputs(); auto use : output->uses();` has to meet
-    // one of the three conditions:
-    //   a. use.user == fusion;
-    //   b. node->outputs() sizes are compatible with `fusion` outputs;
-    //   c. isFusableNode(use.user) && use.user->outputs() sizes are compatible
-    //      with `fusion` outputs;
-    //
-    // However, given the instance of legacy executor, it is not guaranteed the
-    // necessary shape information is available to do the check. Hence we are
-    // omitting it for now and we'll wait until proper support from profiling is
-    // implemented to justify another look at this.
-    // And the broadcasting Hack won't be applicable after reduction is
-    // supported in codegen. So it's going to be a more complicated story.
-    //
-    // For now, a voilating fusion would result in no codegen kernel (fallback
-    // execution with interpreter and non-optimized graph is used instead)
-
     // ensure if the node has a designated device, it's on the same device with
     // fusion.
     // TODO: is there a danger of us fusing operations that's supposed to be on
