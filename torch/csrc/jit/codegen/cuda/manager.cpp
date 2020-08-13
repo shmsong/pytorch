@@ -102,7 +102,6 @@ class CudaFusionManager {
       std::shared_ptr<Graph>& graph,
       const at::ArrayRef<IValue> inputs) {
     std::lock_guard<std::mutex> guard(mutex_);
-    std::cout << std::endl << *graph << std::endl;
     return graph_cache_[kernel_id]->runGraphWithInputs(inputs);
   }
 
