@@ -22,6 +22,38 @@ namespace jit {
 namespace fuser {
 namespace kir {
 
+#if 0
+
+// Base class for Kernel IR nodes
+class TORCH_CUDA_API Node : public NonCopyable, public PolymorphicBase {};
+
+// A generic value (scalar or tensor)
+class TORCH_CUDA_API Val : public Node {
+ public:
+  explicit Val(ValType vtype, DataType dtype = DataType::Null)
+      : vtype_(vtype), dtype_(dtype) {}
+
+ private:
+  const ValType vtype_;
+  const DataType dtype_;
+};
+
+// A computation, with inputs and outputs
+//
+// TODO: rename to Statement/Operation?
+//
+class TORCH_CUDA_API Expr : public Node {
+ public:
+  explicit Expr(ExprType type) : type_(type) {}
+
+ private:
+  ExprType type_ = ExprType::Invalid;
+  std::vector<Val*> inputs_;
+  std::vector<Val*> outputs_;
+};
+
+#endif
+
 class TORCH_CUDA_API NamedScalar : public Val {
  public:
   NamedScalar(std::string name, DataType dtype)
@@ -338,6 +370,7 @@ class TORCH_CUDA_API UnaryOp : public Expr {
   Val* out() const {
     return out_;
   }
+
   Val* in() const {
     return in_;
   }
@@ -361,9 +394,11 @@ class TORCH_CUDA_API BinaryOp : public Expr {
   Val* out() const {
     return out_;
   }
+
   Val* lhs() const {
     return lhs_;
   }
+
   Val* rhs() const {
     return rhs_;
   }
@@ -392,9 +427,11 @@ class TORCH_CUDA_API TernaryOp : public Expr {
   Val* in1() const {
     return in1_;
   }
+
   Val* in2() const {
     return in2_;
   }
+
   Val* in3() const {
     return in3_;
   }
@@ -420,9 +457,11 @@ class TORCH_CUDA_API ReductionOp : public Expr {
   Val* out() const {
     return out_;
   }
+
   Val* in() const {
     return in_;
   }
+
   Val* init() const {
     return init_;
   }
@@ -480,6 +519,7 @@ class TORCH_CUDA_API BroadcastOp : public Expr {
   Val* out() const {
     return out_;
   }
+  
   Val* in() const {
     return in_;
   }

@@ -13,6 +13,11 @@ namespace fuser {
 class TORCH_CUDA_API Kernel final {
  public:
   void print() const;
+
+ private:
+  // Lowered IR
+  std::unordered_set<Val*> lowered_val_set_;
+  std::unordered_set<Expr*> lowered_expr_set_;
 };
 
 } // namespace fuser

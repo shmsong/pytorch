@@ -1,6 +1,7 @@
 
 #include <torch/csrc/jit/codegen/cuda/kernel_ir.h>
 #include <torch/csrc/jit/codegen/cuda/type.h>
+#include <torch/csrc/jit/codegen/cuda/lower2device.h>
 
 // TODO(kir): remove
 #include <torch/csrc/jit/codegen/cuda/ir_cloner.h>
@@ -571,8 +572,8 @@ Val* newLogicExpr(BinaryOpType op_type, Val* lhs, Val* rhs) {
 } // namespace
 
 Val* lowerValue(const Val* val) {
-  TORCH_INTERNAL_ASSERT(!kir::isLoweredVal(val), val, " is already lowered.");
-  return FusionGuard::getCurFusion()->lowerValue(val);
+  TORCH_INTERNAL_ASSERT(!isLoweredVal(val), val, " is already lowered.");
+  return GpuLower::lowerValue(val);
 }
 
 Val* andExpr(Val* lhs, Val* rhs) {
