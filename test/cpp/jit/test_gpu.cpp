@@ -1212,7 +1212,7 @@ __global__ void CUDAGeneratedKernel(Tensor<float, 1> T0, Tensor<float, 1> T1, Te
 
 void testGPU_FusionForLoop() {
 // TODO(kir): re-enable this test
-//  due to the current "GpuLower guard" approach, we can only create 
+//  due to the current "GpuLower guard" approach, we can only create
 //  kernel IR during GpuLower::lower()
 #if 0
   Fusion fusion;
