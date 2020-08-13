@@ -71,6 +71,41 @@ bool hasReductionOperation(const Node* node) {
   return false;
 }
 
+// utility function to check if the node implies broadcast on a given shape (
+// assumed to be shape of an input tensor)
+// limitations:
+//   1. we rely on shape information to judge this. so we would require output
+//      shape to be available;
+//   2. we basically compares given shape to the shape of the only output of
+//      the node and return true if it implies broadcast from the former to the
+//      latter.
+bool maybeBroadcastOnShape(const Node* n, const std::vector<c10::optional<int64_t>>& shape) {
+  TORCH_INTERNAL_ASSERT(n->outputs().size() == 1,
+      "not expecting multiple outputs from a node, graph partitioning logic needs to be updated");
+  // assumes that if output is not a tensor type, it's not broadcasting
+  if (auto out_type = n->output(0)->type()->cast<TensorType>()) {
+    if (out_type->dim()) {
+      if (out_type->dim().value() < shape.size()) {
+        // no broadcast for reduction operation;
+        return false;
+      } else if (out_type->dim().value() > shape.size()) {
+        // increased rank means there is reduction;
+        return true;
+      } else {
+        // same rank, we need to iterate through sizes and check if size-1 exists in input `shape`
+        for (int i = 0; i < static_cast<int>(shape.size()); i++) {
+          // TODO: not sure if we need to check for output size != 1, since we
+          // are currently marking all size-1 dimension as broadcast in codegen.
+          if (shape[i].has_value() && shape[i].value() == 1) {
+            return true;
+          }
+        }
+      }
+    }
+  }
+  return false;
+};
+
 // TODO: this check is not safe/robust;
 // Temporary check to disable different broadcast on branches, this is to avoid
 // scheduling issue of inlining TensorView that is broadcasted to different
@@ -85,49 +120,6 @@ bool createTrickyBroadcast(const Node* fusion, const Node* node) {
   std::cout << "check multiple broadcast" << std::endl << *fusion << std::endl << *node << std::endl;
   // TORCH_INTERNAL_ASSERT(node->outputs().size() == 1,
   //     "not expecting multiple outputs from a node, graph partitioning logic needs to be updated");
-
-  // // TODO: remove this when scheduler is more robust;
-  // // we want to make sure that no intermediate is marked as output
-  // // This is to simplify our scheduler.
-  // for (const auto& output : node->outputs()) {
-  //   for (const auto& use : output->uses()) {
-  //     if (use.user != fusion) {
-  //       printf("early termination\n");
-  //       return true;
-  //     }
-  //   }
-  // }
-
-  auto has_broadcast = [] (const Node* n, const auto& shape) {
-      std::cout << "\ncheck node: " << *n << std::endl;
-      TORCH_INTERNAL_ASSERT(n->outputs().size() == 1,
-          "not expecting multiple outputs from a node, graph partitioning logic needs to be updated");
-      // assumes that if output is not a tensor type, it's not broadcasting
-      if (auto out_type = n->output(0)->type()->cast<TensorType>()) {
-        if (out_type->dim()) {
-          if (out_type->dim().value() < shape.size()) {
-            // no broadcast for reduction operation;
-            printf("lambda no size return false\n");
-            return false;
-          } else if (out_type->dim().value() > shape.size()) {
-            // increased rank means there is reduction;
-            printf("lambda rank mismatch return true\n");
-            return true;
-          } else {
-            // same rank, we need to iterate through sizes and check if size-1 exists in input `shape`
-            for (int i = 0; i < static_cast<int>(shape.size()); i++) {
-              // TODO: not sure if we need to check for output size == 1
-              if (shape[i].has_value() && shape[i].value() == 1) {
-                printf("lambda size mismatch return true");
-                return true;
-              }
-            }
-          }
-        }
-      }
-      printf("lambda return false");
-      return false;
-  };
 
   // TODO: this is not necessary if we have smart scheduling!
   // check if merging this code would result in multiple broadcast for a single
@@ -151,12 +143,12 @@ bool createTrickyBroadcast(const Node* fusion, const Node* node) {
         // different fraph from `node`.
         const auto& subgraph_input = node->g(attr::Subgraph)->inputs()[i];
         for (const auto& use : subgraph_input->uses()) {
-          if (has_broadcast(use.user, n_input_shape)) {
+          if (maybeBroadcastOnShape(use.user, n_input_shape)) {
             num_broadcasting++;
           }
         }
       } else {
-        if (has_broadcast(node, n_input_shape)) {
+        if (maybeBroadcastOnShape(node, n_input_shape)) {
           num_broadcasting++;
         }
       }
@@ -169,12 +161,12 @@ bool createTrickyBroadcast(const Node* fusion, const Node* node) {
             // different fraph from `fusion`.
             const auto& subgraph_input = fusion->g(attr::Subgraph)->inputs()[use.offset];
             for (const auto& use : subgraph_input->uses()) {
-              if (has_broadcast(use.user, n_input_shape)) {
+              if (maybeBroadcastOnShape(use.user, n_input_shape)) {
                 num_broadcasting++;
               }
             }
           } else {
-            if (has_broadcast(fusion, n_input_shape)) {
+            if (maybeBroadcastOnShape(fusion, n_input_shape)) {
               num_broadcasting++;
             }
           }
@@ -203,7 +195,7 @@ bool createTrickyBroadcast(const Node* fusion, const Node* node) {
         for (const auto& use : subgraph_output->uses()) {
           // exclude output node
           if (use.user->kind() != prim::Return &&
-              has_broadcast(use.user, n_output_shape)) {
+              maybeBroadcastOnShape(use.user, n_output_shape)) {
             num_broadcasting++;
           }
         }
@@ -219,12 +211,12 @@ bool createTrickyBroadcast(const Node* fusion, const Node* node) {
             // different fraph from `fusion`.
             const auto& subgraph_input = fusion->g(attr::Subgraph)->inputs()[use.offset];
             for (const auto& use : subgraph_input->uses()) {
-              if (has_broadcast(use.user, n_output_shape)) {
+              if (maybeBroadcastOnShape(use.user, n_output_shape)) {
                 num_broadcasting++;
               }
             }
           } else {
-            if (has_broadcast(fusion, n_output_shape)) {
+            if (maybeBroadcastOnShape(fusion, n_output_shape)) {
               num_broadcasting++;
             }
           }
