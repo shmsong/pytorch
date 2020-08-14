@@ -174,7 +174,7 @@ std::vector<IterDomain*> TensorDomain::noBroadcasts(
 }
 
 TensorView::TensorView(const fuser::TensorView* tv) : Val(tv), fuser_tv_(tv) {
-  domain_ = lowerValue(tv->domain())->as<kir::TensorDomain>();
+  domain_ = lowerValue(tv->domain())->as<TensorDomain>();
   memory_type_ = tv->getMemoryType();
 }
 
