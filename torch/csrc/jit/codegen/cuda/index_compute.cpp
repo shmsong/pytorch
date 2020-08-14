@@ -273,8 +273,7 @@ void IndexCompute::handle(Merge* merge) {
     return;
   }
 
-  if (!hasZeroMerged(out_id) && contig_ids.find(out_id) != contig_ids.end() &&
-      extent_map_.find(inner_id) == extent_map_.end()) {
+  if (!hasZeroMerged(out_id) && contig_ids.find(out_id) != contig_ids.end()) {
     auto input_ids = ir_utils::iterDomainInputsOfOrderedAs(
         {merge->out()}, td_->getRootDomain());
 
