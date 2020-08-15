@@ -78,7 +78,7 @@ bool scheduleFusion(Fusion* fusion, const at::ArrayRef<c10::IValue> inputs) {
       // Merge all iteration dimensions
       while (out->nDims() > num_reduction_axes + 1) {
         // we merge the last two iterative axes;
-        out->merge(out->nDims() - 2 - num_reduction_axes);
+        out->merge(static_cast<int>(out->nDims() - num_reduction_axes) - 2);
       }
       // Merge all reduction dimensions
       while (out->nDims() > 2) {
@@ -396,7 +396,7 @@ c10::optional<ReductionParams> scheduleReduction(
 
   // Merge all iteration dimensions
   while (red_tv->nDims() > num_reduction_axes + 1) {
-    red_tv->merge(red_tv->nDims() - 2 - num_reduction_axes);
+    red_tv->merge(static_cast<int>(red_tv->nDims() - num_reduction_axes) - 2);
   }
   // Merge all reduction dimensions
   while (red_tv->nDims() > 2) {
