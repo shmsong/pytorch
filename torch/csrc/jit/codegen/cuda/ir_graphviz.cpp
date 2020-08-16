@@ -279,7 +279,7 @@ void IrGraphGenerator::generateScheduleGraph() {
       if (tv->domain()->hasRFactor())
         addArc(
             tv,
-            new TensorDomain(tv->domain()->rfactorDomain()),
+            new TensorDomain(tv->domain()->getRFactorDomain()),
             "[style=dashed, color=green, arrowhead=none]");
     }
   }
@@ -486,6 +486,10 @@ void IrGraphGenerator::handle(const kir::Allocate* allocate) {
   printExpr(allocate, msg.str());
   addArc(allocate->size(), allocate);
   addArc(allocate->buffer(), allocate);
+}
+
+void IrGraphGenerator::handle(const kir::Sync* sync) {
+  printExpr(sync, "SyncThreads");
 }
 
 void IrGraphGenerator::handle(const Split* split) {

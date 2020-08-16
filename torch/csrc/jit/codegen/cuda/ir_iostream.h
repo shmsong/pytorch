@@ -40,11 +40,28 @@ class BroadcastOp;
 // Kernel IR
 namespace kir {
 
+class Bool;
+class Float;
+class Half;
+class Int;
+class NamedScalar;
+
+class IterDomain;
+class TensorDomain;
+class TensorView;
+
+class UnaryOp;
+class BinaryOp;
+class TernaryOp;
+class ReductionOp;
+class BroadcastOp;
+
 class TensorIndex;
 class Allocate;
 class ForLoop;
 class IfThenElse;
 class GridReduction;
+class Sync;
 
 } // namespace kir
 
@@ -63,9 +80,6 @@ class TORCH_CUDA_API IRPrinter : public OptInConstDispatch {
 
   // Track the indentation size for pretty printing
   int indent_size = 0;
-
-  // Handle value mapping
-  bool follow_val_map = true;
 
   // Indent the generated code
   void indent() {
@@ -116,12 +130,29 @@ class TORCH_CUDA_API IRPrinter : public OptInConstDispatch {
   void handle(const BinaryOp*) override;
   void handle(const TernaryOp*) override;
   void handle(const ReductionOp*) override;
-  void handle(const kir::GridReduction*) override;
   void handle(const BroadcastOp*) override;
 
+  void handle(const kir::Bool*) override;
+  void handle(const kir::Float*) override;
+  void handle(const kir::Half*) override;
+  void handle(const kir::Int*) override;
+  void handle(const kir::NamedScalar*) override;
+
+  void handle(const kir::IterDomain*) override;
+  void handle(const kir::TensorDomain*) override;
+  void handle(const kir::TensorView*) override;
+
+  void handle(const kir::UnaryOp*) override;
+  void handle(const kir::BinaryOp*) override;
+  void handle(const kir::TernaryOp*) override;
+  void handle(const kir::ReductionOp*) override;
+  void handle(const kir::BroadcastOp*) override;
+
+  void handle(const kir::GridReduction*) override;
   void handle(const kir::ForLoop*) override;
   void handle(const kir::IfThenElse*) override;
   void handle(const kir::Allocate*) override;
+  void handle(const kir::Sync*) override;
 
   void handle(const Split*) override;
   void handle(const Merge*) override;

@@ -9,6 +9,28 @@ namespace torch {
 namespace jit {
 namespace fuser {
 
+Val* IndexLowering::lowerOperand(Val* op, Val* out) const {
+  if (ir_utils::isTV(op)) {
+    return Index::getProducerIndex(
+        ir_utils::asTV(op),
+        ir_utils::asTV(out),
+        scope_utils::getLoops(active_scope_expr));
+  } else {
+    return kir::lowerValue(op);
+  }
+}
+
+Val* IndexLowering::lowerOutput(Expr* expr) const {
+  TORCH_CHECK(expr->outputs().size() == 1);
+  const auto out = expr->output(0);
+  if (ir_utils::isTVOp(expr)) {
+    return Index::getConsumerIndex(
+        ir_utils::asTV(out), scope_utils::getLoops(active_scope_expr));
+  } else {
+    return kir::lowerValue(out);
+  }
+}
+
 void IndexLowering::pushBack(Expr* expr) {
   if (active_scope == nullptr)
     lowered_exprs.push_back(expr);
@@ -59,81 +81,66 @@ void IndexLowering::handle(kir::ForLoop* fl) {
 }
 
 void IndexLowering::handle(UnaryOp* uop) {
+  // TODO(kir): lower this expression
   if (!ir_utils::isTVOp(uop)) {
     pushBack(uop);
     return;
   }
 
-  kir::TensorIndex* out = Index::getConsumerIndex(
-      ir_utils::asTV(uop->out()), scope_utils::getLoops(active_scope_expr));
-  Val* in = uop->in();
-  if (ir_utils::isTV(in))
-    in = Index::getProducerIndex(
-        ir_utils::asTV(in),
-        ir_utils::asTV(uop->out()),
-        scope_utils::getLoops(active_scope_expr));
-  pushBack(new UnaryOp(uop->getUnaryOpType(), out, in));
+  const auto in = lowerOperand(uop->in(), uop->out());
+  const auto out = lowerOutput(uop);
+  pushBack(new kir::UnaryOp(uop->getUnaryOpType(), out, in));
 }
 
 void IndexLowering::handle(BinaryOp* bop) {
+  // TODO(kir): lower this expression
   if (!ir_utils::isTVOp(bop)) {
     pushBack(bop);
     return;
   }
 
-  kir::TensorIndex* out = Index::getConsumerIndex(
-      ir_utils::asTV(bop->out()), scope_utils::getLoops(active_scope_expr));
-
-  Val* lhs = bop->lhs();
-  Val* rhs = bop->rhs();
-
-  if (ir_utils::isTV(lhs))
-    lhs = Index::getProducerIndex(
-        ir_utils::asTV(lhs),
-        ir_utils::asTV(bop->out()),
-        scope_utils::getLoops(active_scope_expr));
-
-  if (ir_utils::isTV(rhs))
-    rhs = Index::getProducerIndex(
-        ir_utils::asTV(rhs),
-        ir_utils::asTV(bop->out()),
-        scope_utils::getLoops(active_scope_expr));
-
-  pushBack(new BinaryOp(bop->getBinaryOpType(), out, lhs, rhs));
+  const auto lhs = lowerOperand(bop->lhs(), bop->out());
+  const auto rhs = lowerOperand(bop->rhs(), bop->out());
+  const auto out = lowerOutput(bop);
+  pushBack(new kir::BinaryOp(bop->getBinaryOpType(), out, lhs, rhs));
 }
 
 void IndexLowering::handle(TernaryOp* top) {
+  // TODO(kir): lower this expression
   if (!ir_utils::isTVOp(top)) {
     pushBack(top);
     return;
   }
 
-  kir::TensorIndex* out = Index::getConsumerIndex(
-      ir_utils::asTV(top->out()), scope_utils::getLoops(active_scope_expr));
-  Val* in1 = top->in1();
-  Val* in2 = top->in2();
-  Val* in3 = top->in3();
-
-  if (ir_utils::isTV(in1))
-    in1 = Index::getProducerIndex(
-        ir_utils::asTV(in1),
-        ir_utils::asTV(top->out()),
-        scope_utils::getLoops(active_scope_expr));
-
-  if (ir_utils::isTV(in2))
-    in2 = Index::getProducerIndex(
-        ir_utils::asTV(in2),
-        ir_utils::asTV(top->out()),
-        scope_utils::getLoops(active_scope_expr));
-
-  if (ir_utils::isTV(in3))
-    in3 = Index::getProducerIndex(
-        ir_utils::asTV(in3),
-        ir_utils::asTV(top->out()),
-        scope_utils::getLoops(active_scope_expr));
-
-  pushBack(new TernaryOp(top->getTernaryOpType(), out, in1, in2, in3));
+  const auto in1 = lowerOperand(top->in1(), top->out());
+  const auto in2 = lowerOperand(top->in2(), top->out());
+  const auto in3 = lowerOperand(top->in3(), top->out());
+  const auto out = lowerOutput(top);
+  pushBack(new kir::TernaryOp(top->getTernaryOpType(), out, in1, in2, in3));
 }
+
+namespace {
+
+void allocateGridReductionFlag(TensorView* out_tv, Expr* current_scope_expr) {
+  auto flag_name = kir::GridReduction::getPredicateFlagName(out_tv);
+  auto flag_var = new kir::Allocate(
+      new kir::NamedScalar(flag_name, DataType::Bool),
+      MemoryType::Local,
+      new kir::Int(1));
+  // When enclosed by IfThenElse, place the variable outside of the
+  // IfThenElse. This IfThenElse is assumed to be the prediate for
+  // this grid reduction expression.
+  if (current_scope_expr->getExprType() == ExprType::IfThenElse) {
+    scope_utils::insertBefore(
+        scope_utils::getParent(current_scope_expr),
+        current_scope_expr,
+        flag_var);
+  } else {
+    scope_utils::pushBack(current_scope_expr, flag_var);
+  }
+}
+
+} // namespace
 
 void IndexLowering::handle(ReductionOp* rop) {
   TORCH_INTERNAL_ASSERT(
@@ -143,9 +150,8 @@ void IndexLowering::handle(ReductionOp* rop) {
 
   auto out_tv = ir_utils::asTV(rop->out());
 
-  bool is_block_reduce = out_tv->hasBlockReduction();
-
-  bool is_grid_reduce = out_tv->hasGridReduction();
+  const bool is_block_reduce = out_tv->hasBlockReduction();
+  const bool is_grid_reduce = out_tv->hasGridReduction();
 
   // If we do a grid reduction we can't have a reduction axis that is not bound
   // to a grid or block dim ()
@@ -160,21 +166,24 @@ void IndexLowering::handle(ReductionOp* rop) {
         "Found a reduction stage that has both a non-parallelized reduction and a grid reduction.",
         " This is not supported, please use rfactor to do the serialized reduction first, then the grid reduction.");
   }
-  auto loops = scope_utils::getLoops(active_scope_expr);
+  const auto loops = scope_utils::getLoops(active_scope_expr);
 
   kir::TensorIndex* out = Index::getConsumerIndex(out_tv, loops);
-  Val* in = rop->in();
-  in = Index::getProducerIndex(
-      ir_utils::asTV(in), ir_utils::asTV(rop->out()), loops);
+  kir::TensorIndex* in = Index::getProducerIndex(
+      ir_utils::asTV(rop->in()), ir_utils::asTV(rop->out()), loops);
 
-  ReductionOp* block_reduction = nullptr;
+  kir::ReductionOp* block_reduction_op = nullptr;
   if (is_block_reduce) {
-    block_reduction =
-        new ReductionOp(rop->getReductionOpType(), rop->init(), out, in);
-    pushBack(block_reduction);
+    block_reduction_op = new kir::ReductionOp(
+        rop->getReductionOpType(), kir::lowerValue(rop->init()), out, in);
+    pushBack(block_reduction_op);
   }
 
   if (is_grid_reduce) {
+    // First, declare a boolean flag variable storing the return value
+    // of gridReduce.
+    allocateGridReductionFlag(out_tv, active_scope_expr);
+
     std::vector<IterDomain*> buffer_ids(out_tv->domain()->domain());
     buffer_ids.erase(
         std::remove_if(
@@ -214,22 +223,25 @@ void IndexLowering::handle(ReductionOp* rop) {
     TensorView* reduce_sync_tv =
         new TensorView(new TensorDomain({sync_id}), DataType::Int);
 
-    auto reduce_buffer =
-        new kir::Allocate(reduce_buffer_tv, MemoryType::Global);
-    auto sync_buffer = new kir::Allocate(reduce_sync_tv, MemoryType::Global);
+    const auto reduce_buffer = new kir::Allocate(
+        kir::lowerValue(reduce_buffer_tv), MemoryType::Global);
+    const auto sync_buffer =
+        new kir::Allocate(kir::lowerValue(reduce_sync_tv), MemoryType::Global);
+
+    const auto grid_reduction_op = block_reduction_op == nullptr
+        ? new kir::ReductionOp(
+              rop->getReductionOpType(), kir::lowerValue(rop->init()), out, in)
+        : block_reduction_op;
+    const auto grid_reduction =
+        new kir::GridReduction(grid_reduction_op, reduce_buffer, sync_buffer);
 
     pushBack(reduce_buffer);
     pushBack(sync_buffer);
-    pushBack(new kir::GridReduction(
-        block_reduction == nullptr
-            ? new ReductionOp(rop->getReductionOpType(), rop->init(), out, in)
-            : block_reduction,
-        reduce_buffer,
-        sync_buffer));
+    pushBack(grid_reduction);
   }
 
   if (!is_block_reduce && !is_grid_reduce) {
-    pushBack(new BinaryOp(rop->getReductionOpType(), out, out, in));
+    pushBack(new kir::BinaryOp(rop->getReductionOpType(), out, out, in));
   }
 }
 
@@ -239,15 +251,24 @@ void IndexLowering::handle(BroadcastOp* bop) {
       "Cannot have a broadcast operation on something other than a tensor view, but received ",
       bop);
 
-  kir::TensorIndex* out = Index::getConsumerIndex(
-      ir_utils::asTV(bop->out()), scope_utils::getLoops(active_scope_expr));
+  auto loops = scope_utils::getLoops(active_scope_expr);
+
+  kir::TensorIndex* out =
+      Index::getConsumerIndex(ir_utils::asTV(bop->out()), loops);
+
   Val* in = bop->in();
   if (ir_utils::isTV(in))
     in = Index::getProducerIndex(
-        ir_utils::asTV(in),
-        ir_utils::asTV(bop->out()),
-        scope_utils::getLoops(active_scope_expr));
-  pushBack(new BroadcastOp(out, in));
+        ir_utils::asTV(in), ir_utils::asTV(bop->out()), loops);
+  pushBack(new kir::BroadcastOp(out, in));
+}
+
+void IndexLowering::handle(kir::Allocate* allocate) {
+  pushBack(allocate);
+}
+
+void IndexLowering::handle(kir::Sync* sync) {
+  pushBack(sync);
 }
 
 void IndexLowering::generate(const std::vector<Expr*>& exprs) {

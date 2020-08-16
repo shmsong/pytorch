@@ -175,11 +175,6 @@ class TORCH_CUDA_API ReductionOp : public Expr {
 
   bool sameAs(const ReductionOp* const other) const;
 
-  std::vector<IterDomain*> getReductionDomains() const;
-
-  std::unordered_map<ParallelType, IterDomain*, TypeHash>
-  getParallelReductionDomains() const;
-
  private:
   const BinaryOpType reduction_op_type_;
   Val* const init_ = nullptr;
@@ -228,18 +223,12 @@ class TORCH_CUDA_API TernaryOp : public Expr {
   Val* const in3_ = nullptr;
 };
 
-/*
- * Simply a representation of an annotated 1D iterable from start to extent.
- * TensorDomains which represent how to iterate over a tensor is made up of
- * IterDomains to form an ND iterable. We directly set parallization strategies
- * on IterDomains.
- */
+// Simply a representation of an annotated 1D iterable from start to extent.
+// TensorDomains which represent how to iterate over a tensor is made up of
+// IterDomains to form an ND iterable. We directly set parallization strategies
+// on IterDomains.
 class TORCH_CUDA_API IterDomain : public Val {
  public:
-  ~IterDomain() = default;
-
-  IterDomain() = delete;
-
   IterDomain(
       Val* _start,
       Val* _extent,
@@ -378,16 +367,20 @@ class TORCH_CUDA_API TensorDomain : public Val {
   TensorDomain(TensorDomain&& other) = delete;
   TensorDomain& operator=(TensorDomain&& other) = delete;
 
-  explicit TensorDomain(std::vector<IterDomain*> _domain);
+  explicit TensorDomain(
+      std::vector<IterDomain*> _domain,
+      std::vector<bool> _contiguity = std::vector<bool>());
 
   TensorDomain(
       std::vector<IterDomain*> _root_domain,
-      std::vector<IterDomain*> _domain);
+      std::vector<IterDomain*> _domain,
+      std::vector<bool> _contiguity = std::vector<bool>());
 
   TensorDomain(
       std::vector<IterDomain*> _root_domain,
       std::vector<IterDomain*> _rfactor_domain,
-      std::vector<IterDomain*> _domain);
+      std::vector<IterDomain*> _domain,
+      std::vector<bool> _contiguity = std::vector<bool>());
 
   TensorDomain(const TensorDomain* src, IrCloner* ir_cloner);
 
@@ -405,11 +398,25 @@ class TORCH_CUDA_API TensorDomain : public Val {
     return domain_;
   }
 
+  const std::vector<bool>& contiguity() const {
+    return contiguity_;
+  }
+
+  std::string getContiguityString() const {
+    std::stringstream ss;
+    for (auto b : contiguity()) {
+      ss << (b ? "t" : "f");
+    }
+    return ss.str();
+  }
+
   bool hasReduction() const;
   bool hasBlockReduction() const;
   bool hasGridReduction() const;
   bool hasBroadcast() const;
   bool hasRFactor() const;
+
+  c10::optional<unsigned int> getReductionAxis() const;
 
   const std::vector<IterDomain*>& noReductions() const {
     return no_reduction_domain_;
@@ -419,13 +426,19 @@ class TORCH_CUDA_API TensorDomain : public Val {
     return no_bcast_domain_;
   }
 
-  const std::vector<IterDomain*>& rootDomain() const {
+  const std::vector<IterDomain*>& getRootDomain() const {
     return root_domain_;
   };
 
-  const std::vector<IterDomain*>& rfactorDomain() const {
+  const std::vector<IterDomain*>& getRFactorDomain() const {
     return rfactor_domain_;
   };
+
+  // If rfactor domain exists in domain() return it, otherwise return root
+  // domain.
+  const std::vector<IterDomain*>& getMaybeRFactorDomain() const {
+    return hasRFactor() ? getRFactorDomain() : getRootDomain();
+  }
 
   void resetDomains() {
     no_reduction_domain_ = noReductions(domain_);
@@ -462,45 +475,57 @@ class TORCH_CUDA_API TensorDomain : public Val {
   static bool hasBroadcast(const std::vector<IterDomain*>&);
   static bool hasReduction(const std::vector<IterDomain*>&);
 
-  // return mapping of consumer_domain[i] = producer_domain[result_vector[i]]
-  // assuming there exists a direct consumer-producer mapping. If axis exists in
-  // consumer (broadcast) but not in producer, mapping will be result_vector[i]
-  // = -1.
-  static std::vector<int64_t> mapDomainCtoP(
-      const std::vector<IterDomain*>& consumer,
-      const std::vector<IterDomain*>& producer);
-
-  // Create a map from consumer root IterDomains -> producer root IterDomains.
-  // Constrain will restrict which consumer root IterDomains we map to the
-  // producer IterDomains. Only those root consumer IDs present in
-  // consumer_root_dims_to_map will be attempted to map to their corresponding
-  // producer IDs.
-  static std::unordered_map<IterDomain*, IterDomain*> mapRootCtoP(
-      const TensorDomain* consumer,
-      const TensorDomain* producer,
-      bool constrain = false,
-      const std::unordered_set<IterDomain*>& consumer_root_dims_to_map =
-          std::unordered_set<IterDomain*>());
-
-  // return mapping of consumer_domain[i] = producer_domain[result_vector[i]]
-  // assuming there exists a direct consumer-producer mapping. If axis exists in
-  // consumer (broadcast) but not in producer, mapping will be result_vector[i]
-  // = -1.
-  static std::vector<int64_t> mapDomainPtoC(
+  // return std::pair<producer_id, consumer_id> representing
+  // the mapping between corresponding axes. Not all axes have
+  // corresponding mapping, e.g., broadcast axis in consumer
+  // does not have any corresponding axis in producer.
+  static std::vector<std::pair<int, int>> mapDomainPandC(
       const std::vector<IterDomain*>& producer,
       const std::vector<IterDomain*>& consumer);
 
+  // Create a map between producer root IterDomains and consumer root
+  // IterDomains.
+  static std::vector<std::pair<IterDomain*, IterDomain*>> mapRootPandC(
+      const TensorDomain* producer,
+      const TensorDomain* consumer);
+
+  // Create a map from consumer root IterDomains -> producer root IterDomains.
+  // Only those root consumer IDs present in consumer_root_dims_to_map
+  // will be attempted to map to their corresponding producer IDs.
+  static std::unordered_map<IterDomain*, IterDomain*> mapRootCtoP(
+      const TensorDomain* consumer,
+      const TensorDomain* producer,
+      const std::unordered_set<IterDomain*>& consumer_root_dims_to_map);
+
+  static std::unordered_map<IterDomain*, IterDomain*> mapRootCtoP(
+      const TensorDomain* consumer,
+      const TensorDomain* producer) {
+    return mapRootCtoP(
+        consumer,
+        producer,
+        std::unordered_set<IterDomain*>(
+            consumer->getRootDomain().begin(),
+            consumer->getRootDomain().end()));
+  }
+
   // Create a map from producer root IterDomains -> consumer root IterDomains.
-  // Constrain will restrict which producer root IterDomains we map to the
-  // consumer IterDomains. Only those root producer IDs present in
-  // producer_root_dims_to_map will be attempted to map to their corresponding
-  // consumer IDs.
+  // Only those root producer IDs present in producer_maybe_rfactor_dims_to_map
+  // will be attempted to map to their corresponding consumer IDs.
   static std::unordered_map<IterDomain*, IterDomain*> mapRootPtoC(
       const TensorDomain* producer,
       const TensorDomain* consumer,
-      bool constrain = false,
-      const std::unordered_set<IterDomain*>& producer_root_dims_to_map =
-          std::unordered_set<IterDomain*>());
+      const std::unordered_set<IterDomain*>&
+          producer_maybe_rfactor_dims_to_map);
+
+  static std::unordered_map<IterDomain*, IterDomain*> mapRootPtoC(
+      const TensorDomain* producer,
+      const TensorDomain* consumer) {
+    auto p_root = producer->getMaybeRFactorDomain();
+    return mapRootPtoC(
+        producer,
+        consumer,
+        std::unordered_set<IterDomain*>(p_root.begin(), p_root.end()));
+  }
 
   // pair is in order where second is the consumer of first
   std::pair<TensorDomain*, TensorDomain*> rFactor(const std::vector<int>& axes);
@@ -511,6 +536,7 @@ class TORCH_CUDA_API TensorDomain : public Val {
   std::vector<IterDomain*> no_bcast_domain_;
   std::vector<IterDomain*> no_reduction_domain_;
   const std::vector<IterDomain*> rfactor_domain_;
+  const std::vector<bool> contiguity_;
 };
 
 /*

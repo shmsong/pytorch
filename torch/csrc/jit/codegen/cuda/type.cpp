@@ -64,6 +64,16 @@ static const char* val_type2string(ValType t) {
       return "Scalar";
     case ValType::NamedScalar:
       return "NamedScalar";
+    case ValType::KirIterDomain:
+      return "KirIterDomain";
+    case ValType::KirNamedScalar:
+      return "KirNamedScalar";
+    case ValType::KirScalar:
+      return "KirScalar";
+    case ValType::KirTensorDomain:
+      return "KirTensorDomain";
+    case ValType::KirTensorView:
+      return "KirTensorView";
     default:
       break;
   }
@@ -91,10 +101,22 @@ static const char* expr_type2string(ExprType t) {
       return "IfThenElse";
     case ExprType::Allocate:
       return "Allocate";
+    case ExprType::Sync:
+      return "SyncThreads";
     case ExprType::Split:
       return "Split";
     case ExprType::Merge:
       return "Merge";
+    case ExprType::KirUnaryOp:
+      return "KirUnaryOp";
+    case ExprType::KirBinaryOp:
+      return "KirBinaryOp";
+    case ExprType::KirTernaryOp:
+      return "KirTernaryOp";
+    case ExprType::KirReductionOp:
+      return "KirReductionOp";
+    case ExprType::KirBroadcastOp:
+      return "KirBroadcastOp";
     default:
       break;
   }

@@ -227,7 +227,7 @@ TensorDomain* TransformRFactor::runReplay(
         return val->as<IterDomain>();
       });
 
-  auto orig_td_root = orig_td->rootDomain();
+  auto orig_td_root = orig_td->getRootDomain();
 
   // Generate a new TensorDomain and set up map from one root to this one.
   std::vector<IterDomain*> new_root(orig_td_root.size(), nullptr);
@@ -288,7 +288,11 @@ TensorDomain* TransformRFactor::runReplay(
     if (dom->isRFactorProduct())
       rfactor_root.push_back(dom);
 
-  return new TensorDomain(new_root, rfactor_root, new_domain);
+  return new TensorDomain(
+      new_root,
+      rfactor_root,
+      new_domain,
+      std::vector<bool>(new_root.size(), true));
 }
 
 // We want to take any axes marked in axes and remove them from the TensorDomain
@@ -353,7 +357,7 @@ TensorDomain* TransformRFactor::runReplay2(
   // the domain we're creating
   std::vector<IterDomain*> new_root;
   std::unordered_map<IterDomain*, IterDomain*> replay_root_map;
-  for (auto id : orig_td->rootDomain()) {
+  for (auto id : orig_td->getRootDomain()) {
     if (rfactor_root_axes.find(id) == rfactor_root_axes.end()) {
       new_root.push_back(id->clone());
       replay_root_map[id] = new_root.back();
@@ -380,7 +384,8 @@ TensorDomain* TransformRFactor::runReplay2(
     }
   }
 
-  return new TensorDomain(new_root, new_domain);
+  return new TensorDomain(
+      new_root, new_domain, std::vector<bool>(new_root.size(), true));
 }
 
 } // namespace fuser

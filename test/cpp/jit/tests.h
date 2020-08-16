@@ -120,11 +120,11 @@ namespace jit {
   _(GPU_FusionRegister)                             \
   _(GPU_FusionTopoSort)                             \
   _(GPU_FusionTensor)                               \
+  _(GPU_FusionFilterVals)                           \
   _(GPU_FusionTVSplit)                              \
   _(GPU_FusionTVMerge)                              \
   _(GPU_FusionTVReorder)                            \
   _(GPU_FusionEquality)                             \
-  _(GPU_FusionReplaceAll)                           \
   _(GPU_FusionParser)                               \
   _(GPU_FusionDependency)                           \
   _(GPU_FusionCodeGen)                              \
@@ -148,6 +148,8 @@ namespace jit {
   _(GPU_FusionReduction5)                           \
   _(GPU_FusionReductionTFT)                         \
   _(GPU_FusionSimpleBCast)                          \
+  _(GPU_FusionComplexBCast)                         \
+  _(GPU_FusionAdvancedIndexing)                     \
   _(GPU_FusionSimpleGemm)                           \
   _(GPU_FusionSoftmax1D)                            \
   _(GPU_FusionSoftmax1DNormalized)                  \
@@ -174,12 +176,17 @@ namespace jit {
   _(GPU_FusionReductionScheduler)                   \
   _(GPU_FusionReductionSchedulerMultiDimNonFastest) \
   _(GPU_FusionReductionSchedulerMultiDimFastest)    \
+  _(GPU_FusionReductionSchedulerDimShmoo)           \
   _(GPU_FusionCacheBefore)                          \
   _(GPU_FusionCacheAfter)                           \
   _(GPU_FusionCacheIndirect)                        \
   _(GPU_FusionCacheBcast)                           \
   _(GPU_FusionCacheComplex)                         \
   _(GPU_FusionCacheMultiConsumer)                   \
+  _(GPU_FusionSmem)                                 \
+  _(GPU_FusionSmemReduce)                           \
+  _(GPU_FusionSmemBlockGemm)                        \
+  _(GPU_FusionSmemBlockGemmCache)                   \
   _(GPU_FusionConstCheck)                           \
   _(GPU_FusionSymbolicReduction)                    \
   _(GPU_FusionUnrollWithAlloc)                      \
@@ -193,6 +200,7 @@ namespace jit {
   _(GPU_FusionTraversalOrder5)                      \
   _(GPU_FusionTraversalOrder6)                      \
   _(GPU_FusionTraversalOrder7)                      \
+  _(GPU_FusionBranches)                             \
   _(GPU_FusionThreadPredicate)
 #else
 #define TH_FORALL_TESTS_CUDA(_) \

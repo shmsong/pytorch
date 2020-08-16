@@ -1,4 +1,5 @@
 #include <torch/csrc/jit/codegen/cuda/transform_iter.h>
+#include <torch/csrc/jit/codegen/cuda/ir_utils.h>
 
 namespace torch {
 namespace jit {
@@ -144,7 +145,7 @@ ReplayTransformations::ReplayTransformations(
           val);
       IterDomain* id = val->as<IterDomain>();
       TORCH_INTERNAL_ASSERT(
-          this->id_map_.find(id) != this->id_map_.end(),
+          id_map_.find(id) != id_map_.end(),
           "Could not find required input: ",
           id,
           " in provided id_map.");
@@ -214,13 +215,15 @@ void ReplayTransformations::runReplay() {
 BestEffortReplay::BestEffortReplay(
     const std::vector<IterDomain*>& replay_domain,
     const std::vector<IterDomain*>& target_domain,
-    std::unordered_map<IterDomain*, IterDomain*> replay_map)
+    std::unordered_map<IterDomain*, IterDomain*> replay_map,
+    bool forward_bcast_mismatch)
     : id_map_(std::move(replay_map)) {
   for (auto entry : id_map_)
     leaf_ids_[entry.second] = counter++;
 
   // Grab expr history of iter domains in target_domain
-  std::vector<Expr*> t_exprs = Exprs::getFrom(
+  std::vector<Expr*> t_exprs = ExprSort::getExprs(
+      FusionGuard::getCurFusion(),
       std::vector<Val*>(target_domain.begin(), target_domain.end()));
 
   // If we check how an IterDomain was generated, it should only use an
@@ -230,19 +233,19 @@ BestEffortReplay::BestEffortReplay(
   // replay_domain map.
 
   // Maps replay domain's IterDomains to the Exprs they're used in
-  std::vector<Expr*> r_exprs = Exprs::getFrom(
+  std::vector<Expr*> r_exprs = ExprSort::getExprs(
+      FusionGuard::getCurFusion(),
       std::vector<Val*>(replay_domain.begin(), replay_domain.end()));
   std::unordered_map<IterDomain*, Expr*> replay_expr_map;
-  for (auto r_expr : r_exprs)
-    for (auto inp : r_expr->inputs())
-      if (inp->getValType().value() == ValType::IterDomain) {
-        auto id = inp->as<IterDomain>();
-        TORCH_INTERNAL_ASSERT(
-            replay_expr_map.find(id) == replay_expr_map.end(),
-            "Error trying to map rfactor root domain during replay. IterDomain's shouldn't have more than one use.");
-        // Only want to forward rfactor in map
-        replay_expr_map[id] = r_expr;
-      }
+  for (auto r_expr : r_exprs) {
+    for (auto id : ir_utils::filterByType<IterDomain>(r_expr->inputs())) {
+      TORCH_INTERNAL_ASSERT(
+          replay_expr_map.find(id) == replay_expr_map.end(),
+          "Error trying to map rfactor root domain during replay. IterDomain's shouldn't have more than one use.");
+      // Only want to forward rfactor in map
+      replay_expr_map[id] = r_expr;
+    }
+  }
 
   std::string err_str(
       "Error during replay, a computeAt was called that conflicts with an rfactor call.");
@@ -250,50 +253,85 @@ BestEffortReplay::BestEffortReplay(
   // Iterate through target IterDomains' history and compare with what we
   // recorded from replay_domain
   for (auto t_expr : t_exprs) {
-    // Going to map the target_domain inputs/outputs to replay_domain
-    // inputs/outputs
-    std::vector<IterDomain*> r_inps;
-    std::vector<IterDomain*> t_inps;
+    auto t_inps_filtered = ir_utils::filterByType<IterDomain>(t_expr->inputs());
+    std::vector<IterDomain*> t_inps(
+        t_inps_filtered.begin(), t_inps_filtered.end());
 
-    for (auto inp : t_expr->inputs()) {
-      if (inp->getValType() == ValType::IterDomain) {
-        auto t_inp = inp->as<IterDomain>();
-        t_inps.push_back(t_inp);
-        // There might not be a mapping, that could be okay.
-        auto it = id_map_.find(t_inp);
-        if (it != id_map_.end())
-          r_inps.push_back(it->second);
-      }
+    std::vector<IterDomain*> r_inps =
+        std::vector<IterDomain*>(t_inps.size(), nullptr);
+
+    // Map t_expr inputs to replay domain directly
+    for (size_t t_i = 0; t_i < t_inps.size(); t_i++) {
+      // There might not be a mapping, that could be okay.
+      auto it = id_map_.find(t_inps[t_i]);
+      if (it != id_map_.end())
+        r_inps[t_i] = it->second;
     }
 
     bool has_rfactor =
         std::any_of(r_inps.begin(), r_inps.end(), [](IterDomain* id) {
-          return id->isRFactorProduct();
+          return id == nullptr ? false : id->isRFactorProduct();
         });
 
-    if (r_inps.size() != t_inps.size() || r_inps.empty()) {
-      // If any replay_domain inputs are an rfactor product, all inputs should
-      // match.
-      TORCH_INTERNAL_ASSERT(!has_rfactor, err_str);
-      continue;
+    if (has_rfactor) {
+      bool no_missing_exprs = std::none_of(
+          r_inps.begin(), r_inps.end(), [&replay_expr_map](IterDomain* id) {
+            if (id == nullptr) {
+              return true;
+            } else {
+              return replay_expr_map.find(id) == replay_expr_map.end();
+            }
+          });
+      TORCH_INTERNAL_ASSERT(no_missing_exprs, err_str);
     }
 
-    if (replay_expr_map.find(r_inps[0]) == replay_expr_map.end()) {
-      TORCH_INTERNAL_ASSERT(!has_rfactor, err_str);
-      continue;
+    // I would like to have this more generic or have this whole function go
+    // through dispatch, but trying to make quick forward progress on
+    // https://github.com/csarofeen/pytorch/issues/286 This mapping reflects
+    // more closely what is done in ReplayTransform with mismatched
+    // broadcast/merge
+    if (forward_bcast_mismatch && !has_rfactor &&
+        t_expr->getExprType().value() == ExprType::Merge) {
+      auto t_merge = t_expr->as<Merge>();
+      auto t_outer = t_merge->outer();
+      auto t_inner = t_merge->inner();
+      IterDomain* r_outer = id_map_.find(t_outer) != id_map_.end()
+          ? id_map_.at(t_outer)
+          : nullptr;
+      IterDomain* r_inner = id_map_.find(t_inner) != id_map_.end()
+          ? id_map_.at(t_inner)
+          : nullptr;
+      if (r_outer != nullptr && r_inner == nullptr && t_inner->isBroadcast()) {
+        id_map_[t_merge->out()] = r_outer;
+      } else if (
+          r_inner != nullptr && r_outer == nullptr && t_outer->isBroadcast()) {
+        id_map_[t_merge->out()] = r_inner;
+      }
     }
 
-    auto r_expr = replay_expr_map[r_inps[0]];
-    bool mismatched_inputs = false;
-    {
-      size_t i = 0;
-      for (auto r_inp : r_expr->inputs()) {
-        if (i > r_inps.size()) {
-          mismatched_inputs = true;
+    Expr* r_expr = nullptr;
+    for (auto r_inp : r_inps) {
+      if (r_inp != nullptr) {
+        auto it = replay_expr_map.find(r_inp);
+        if (it != replay_expr_map.end()) {
+          r_expr = it->second;
           break;
         }
-        mismatched_inputs = mismatched_inputs || r_inp != r_inps[i];
-        i++;
+      }
+    }
+
+    if (r_expr == nullptr) {
+      TORCH_INTERNAL_ASSERT(!has_rfactor, err_str);
+      continue;
+    }
+
+    bool mismatched_inputs = r_inps.size() != r_expr->inputs().size();
+    for (size_t i = 0; i < r_inps.size() && !mismatched_inputs; i++) {
+      if (r_inps[i] == nullptr) {
+        mismatched_inputs = true;
+      } else {
+        mismatched_inputs =
+            mismatched_inputs || r_expr->inputs()[i] != r_inps[i];
       }
     }
 
@@ -334,13 +372,10 @@ BestEffortReplay::BestEffortReplay(
       continue;
     }
     // Take target_domain inputs out of map:
-    for (auto inp : t_expr->inputs()) {
-      if (inp->getValType() == ValType::IterDomain) {
-        auto t_inp = inp->as<IterDomain>();
-        auto it = id_map_.find(t_inp);
-        if (leaf_ids_.find(it->second) != leaf_ids_.end()) {
-          leaf_ids_.erase(it->second);
-        }
+    for (auto t_inp : ir_utils::filterByType<IterDomain>(t_expr->inputs())) {
+      auto it = id_map_.find(t_inp);
+      if (leaf_ids_.find(it->second) != leaf_ids_.end()) {
+        leaf_ids_.erase(it->second);
       }
     }
 
@@ -364,10 +399,10 @@ int BestEffortReplay::findFirstMismatchedID(
     const TensorDomain* td1,
     const TensorDomain* td2) {
   std::unordered_map<IterDomain*, IterDomain*> id_map;
-  auto rd1 = td1->rootDomain();
-  auto rd2 = td2->rootDomain();
+  auto rd1 = td1->getRootDomain();
+  auto rd2 = td2->getRootDomain();
   std::unordered_set<IterDomain*> rd2_set(
-      td2->rootDomain().begin(), td2->rootDomain().end());
+      td2->getRootDomain().begin(), td2->getRootDomain().end());
 
   // Find matching root IterDomains, we could make this O(nlog(n)) if we could
   // sort IterDomains.

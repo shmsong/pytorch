@@ -6,6 +6,7 @@
 #include <torch/csrc/WindowsTorchApiMacro.h>
 
 #include <torch/csrc/jit/codegen/cuda/type.h>
+#include <torch/csrc/jit/codegen/cuda/utils.h>
 
 #include <cstdint>
 #include <deque>
@@ -58,7 +59,7 @@ class IrCloner;
  * Basically beinng able to succienctly traverse down the inhereitance stack of
  * a Statment at runtime. This is currently implemented in dispatch.h
  */
-class TORCH_CUDA_API Statement {
+class TORCH_CUDA_API Statement : public NonCopyable, public PolymorphicBase {
   friend void swap(Fusion&, Fusion&) noexcept;
 
  public:
@@ -66,8 +67,6 @@ class TORCH_CUDA_API Statement {
 
   // Cloning constructor
   Statement(const Statement* src, IrCloner* ir_cloner);
-
-  virtual ~Statement() = default;
 
   // Dispatch functions, definitions in dispatch.cpp
   template <typename T>
@@ -103,29 +102,6 @@ class TORCH_CUDA_API Statement {
 
   // Make sure this is an Expr and return it as an Expr*
   Expr* asExpr();
-
-  // Replacement for static_cast<T*>(ptr): ptr->as<T>()
-  template <class T>
-  T* as() {
-#ifdef NDEBUG
-    auto downcast_ptr = static_cast<T*>(this);
-#else
-    auto downcast_ptr = dynamic_cast<T*>(this);
-    TORCH_INTERNAL_ASSERT(downcast_ptr != nullptr);
-#endif
-    return downcast_ptr;
-  }
-
-  template <class T>
-  const T* as() const {
-#ifdef NDEBUG
-    auto downcast_ptr = static_cast<const T*>(this);
-#else
-    auto downcast_ptr = dynamic_cast<const T*>(this);
-    TORCH_INTERNAL_ASSERT(downcast_ptr != nullptr);
-#endif
-    return downcast_ptr;
-  }
 
   // Return the fusion this statement belongs to
   Fusion* fusion() const {
@@ -199,7 +175,11 @@ class TORCH_CUDA_API Val : public Statement {
   explicit Val(
       ValType _vtype,
       DataType _dtype = DataType::Null,
-      bool register_val = true);
+      bool register_val = true,
+      bool lowered = false);
+
+  // Lowers an existing Fusion IR node into a Kernel IR counterpart
+  explicit Val(const Val* fusion_ir_node);
 
   Val(const Val* src, IrCloner* ir_cloner);
 
@@ -218,7 +198,8 @@ class TORCH_CUDA_API Val : public Statement {
   c10::optional<DataType> getDataType() const override;
 
   bool isScalar() const {
-    return vtype_ == ValType::Scalar || vtype_ == ValType::NamedScalar;
+    return vtype_ == ValType::Scalar || vtype_ == ValType::NamedScalar ||
+        vtype_ == ValType::KirScalar || vtype_ == ValType::KirNamedScalar;
   }
 
   bool isConstScalar() const;
@@ -226,6 +207,8 @@ class TORCH_CUDA_API Val : public Statement {
   bool isAnInt() const {
     return isScalar() && dtype_ == DataType::Int;
   }
+
+  c10::optional<int64_t> getInt() const;
 
   bool isZeroInt() const;
   bool isOneInt() const;
@@ -353,10 +336,12 @@ class TORCH_CUDA_API Expr : public Statement {
 
  protected:
   void addInput(Val* input) {
+    TORCH_INTERNAL_ASSERT(input != nullptr);
     inputs_.push_back(input);
   }
 
   void addOutput(Val* output) {
+    TORCH_INTERNAL_ASSERT(output != nullptr);
     outputs_.push_back(output);
   }
 

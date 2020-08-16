@@ -44,8 +44,23 @@ class TORCH_CUDA_API LoopNestGenerator : public OptOutDispatch {
   // initialization
   ThreadPredicateMap& thread_predicates_;
 
-  // Create, place, and return the allocation for tv
+  // Create the allocation for tv, place it inside the loop associated with
+  // alloc_id, return the node
   Expr* pushAlloc(TensorView*);
+
+  // Fusion shared_memory values
+  // Tracks if shared memory is modified
+  std::unordered_map<Val*, bool> smem_;
+
+  // Clear the modify status for all shared memory buffers
+  void cleanSharedMemory();
+
+  // Toggle modify status for this shared memory buffer
+  void modifySharedMemory(Val* key);
+
+  // Return the status of the shared memory buffer
+  // False if TensorView is not shared memory buffer
+  bool isModifiedSharedMemory(Val* key) const;
 
   // Open a new inner most for loop, track which TV it was constructed from
   // according to the computeAt chain.
@@ -58,13 +73,9 @@ class TORCH_CUDA_API LoopNestGenerator : public OptOutDispatch {
   // straight to lower_exprs
   void pushBack(Expr*);
 
-  // Update for loop structure based on this TensorView, see implementation for
-  // more details
-  void updateLoopNest(TensorView*);
-
   // Initialize a buffer to init_val. If this buffer is in smem or registers,
   // pass in its allocation statement so we can make sure that we insert this
-  // initialization comes after the allocation.
+  // initialization after the allocation.
   void initReduction(TensorView* tv, Val* init_val, Expr* alloc_expr = nullptr);
 
   // Check if expr is a TV op and handle accordingly.
@@ -73,18 +84,21 @@ class TORCH_CUDA_API LoopNestGenerator : public OptOutDispatch {
   // Run the pass and accumulate output in lowered_exprs
   void generate(const std::vector<Expr*>& exprs);
 
-  LoopNestGenerator(Fusion* _fusion, ThreadPredicateMap& _thread_predicates)
-      : fusion_(_fusion), thread_predicates_(_thread_predicates) {}
+  LoopNestGenerator(
+      Fusion* _fusion,
+      ThreadPredicateMap& _thread_predicates,
+      const std::vector<Expr*>& exprs)
+      : fusion_(_fusion), thread_predicates_(_thread_predicates) {
+    generate(exprs);
+  }
 
  public:
-  static std::vector<Expr*> getLoopNest(
-      Fusion* fusion,
-      std::vector<Expr*> exprs,
-      ThreadPredicateMap& thread_predicates) {
-    FusionGuard fg(fusion);
-    LoopNestGenerator lng(fusion, thread_predicates);
-    lng.generate(exprs);
-    return lng.lowered_exprs;
+  static std::vector<Expr*> loweredExprs(
+      Fusion* _fusion,
+      ThreadPredicateMap& _thread_predicates,
+      const std::vector<Expr*>& exprs) {
+    LoopNestGenerator generator(_fusion, _thread_predicates, exprs);
+    return generator.lowered_exprs;
   }
 };
 

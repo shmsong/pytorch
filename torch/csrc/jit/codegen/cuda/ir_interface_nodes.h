@@ -174,24 +174,30 @@ class TransformReplay;
 class TransformIter;
 class OptOutMutator;
 class LoopNestGenerator;
-class GPULower;
 
-/*
- * TensorView is our primitive Tensor Type used in code generation. It can be
- * thought of as representing physical memory, however, its dimensionality is
- * modifed as split/merge/computeAt functions are called. The history of
- * these transformations are kept and used for generating actual code referncing
- * physical memory. Generally when users are thinking of code generation in
- * reference to a Tensor, this is the class they should be interacting with.
- *
- * The reason we need both TensorView and TensorDomain is that we need to have a
- * record of both what is being computed and how it is being computed. For
- * Example we may have the operation: TV3[I, J, K] = TV2[I, J, K] + TV1[I, J, K]
- * The mathematical operations here are on the tensor views TV1, TV2, and TV3.
- * This operation is a pointwise operation. To compute this pointwise operation
- * we iterate over the 3D TensorDomain [I, J, K], where K is the fastest
- * changing dimension.
- */
+namespace ir_utils {
+class TVDomainGuard;
+}
+
+// TensorView is our primitive Tensor Type used in code generation. It can be
+// thought of as representing physical memory, however, its dimensionality is
+// modifed as split/merge/computeAt functions are called. The history of
+// these transformations are kept and used for generating actual code referncing
+// physical memory. Generally when users are thinking of code generation in
+// reference to a Tensor, this is the class they should be interacting with.
+//
+// The reason we need both TensorView and TensorDomain is that we need to have a
+// record of both what is being computed and how it is being computed. For
+// example we may have the operation: TV3[I, J, K] = TV2[I, J, K] + TV1[I, J, K]
+// The mathematical operations here are on the tensor views TV1, TV2, and TV3.
+// This operation is a pointwise operation. To compute this pointwise operation
+// we iterate over the 3D TensorDomain [I, J, K], where K is the fastest
+// changing dimension.
+//
+// TODO: Need to work on the const model for TensorView, making all functions
+// that should be const, const. Gave this a try but expanded really quickly.
+// getComputeAtAxis not being const because it can return a TV that some expect
+// to be non-const is the biggest headache.
 class TORCH_CUDA_API TensorView : public Val {
  public:
   ~TensorView() = default;
@@ -219,6 +225,19 @@ class TORCH_CUDA_API TensorView : public Val {
   bool hasBlockReduction() const;
   bool hasGridReduction() const;
   bool hasBroadcast() const;
+  bool hasRFactor() const;
+
+  c10::optional<unsigned int> getReductionAxis() const;
+
+  const std::vector<IterDomain*>& getRootDomain() const;
+
+  const std::vector<IterDomain*>& getRFactorDomain() const;
+
+  // If rfactor domain exists in domain() return it, otherwise return root
+  // domain.
+  const std::vector<IterDomain*>& getMaybeRFactorDomain() const;
+
+  IterDomain* axis(int pos) const;
 
   // Is there an active computeAt TensorView/Axis
   bool hasComputeAt() const {
@@ -232,8 +251,6 @@ class TORCH_CUDA_API TensorView : public Val {
 
   size_t nDims() const;
 
-  IterDomain* axis(int pos) const;
-
   // Return compute at axis relative to this domain
   unsigned int getThisComputeAtAxis() const {
     return this_compute_at_axis_;
@@ -243,6 +260,9 @@ class TORCH_CUDA_API TensorView : public Val {
   unsigned int getRelativeComputeAtAxis() const {
     return relative_compute_at_axis_;
   }
+
+  // Return position in compute_at_view that lines up with this->axis(pos)?
+  int getComputeAtRelPos(int pos);
 
   // Will check if an axis is inside computeAtAxis and will fetch the reference
   // to be used in code generation.
@@ -260,8 +280,6 @@ class TORCH_CUDA_API TensorView : public Val {
     return std::make_pair(
         computeAtPos.second->axis(computeAtPos.first), computeAtPos.second);
   }
-
-  const std::vector<IterDomain*>& getRootDomain() const;
 
   // Compute this TensorView relative to another tensor at axis
   TensorView* computeAt(TensorView* consumer, int axis);
@@ -326,12 +344,15 @@ class TORCH_CUDA_API TensorView : public Val {
     return memory_type_;
   }
 
+  void setMemoryType(MemoryType mt);
+
   friend TORCH_CUDA_API TransformReplay;
   friend TORCH_CUDA_API OptOutMutator;
   friend TORCH_CUDA_API LoopNestGenerator;
   friend ComputeAt;
   friend void IrFixComputeAt(Fusion*);
-  friend void IrAdjustMemoryTypes(Fusion* fusion);
+  friend void adjustMemoryTypes(Fusion* fusion);
+  friend class ir_utils::TVDomainGuard;
 
  protected:
   // Make an exact copy of this tensor (similar to clone()), however, also grabs
@@ -352,16 +373,6 @@ class TORCH_CUDA_API TensorView : public Val {
   // Set all computeAt members without checking any correctness. Useful for
   // computeAt with outputs relative to eachother
   void setComputeAt(TensorView* computeAtView, int thisPos, int relPos);
-
-  void setMemoryType(MemoryType mt) {
-    memory_type_ = mt;
-    bool is_inp_or_out =
-        this->fusion()->hasInput(this) || this->fusion()->hasOutput(this);
-    if (is_inp_or_out)
-      TORCH_INTERNAL_ASSERT(
-          mt == MemoryType::Global,
-          "Tried to set an input or output to the fusion to a non-global memory type.");
-  }
 
  private:
   int normalizeAxisPos(int pos) const {
@@ -386,12 +397,6 @@ class TORCH_CUDA_API TensorView : public Val {
       TensorView* current,
       TensorView* producer);
 
-  // Make a copy of the domain (used for Tensor based constructor), likely to be
-  // removed soon.
-  void copyDomain(const TensorDomain* td);
-
-  // Return position in compute_at_view that lines up with this->axis(pos)?
-  int getComputeAtRelPos(int pos);
   void setThisComputeAtAxis();
 
  private:

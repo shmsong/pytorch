@@ -8,19 +8,20 @@ namespace jit {
 namespace fuser {
 
 namespace {
+
 // Will return a new value of type val with the DataType dtype.
 Val* newScalar(ValType vtype, DataType dtype) {
   switch (vtype) {
     case (ValType::NamedScalar):
     case (ValType::Scalar):
       switch (dtype) {
-        case (DataType::Bool):
+        case DataType::Bool:
           return new Bool();
-        case (DataType::Float):
+        case DataType::Float:
           return new Float();
-        case (DataType::Half):
+        case DataType::Half:
           return new Half();
-        case (DataType::Int):
+        case DataType::Int:
           return new Int();
         default:
           break;
@@ -83,7 +84,9 @@ TensorView* newOutputTV(const std::vector<Val*>& vals, DataType dtype) {
     }
   }
 
-  return new TensorView(new TensorDomain(out_domain), dtype);
+  return new TensorView(
+      new TensorDomain(out_domain, std::vector<bool>(out_domain.size(), true)),
+      dtype);
 }
 
 std::vector<Val*> maybeBroadcast(const std::vector<Val*>& vals) {
@@ -430,7 +433,8 @@ static TensorView* newForReduction(
         isReduction ? IterType::Reduction : id->getIterType()));
   }
 
-  TensorDomain* td = new TensorDomain(new_domain);
+  TensorDomain* td =
+      new TensorDomain(new_domain, std::vector<bool>(new_domain.size(), true));
   return new TensorView(td, tv->getDataType().value());
 }
 
@@ -535,8 +539,10 @@ TensorView* broadcast(
     }
     ibdim++;
   }
-  TensorView* out_tensor =
-      new TensorView(new TensorDomain(out_domain), inp->getDataType().value());
+
+  TensorView* out_tensor = new TensorView(
+      new TensorDomain(out_domain, std::vector<bool>(out_domain.size(), true)),
+      inp->getDataType().value());
   new BroadcastOp(out_tensor, inp);
   return out_tensor;
 }

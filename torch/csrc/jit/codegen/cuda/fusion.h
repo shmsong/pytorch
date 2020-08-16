@@ -148,6 +148,7 @@ class TORCH_CUDA_API Fusion final {
    */
   std::vector<Expr*> exprs(bool from_outputs_only = false);
 
+  // Return a vector of fusion inputs that feed this Val
   std::unordered_set<Val*> inputsOf(Val* val);
 
   // Assert that all leaves found from outputs are registered as an input.
@@ -155,9 +156,6 @@ class TORCH_CUDA_API Fusion final {
 
   // Print this fusion to cout.
   void print();
-
-  // Print value mapping
-  void printValuesMap();
 
   // Print Arith exprs used in outputs
   void printMath();
@@ -177,6 +175,13 @@ class TORCH_CUDA_API Fusion final {
 
   // Register stmt with this fusion.
   StmtNameType registerStatement(Statement* stmt);
+
+  // Lowered nodes
+  StmtNameType registerLoweredVal(Val* val);
+  StmtNameType registerLoweredExpr(Expr* expr);
+
+  // Lowered counterpart to inFusion()
+  bool inKernelIr(const Statement* stmt) const;
 
   // Check if val is used in this fusion. Not equivelent to DCE
   bool used(Val* val) const;
@@ -205,20 +210,6 @@ class TORCH_CUDA_API Fusion final {
   bool hasBlockReduction();
   bool hasGridReduction();
   size_t gridReductionTempBufferSize();
-
-  void setValuesMap(std::unordered_map<Val*, Val*> values_map) {
-    values_map_ = std::move(values_map);
-  }
-
-  Val* loweredVal(Val* value) const {
-    auto it = values_map_.find(value);
-    return it != values_map_.end() ? it->second : value;
-  }
-
-  const Val* loweredVal(const Val* value) const {
-    auto it = values_map_.find(const_cast<Val*>(value));
-    return it != values_map_.end() ? it->second : value;
-  }
 
   const auto& inputs() const {
     return inputs_;
@@ -249,27 +240,23 @@ class TORCH_CUDA_API Fusion final {
   std::deque<Val*> val_deque_;
   std::unordered_set<Expr*> expr_set_;
 
-  // map from valtype to individual name counters
-  std::unordered_map<ValType, StmtNameType, TypeHash> val_type_name_map_ = {
-      {ValType::TensorView, 0},
-      {ValType::TensorDomain, 0},
-      {ValType::IterDomain, 0},
-      {ValType::Scalar, 0}};
+  // Values names counters
+  std::unordered_map<ValType, StmtNameType, TypeHash> val_type_name_map_;
 
-  // Generic counters
-  StmtNameType val_name_counter_ = 0;
+  // Expression names counter
   StmtNameType expr_name_counter_ = 0;
 
   // Dependency tracking for Vals. Where did it come from? Where is it used?
   std::unordered_map<Val*, Expr*> origin_;
   std::unordered_map<Val*, std::unordered_set<Expr*>> uses_;
 
-  // Map a subset of values to the lowered equivalent (ex. sizes)
-  std::unordered_map<Val*, Val*> values_map_;
-
   // Fusion inputs and outputs
   std::vector<Val*> inputs_;
   std::vector<Val*> outputs_;
+
+  // Lowered IR
+  std::unordered_set<Val*> lowered_val_set_;
+  std::unordered_set<Expr*> lowered_expr_set_;
 };
 
 } // namespace fuser

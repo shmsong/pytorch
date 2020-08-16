@@ -129,14 +129,14 @@ TensorDomain* TransformReplay::fullSelfReplay(
     const TensorDomain* new_self_root,
     const TensorDomain* self) {
   TORCH_INTERNAL_ASSERT(
-      new_self_root->nDims() == self->rootDomain().size(),
+      new_self_root->nDims() == self->getRootDomain().size(),
       "Invalid number of IterDomains provided.");
 
   // Map for replay, should be pretty simple.
   id_map axis_map;
   {
     size_t i = 0;
-    for (auto id : self->rootDomain()) {
+    for (auto id : self->getRootDomain()) {
       TORCH_INTERNAL_ASSERT(
           new_self_root->axis(i)->start() == id->start(),
           "Replay does not support IterDomains that do not start at 0.");
@@ -168,7 +168,8 @@ TensorDomain* TransformReplay::fullSelfReplay(
     }
   }
 
-  return new TensorDomain(new_self_root->domain(), new_domain);
+  return new TensorDomain(
+      new_self_root->domain(), new_domain, self->contiguity());
 }
 
 // Producer could have rfactor axes which consumer may want replayed. We can
@@ -205,7 +206,7 @@ std::pair<TensorDomain*, unsigned int> TransformReplay::replayPasC(
 
   // Map of consumer_CA_root_ids to related producer_CA_ids
   auto replay_root_map =
-      TensorDomain::mapRootCtoP(consumer, producer, true, consumer_CA_root_ids);
+      TensorDomain::mapRootCtoP(consumer, producer, consumer_CA_root_ids);
 
   // Track which root axes in producer we will send to replay
   std::unordered_set<IterDomain*> producer_roots4replay;
@@ -256,8 +257,7 @@ std::pair<TensorDomain*, unsigned int> TransformReplay::replayPasC(
   for (auto entry : leaf_ids)
     producer_self_replay_map[entry.first] = entry.first;
 
-  auto producer_root = producer->hasRFactor() ? producer->rfactorDomain()
-                                              : producer->rootDomain();
+  auto producer_root = producer->getMaybeRFactorDomain();
 
   // Any root domain that was not used to generate computeIDs we can also put in
   // the map to forward their transformations.
@@ -342,7 +342,10 @@ std::pair<TensorDomain*, unsigned int> TransformReplay::replayPasC(
       new_IDs.push_back(id);
 
   TensorDomain* replayed = new TensorDomain(
-      producer->rootDomain(), producer->rfactorDomain(), new_IDs);
+      producer->getRootDomain(),
+      producer->getRFactorDomain(),
+      new_IDs,
+      producer->contiguity());
   return {replayed, producer_compute_at_axis};
 }
 
@@ -365,16 +368,14 @@ std::pair<TensorDomain*, unsigned int> TransformReplay::replayCasP(
   producer_CA_ids = TensorDomain::noReductions(producer_CA_ids);
 
   // Grab root domains of producer and consumer
-  std::vector<IterDomain*> consumer_root = consumer->rootDomain();
+  std::vector<IterDomain*> consumer_root = consumer->getRootDomain();
 
   // If producer has an rfactor root, that's what will match the consumer
-  std::vector<IterDomain*> producer_root = producer->hasRFactor()
-      ? producer->rfactorDomain()
-      : producer->rootDomain();
+  std::vector<IterDomain*> producer_root = producer->getMaybeRFactorDomain();
 
   // Figure out all inputs required to generate the compute_at dimensions. We
-  // need all deps because inputs on producer may be in rootDomain, but we may
-  // need in rFactorDomain
+  // need all deps because inputs on producer may be in getRootDomain, but we
+  // may need in rFactorDomain
   std::unordered_set<Val*> all_CA_id_deps = DependencyCheck::getAllValsBetween(
       {producer_root.begin(), producer_root.end()},
       {producer_CA_ids.begin(), producer_CA_ids.end()});
@@ -387,7 +388,7 @@ std::pair<TensorDomain*, unsigned int> TransformReplay::replayCasP(
   }
 
   auto replay_root_map =
-      TensorDomain::mapRootPtoC(producer, consumer, true, producer_CA_root_ids);
+      TensorDomain::mapRootPtoC(producer, consumer, producer_CA_root_ids);
 
   // Track which root axes in producer we will send to replay
   std::unordered_set<IterDomain*> consumer_roots4replay;
@@ -513,7 +514,10 @@ std::pair<TensorDomain*, unsigned int> TransformReplay::replayCasP(
       new_IDs.push_back(id);
 
   TensorDomain* replayed = new TensorDomain(
-      consumer->rootDomain(), consumer->rfactorDomain(), new_IDs);
+      consumer->getRootDomain(),
+      consumer->getRFactorDomain(),
+      new_IDs,
+      consumer->contiguity());
 
   return {replayed, producer_CA_ids.size()};
 }

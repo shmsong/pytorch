@@ -2,6 +2,7 @@
 #include <torch/csrc/jit/codegen/cuda/ir_cloner.h>
 #include <torch/csrc/jit/codegen/cuda/ir_interface_nodes.h>
 #include <torch/csrc/jit/codegen/cuda/ir_iostream.h>
+#include <torch/csrc/jit/codegen/cuda/kernel_ir.h>
 #include <torch/csrc/jit/codegen/cuda/transform_iter.h>
 #include <torch/csrc/jit/codegen/cuda/transform_rfactor.h>
 
@@ -108,7 +109,7 @@ UnaryOp::UnaryOp(UnaryOpType _type, Val* _out, Val* _in)
     : Expr(ExprType::UnaryOp), unary_op_type_{_type}, out_{_out}, in_{_in} {
   addOutput(_out);
   addInput(_in);
-  this->name_ = FusionGuard::getCurFusion()->registerExpr(this);
+  name_ = FusionGuard::getCurFusion()->registerExpr(this);
 }
 
 UnaryOp::UnaryOp(const UnaryOp* src, IrCloner* ir_cloner)
@@ -118,9 +119,9 @@ UnaryOp::UnaryOp(const UnaryOp* src, IrCloner* ir_cloner)
       in_(ir_cloner->clone(src->in_)) {}
 
 bool UnaryOp::sameAs(const UnaryOp* const other) const {
-  if (this->type() != other->type())
+  if (type() != other->type())
     return false;
-  return this->as<Expr>()->sameAs(other);
+  return as<Expr>()->sameAs(other);
 }
 
 BinaryOp::BinaryOp(BinaryOpType _type, Val* _out, Val* _lhs, Val* _rhs)
@@ -132,7 +133,7 @@ BinaryOp::BinaryOp(BinaryOpType _type, Val* _out, Val* _lhs, Val* _rhs)
   addOutput(_out);
   addInput(_lhs);
   addInput(_rhs);
-  this->name_ = FusionGuard::getCurFusion()->registerExpr(this);
+  name_ = FusionGuard::getCurFusion()->registerExpr(this);
 }
 
 BinaryOp::BinaryOp(const BinaryOp* src, IrCloner* ir_cloner)
@@ -166,7 +167,7 @@ TernaryOp::TernaryOp(
   addInput(_in1);
   addInput(_in2);
   addInput(_in3);
-  this->name_ = FusionGuard::getCurFusion()->registerExpr(this);
+  name_ = FusionGuard::getCurFusion()->registerExpr(this);
 }
 
 TernaryOp::TernaryOp(const TernaryOp* src, IrCloner* ir_cloner)
@@ -190,46 +191,56 @@ BroadcastOp::BroadcastOp(Val* _out, Val* _in)
     : Expr(ExprType::BroadcastOp), out_(_out), in_(_in) {
   auto out_type = _out->getValType().value();
   auto in_type = _in->getValType().value();
-  if (out_type == ValType::TensorView) {
-    TORCH_INTERNAL_ASSERT(
-        in_type == ValType::TensorView,
-        "Cannot braodcast a non-tensor object.");
 
-    // This is a generic check that root dims of a consumer and producer match.
-    // Maybe we shouldn't relegate it to this constructor.
-    auto c_root = out()->as<TensorView>()->getRootDomain();
-    auto p_root = in()->as<TensorView>()->getRootDomain();
-    auto root_c2p = TensorDomain::mapDomainCtoP(c_root, p_root);
-    auto root_p2c = TensorDomain::mapDomainCtoP(p_root, c_root);
-    bool bad_mismatch = false;
-    for (size_t c_i = 0; c_i < root_c2p.size(); c_i++) {
-      if (c_i == -1) {
-        bad_mismatch = !c_root[c_i]->isBroadcast();
-      }
-    }
-    for (size_t p_i = 0; p_i < root_p2c.size(); p_i++) {
-      if (p_i == -1) {
-        bad_mismatch = !p_root[p_i]->isReduction();
-      }
-    }
+  TORCH_INTERNAL_ASSERT(
+      out_type == ValType::TensorView && in_type == ValType::TensorView,
+      "Cannot braodcast a non-tensor object.");
 
-    TORCH_INTERNAL_ASSERT(
-        !bad_mismatch,
-        "Invalid broadcast op. Non-broadcasted dims don't match from input to output.");
+  // This is a generic check that root dims of a consumer and producer match.
+  // Maybe we shouldn't relegate it to this constructor.
+  const auto c_tv = out()->as<TensorView>();
+  const auto p_tv = in()->as<TensorView>();
+  
+  const auto c_root = c_tv->getRootDomain();
+  const auto p_root = p_tv->getMaybeRFactorDomain();
 
-  } else {
-    TORCH_INTERNAL_ASSERT(
-        in_type == ValType::TensorIndex && out_type == ValType::TensorIndex,
-        "Invalid types provided for broadcast op, ",
-        in_type,
-        " ",
-        out_type,
-        ".");
+  const auto root_p2c = TensorDomain::mapDomainPandC(p_root, c_root);
+
+  std::vector<bool> c_mapped(c_root.size(), false);
+  std::vector<bool> p_mapped(p_root.size(), false);
+
+  for (auto pair_entry : root_p2c) {
+    auto p_i = pair_entry.first;
+    p_mapped[p_i] = true;
+    auto c_i = pair_entry.second;
+    c_mapped[c_i] = true;
   }
+
+  bool bad_mismatch = false;
+
+  for (size_t i = 0; i < c_root.size(); i++) {
+    if (!c_mapped[i]) {
+      if (!c_root[i]->isBroadcast()) {
+        bad_mismatch = true;
+      }
+    }
+  }
+
+  for (size_t i = 0; i < p_root.size(); i++) {
+    if (!p_mapped[i]) {
+      if (!p_root[i]->isReduction()) {
+        bad_mismatch = true;
+      }
+    }
+  }
+
+  TORCH_INTERNAL_ASSERT(
+      !bad_mismatch,
+      "Invalid broadcast op. Non-broadcasted dims don't match from input to output.");
 
   addOutput(_out);
   addInput(_in);
-  this->name_ = FusionGuard::getCurFusion()->registerExpr(this);
+  name_ = FusionGuard::getCurFusion()->registerExpr(this);
 }
 
 BroadcastOp::BroadcastOp(const BroadcastOp* src, IrCloner* ir_cloner)
@@ -258,11 +269,9 @@ ReductionOp::ReductionOp(
         "Reduction operation was created that does not have tensor inputs and outputs.");
 
     TORCH_INTERNAL_ASSERT(
-        TensorDomain::noReductions(_in->as<TensorView>()->getRootDomain())
-                    .size() == _out->as<TensorView>()->getRootDomain().size() ||
-            TensorDomain::noReductions(
-                _in->as<TensorView>()->domain()->rfactorDomain())
-                    .size() == _out->as<TensorView>()->getRootDomain().size(),
+        TensorDomain::noReductions(
+            _in->as<TensorView>()->getMaybeRFactorDomain())
+                .size() == _out->as<TensorView>()->getRootDomain().size(),
         "Reduction operation created with mismatched domains.");
 
   } else {
@@ -277,7 +286,7 @@ ReductionOp::ReductionOp(
 
   addOutput(_out);
   addInput(_in);
-  this->name_ = FusionGuard::getCurFusion()->registerExpr(this);
+  name_ = FusionGuard::getCurFusion()->registerExpr(this);
 }
 
 ReductionOp::ReductionOp(const ReductionOp* src, IrCloner* ir_cloner)
@@ -289,42 +298,9 @@ ReductionOp::ReductionOp(const ReductionOp* src, IrCloner* ir_cloner)
 
 bool ReductionOp::sameAs(const ReductionOp* other) const {
   return (
-      this->in()->sameAs(other->in()) &&
-      this->getReductionOpType() == other->getReductionOpType() &&
-      this->init()->sameAs(other->init()));
-}
-
-std::vector<IterDomain*> ReductionOp::getReductionDomains() const {
-  const Val* out_val = out();
-  TORCH_INTERNAL_ASSERT(
-      out_val->getValType() == ValType::TensorView ||
-          out_val->getValType() == ValType::TensorIndex,
-      "Output of reduction must be TensorView or TensorIndex");
-
-  // out is a TensorIndex after lowering
-  if (out_val->getValType() == ValType::TensorIndex) {
-    out_val = out_val->as<kir::TensorIndex>()->view();
-  }
-
-  auto vec_domain = out_val->as<TensorView>()->domain()->domain();
-  vec_domain.erase(
-      std::remove_if(
-          vec_domain.begin(),
-          vec_domain.end(),
-          [](IterDomain* id) { return !id->isReduction(); }),
-      vec_domain.end());
-  return vec_domain;
-}
-
-std::unordered_map<ParallelType, IterDomain*, TypeHash> ReductionOp::
-    getParallelReductionDomains() const {
-  std::unordered_map<ParallelType, IterDomain*, TypeHash> parallel_domains;
-  for (auto d : getReductionDomains()) {
-    if (d->isThread()) {
-      parallel_domains.insert(std::make_pair(d->getParallelType(), d));
-    }
-  }
-  return parallel_domains;
+      in()->sameAs(other->in()) &&
+      getReductionOpType() == other->getReductionOpType() &&
+      init()->sameAs(other->init()));
 }
 
 IterDomain::IterDomain(
@@ -355,7 +331,9 @@ IterDomain::IterDomain(
       _extent,
       " .");
 
-  this->name_ = fusion_->registerVal(this);
+  // TORCH_INTERNAL_ASSERT(!kir::isLoweredVal(_extent));
+
+  name_ = fusion_->registerVal(this);
 }
 
 IterDomain::IterDomain(const IterDomain* src, IrCloner* ir_cloner)
@@ -468,6 +446,7 @@ std::pair<IterDomain*, IterDomain*> IterDomain::split(
   return {ido, idi};
 }
 
+// TODO(kir): review if this is still needed in the Fusion IR
 Val* IterDomain::extent() const {
   if (isThread()) {
     if (extent_->getValType() == ValType::Scalar)
@@ -479,18 +458,42 @@ Val* IterDomain::extent() const {
   return extent_;
 }
 
-TensorDomain::TensorDomain(std::vector<IterDomain*> _domain)
-    : Val(ValType::TensorDomain), root_domain_(std::move(_domain)) {
-  domain_ = std::vector<IterDomain*>(root_domain_.begin(), root_domain_.end());
+TensorDomain::TensorDomain(
+    std::vector<IterDomain*> _domain,
+    std::vector<bool> _contiguity)
+    : Val(ValType::TensorDomain),
+      root_domain_(std::move(_domain)),
+      contiguity_(
+          _contiguity.empty() ? std::vector<bool>(root_domain_.size(), false)
+                              : std::move(_contiguity)) {
+  TORCH_CHECK(
+      contiguity_.size() == root_domain_.size(),
+      "Invalid contiguity information provided, incorrect size. Recieved vector of size ",
+      contiguity_.size(),
+      " but needed one of size ",
+      root_domain_.size());
+
+  domain_ = root_domain_;
   resetDomains();
 }
 
 TensorDomain::TensorDomain(
     std::vector<IterDomain*> _root_domain,
-    std::vector<IterDomain*> _domain)
+    std::vector<IterDomain*> _domain,
+    std::vector<bool> _contiguity)
     : Val(ValType::TensorDomain, DataType::Null, false),
       root_domain_(std::move(_root_domain)),
-      domain_(std::move(_domain)) {
+      domain_(std::move(_domain)),
+      contiguity_(
+          _contiguity.empty() ? std::vector<bool>(root_domain_.size(), false)
+                              : std::move(_contiguity)) {
+  TORCH_CHECK(
+      contiguity_.size() == root_domain_.size(),
+      "Invalid contiguity information provided, incorrect size. Recieved vector of size ",
+      contiguity_.size(),
+      " but needed one of size ",
+      root_domain_.size());
+
   std::vector<Val*> domain_vals(domain_.begin(), domain_.end());
   auto inps = IterVisitor::getInputsTo(domain_vals);
 
@@ -508,17 +511,28 @@ TensorDomain::TensorDomain(
 
   resetDomains();
 
-  this->name_ = fusion_->registerVal(this);
+  name_ = fusion_->registerVal(this);
 }
 
 TensorDomain::TensorDomain(
     std::vector<IterDomain*> _root_domain,
     std::vector<IterDomain*> _rfactor_domain,
-    std::vector<IterDomain*> _domain)
+    std::vector<IterDomain*> _domain,
+    std::vector<bool> _contiguity)
     : Val(ValType::TensorDomain, DataType::Null, false),
       root_domain_(std::move(_root_domain)),
       domain_(std::move(_domain)),
-      rfactor_domain_(std::move(_rfactor_domain)) {
+      rfactor_domain_(std::move(_rfactor_domain)),
+      contiguity_(
+          _contiguity.empty() ? std::vector<bool>(root_domain_.size(), false)
+                              : std::move(_contiguity)) {
+  TORCH_CHECK(
+      contiguity_.size() == root_domain_.size(),
+      "Invalid contiguity information provided, incorrect size. Recieved vector of size ",
+      contiguity_.size(),
+      " but needed one of size ",
+      root_domain_.size());
+
   auto inps = IterVisitor::getInputsTo(
       std::vector<Val*>(domain_.begin(), domain_.end()));
 
@@ -545,7 +559,7 @@ TensorDomain::TensorDomain(
   });
 
   resetDomains();
-  this->name_ = fusion_->registerVal(this);
+  name_ = fusion_->registerVal(this);
 }
 
 TensorDomain::TensorDomain(const TensorDomain* src, IrCloner* ir_cloner)
@@ -554,26 +568,27 @@ TensorDomain::TensorDomain(const TensorDomain* src, IrCloner* ir_cloner)
       domain_(ir_cloner->clone(src->domain_)),
       no_bcast_domain_(ir_cloner->clone(src->no_bcast_domain_)),
       no_reduction_domain_(ir_cloner->clone(src->no_reduction_domain_)),
-      rfactor_domain_(ir_cloner->clone(src->rfactor_domain_)) {}
+      rfactor_domain_(ir_cloner->clone(src->rfactor_domain_)),
+      contiguity_(src->contiguity()) {}
 
 bool TensorDomain::sameAs(const TensorDomain* const other) const {
   if (nDims() != other->nDims())
     return false;
-  if (rootDomain().size() != other->rootDomain().size())
+  if (getRootDomain().size() != other->getRootDomain().size())
     return false;
-  if (rfactorDomain().size() != other->rfactorDomain().size())
+  if (getRFactorDomain().size() != other->getRFactorDomain().size())
     return false;
 
   for (size_t i = 0; i < nDims(); i++)
     if (!(axis(i)->sameAs(other->axis(i))))
       return false;
 
-  for (size_t i = 0; i < rootDomain().size(); i++)
-    if (!(rootDomain()[i]->sameAs(other->rootDomain()[i])))
+  for (size_t i = 0; i < getRootDomain().size(); i++)
+    if (!(getRootDomain()[i]->sameAs(other->getRootDomain()[i])))
       return false;
 
-  for (size_t i = 0; i < rfactorDomain().size(); i++)
-    if (!(rfactorDomain()[i]->sameAs(other->rfactorDomain()[i])))
+  for (size_t i = 0; i < getRFactorDomain().size(); i++)
+    if (!(getRFactorDomain()[i]->sameAs(other->getRFactorDomain()[i])))
       return false;
 
   return true;
@@ -614,6 +629,17 @@ bool TensorDomain::hasBroadcast() const {
 
 bool TensorDomain::hasRFactor() const {
   return !rfactor_domain_.empty();
+}
+
+c10::optional<unsigned int> TensorDomain::getReductionAxis() const {
+  auto it = std::find_if(domain_.begin(), domain_.end(), [](const auto& id) {
+    return id->isReduction();
+  });
+  if (it == domain_.end()) {
+    return c10::optional<unsigned int>();
+  } else {
+    return c10::optional<unsigned int>(std::distance(domain_.begin(), it));
+  }
 }
 
 // i here is int, as we want to accept negative value and ::size_type can be a
@@ -860,14 +886,10 @@ bool TensorDomain::hasReduction(const std::vector<IterDomain*>& td) {
   return false;
 }
 
-// return mapping of consumer_domain[i] = producer_domain[result_vector[i]]
-// assuming there exists a direct consumer-producer mapping. If axis exists in
-// consumer (broadcast) but not in producer, mapping will be result_vector[i] =
-// -1.
-std::vector<int64_t> TensorDomain::mapDomainCtoP(
-    const std::vector<IterDomain*>& consumer,
-    const std::vector<IterDomain*>& producer) {
-  std::vector<int64_t> consumer_to_producer(consumer.size(), -1);
+std::vector<std::pair<int, int>> TensorDomain::mapDomainPandC(
+    const std::vector<IterDomain*>& producer,
+    const std::vector<IterDomain*>& consumer) {
+  std::vector<std::pair<int, int>> dom_map;
 
   size_t itc = 0, itp = 0;
   while (itc < consumer.size() && itp < producer.size()) {
@@ -880,102 +902,54 @@ std::vector<int64_t> TensorDomain::mapDomainCtoP(
       continue;
     }
 
-    consumer_to_producer[itc] = itp;
+    dom_map.emplace_back(std::make_pair(itp, itc));
     itc++;
     itp++;
   }
-  return consumer_to_producer;
+  return dom_map;
 }
 
-// Create a map from consumer root IterDomains -> producer root IterDomains.
-// Constrain will restrict which consumer root IterDomains we map to the
-// producer IterDomains. Only those root consumer IDs present in
-// consumer_root_dims_to_map will be attempted to map to their corresponding
-// producer IDs.
+std::vector<std::pair<IterDomain*, IterDomain*>> TensorDomain::mapRootPandC(
+    const TensorDomain* producer,
+    const TensorDomain* consumer) {
+  auto consumer_root = consumer->getRootDomain();
+  auto producer_root = producer->getMaybeRFactorDomain();
+  std::vector<std::pair<IterDomain*, IterDomain*>> root_id_map;
+  for (const auto& m : mapDomainPandC(producer_root, consumer_root)) {
+    auto producer_axis = producer_root[m.first];
+    auto consumer_axis = consumer_root[m.second];
+    root_id_map.emplace_back(std::make_pair(producer_axis, consumer_axis));
+  }
+  return root_id_map;
+}
+
 std::unordered_map<IterDomain*, IterDomain*> TensorDomain::mapRootCtoP(
     const TensorDomain* consumer,
     const TensorDomain* producer,
-    bool constrain,
     const std::unordered_set<IterDomain*>& consumer_root_dims_to_map) {
-  auto consumer_root = consumer->rootDomain();
-  auto producer_root = producer->hasRFactor() ? producer->rfactorDomain()
-                                              : producer->rootDomain();
-
-  auto c_to_p = mapDomainCtoP(consumer_root, producer_root);
-
   std::unordered_map<IterDomain*, IterDomain*> root_id_map;
-
-  for (int64_t itc = 0; itc < (int64_t)c_to_p.size(); itc++) {
-    int64_t itp = c_to_p[itc];
-    if (itp == -1)
-      continue;
-
-    if (!constrain ||
-        (constrain &&
-         consumer_root_dims_to_map.find(consumer_root[itc]) !=
-             consumer_root_dims_to_map.end())) {
-      root_id_map[consumer_root[itc]] = producer_root[itp];
+  for (const auto& kv : mapRootPandC(producer, consumer)) {
+    auto producer_axis = kv.first;
+    auto consumer_axis = kv.second;
+    if (consumer_root_dims_to_map.find(consumer_axis) !=
+        consumer_root_dims_to_map.end()) {
+      root_id_map[consumer_axis] = producer_axis;
     }
   }
   return root_id_map;
 }
 
-// return mapping of consumer_domain[i] = producer_domain[result_vector[i]]
-// assuming there exists a direct consumer-producer mapping. If axis exists in
-// consumer (broadcast) but not in producer, mapping will be result_vector[i] =
-// -1.
-std::vector<int64_t> TensorDomain::mapDomainPtoC(
-    const std::vector<IterDomain*>& producer,
-    const std::vector<IterDomain*>& consumer) {
-  std::vector<int64_t> producer_to_consumer(producer.size(), -1);
-
-  size_t itc = 0, itp = 0;
-  while (itc < consumer.size() && itp < producer.size()) {
-    if (consumer[itc]->isBroadcast() && !producer[itp]->isBroadcast()) {
-      itc++;
-      continue;
-    }
-    if (producer[itp]->isReduction()) {
-      itp++;
-      continue;
-    }
-
-    producer_to_consumer[itp] = itc;
-    itc++;
-    itp++;
-  }
-
-  return producer_to_consumer;
-}
-
-// Create a map from producer root IterDomains -> consumer root IterDomains.
-// Constrain will restrict which producer root IterDomains we map to the
-// consumer IterDomains. Only those root producer IDs present in
-// producer_root_dims_to_map will be attempted to map to their corresponding
-// consumer IDs.
 std::unordered_map<IterDomain*, IterDomain*> TensorDomain::mapRootPtoC(
     const TensorDomain* producer,
     const TensorDomain* consumer,
-    bool constrain,
-    const std::unordered_set<IterDomain*>& producer_root_dims_to_map) {
-  auto consumer_root = consumer->rootDomain();
-  auto producer_root = producer->hasRFactor() ? producer->rfactorDomain()
-                                              : producer->rootDomain();
-
-  auto p_to_c = mapDomainPtoC(producer_root, consumer_root);
-
+    const std::unordered_set<IterDomain*>& producer_maybe_rfactor_dims_to_map) {
   std::unordered_map<IterDomain*, IterDomain*> root_id_map;
-
-  for (int64_t itp = 0; itp < (int64_t)p_to_c.size(); itp++) {
-    int64_t itc = p_to_c[itp];
-    if (itc == -1)
-      continue;
-
-    if (!constrain ||
-        (constrain &&
-         producer_root_dims_to_map.find(producer_root[itp]) !=
-             producer_root_dims_to_map.end())) {
-      root_id_map[producer_root[itp]] = consumer_root[itc];
+  for (const auto& kv : mapRootPandC(producer, consumer)) {
+    auto producer_axis = kv.first;
+    auto consumer_axis = kv.second;
+    if (producer_maybe_rfactor_dims_to_map.find(producer_axis) !=
+        producer_maybe_rfactor_dims_to_map.end()) {
+      root_id_map[producer_axis] = consumer_axis;
     }
   }
   return root_id_map;
@@ -1044,7 +1018,7 @@ Split::Split(
   addOutput(_outer);
   addOutput(_inner);
   addInput(_in);
-  this->name_ = FusionGuard::getCurFusion()->registerExpr(this);
+  name_ = FusionGuard::getCurFusion()->registerExpr(this);
 }
 
 Split::Split(const Split* src, IrCloner* ir_cloner)
@@ -1065,7 +1039,7 @@ Merge::Merge(IterDomain* _out, IterDomain* _outer, IterDomain* _inner)
   addOutput(_out);
   addInput(_outer);
   addInput(_inner);
-  this->name_ = FusionGuard::getCurFusion()->registerExpr(this);
+  name_ = FusionGuard::getCurFusion()->registerExpr(this);
 }
 
 Merge::Merge(const Merge* src, IrCloner* ir_cloner)
