@@ -201,8 +201,8 @@ BroadcastOp::BroadcastOp(Val* _out, Val* _in)
   const auto c_tv = out()->as<TensorView>();
   const auto p_tv = in()->as<TensorView>();
 
-  const auto c_root = c_tv->getRootDomain();
-  const auto p_root = p_tv->getMaybeRFactorDomain();
+  const auto& c_root = c_tv->getRootDomain();
+  const auto& p_root = p_tv->getMaybeRFactorDomain();
 
   const auto root_p2c = TensorDomain::mapDomainPandC(p_root, c_root);
 
