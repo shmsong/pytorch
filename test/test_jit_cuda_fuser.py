@@ -21,9 +21,15 @@ if GRAPH_EXECUTOR == ProfilingMode.PROFILING:
 
 FUSION_GROUP = 'prim::CudaFusionGroup'
 
-DISABLE_BCAST = True
-
 class TestCudaFuser(JitTestCase):
+
+    def _getSubgraphInFusion(self, graph):
+        self.assertGraphContainsExactly(graph, FUSION_GROUP, 1, consider_subgraphs=False)
+
+        for node in graph.nodes():
+            if node.kind() == FUSION_GROUP:
+                self.assertTrue(node.hasAttribute('Subgraph'))
+                return node.g('Subgraph')
 
     def setUp(self):
         super(TestCudaFuser, self).setUp()
@@ -135,33 +141,10 @@ class TestCudaFuser(JitTestCase):
         self.assertEqual(o, jit_o)
         self.assertGraphContains(t_jit.graph_for(x, y, 2.0), FUSION_GROUP)
 
-    @unittest.skipIf(not DISABLE_BCAST, "disable bcast tests")
     @unittest.skipIf(not RUN_CUDA, "requires CUDA")
     @unittest.skipIf(GRAPH_EXECUTOR != ProfilingMode.PROFILING and GRAPH_EXECUTOR !=
                      ProfilingMode.LEGACY, "Requires fusion optimization pass to be effective")
-    def test_disable_broadcasting(self):
-        def t(x: torch.Tensor, y: torch.Tensor, z: float):
-            o = x + y
-            o = o + z
-            return o
-        t_jit = torch.jit.script(t)
-        x = torch.randn(4, 8, 32, 32, dtype=torch.float, device="cuda")
-        y = torch.randn(32, 32, dtype=torch.float, device="cuda")
-        jit_o = t_jit(x, y, 2.0)
-        jit_o = t_jit(x, y, 2.0)
-        o = t(x, y, 2.0)
-        self.assertEqual(o, jit_o)
-        self.assertGraphContainsExactly(t_jit.graph_for(x, y, 2.0), FUSION_GROUP, 0)
-
-    # broadcasting currently have indexing bug, remove `expectedFailure` when it
-    # is fixed
-    @unittest.expectedFailure
-    @unittest.skipIf(DISABLE_BCAST, "disable bcast tests")
-    @unittest.skipIf(not RUN_CUDA, "requires CUDA")
-    @unittest.skipIf(GRAPH_EXECUTOR != ProfilingMode.PROFILING and GRAPH_EXECUTOR !=
-                     ProfilingMode.LEGACY, "Requires fusion optimization pass to be effective")
-    def test_broadcasting(self):
-        torch._C._jit_set_bailout_depth(2)
+    def test_broadcasting_0(self):
 
         def t(x: torch.Tensor, y: torch.Tensor, z: float):
             o = x + y
@@ -174,23 +157,112 @@ class TestCudaFuser(JitTestCase):
         jit_o = t_jit(x, y, 2.0)
         o = t(x, y, 2.0)
         self.assertEqual(o, jit_o)
-        self.assertGraphContains(t_jit.graph_for(x, y, 2.0), FUSION_GROUP)
-        t_jit2 = torch.jit.script(t)
+        subgraph = self._getSubgraphInFusion(t_jit.graph_for(x, y, 2.0))
+        self.assertGraphContainsExactly(subgraph, 'aten::add', 2, consider_subgraphs=False)
+
+    @unittest.skipIf(not RUN_CUDA, "requires CUDA")
+    @unittest.skipIf(GRAPH_EXECUTOR != ProfilingMode.PROFILING and GRAPH_EXECUTOR !=
+                     ProfilingMode.LEGACY, "Requires fusion optimization pass to be effective")
+    def test_broadcasting_1(self):
+
+        def t(x: torch.Tensor, y: torch.Tensor, z: float):
+            o = x + y
+            o = o + z
+            return o
+        t_jit = torch.jit.script(t)
         x = torch.randn(4, 8, 32, 32, dtype=torch.float, device="cuda")
         y = torch.randn(1, 32, 32, dtype=torch.float, device="cuda")
-        jit_o = t_jit2(x, y, 2.0)
-        jit_o = t_jit2(x, y, 2.0)
+        jit_o = t_jit(x, y, 2.0)
+        jit_o = t_jit(x, y, 2.0)
         o = t(x, y, 2.0)
         self.assertEqual(o, jit_o)
-        self.assertGraphContains(t_jit2.graph_for(x, y, 2.0), FUSION_GROUP)
+        subgraph = self._getSubgraphInFusion(t_jit.graph_for(x, y, 2.0))
+        self.assertGraphContainsExactly(subgraph, 'aten::add', 2, consider_subgraphs=False)
+
+    @unittest.skipIf(not RUN_CUDA, "requires CUDA")
+    @unittest.skipIf(GRAPH_EXECUTOR != ProfilingMode.PROFILING and GRAPH_EXECUTOR !=
+                     ProfilingMode.LEGACY, "Requires fusion optimization pass to be effective")
+    def test_broadcasting_2(self):
+
+        def t(x: torch.Tensor, y: torch.Tensor, z: float):
+            o = x + y
+            o = o + z
+            return o
+        t_jit = torch.jit.script(t)
         x = torch.randn(4, 1, 32, 32, dtype=torch.float, device="cuda")
         y = torch.randn(8, 32, 32, dtype=torch.float, device="cuda")
-        t_jit3 = torch.jit.script(t)
-        jit_o = t_jit3(x, y, 2.0)
-        jit_o = t_jit3(x, y, 2.0)
+        jit_o = t_jit(x, y, 2.0)
+        jit_o = t_jit(x, y, 2.0)
         o = t(x, y, 2.0)
         self.assertEqual(o, jit_o)
-        self.assertGraphContains(t_jit3.graph_for(x, y, 2.0), FUSION_GROUP)
+        subgraph = self._getSubgraphInFusion(t_jit.graph_for(x, y, 2.0))
+        self.assertGraphContainsExactly(subgraph, 'aten::add', 2, consider_subgraphs=False)
+
+    @unittest.skipIf(not RUN_CUDA, "requires CUDA")
+    @unittest.skipIf(GRAPH_EXECUTOR != ProfilingMode.PROFILING and GRAPH_EXECUTOR !=
+                     ProfilingMode.LEGACY, "Requires fusion optimization pass to be effective")
+    def test_broadcasting_3(self):
+
+        def t(x: torch.Tensor, y: torch.Tensor, z: float):
+            o = x + y
+            o = o + z
+            return o
+        t_jit = torch.jit.script(t)
+        x = torch.randn(8, 17, 8, dtype=torch.float, device="cuda")
+        y = torch.randn(8, 17, 1, dtype=torch.float, device="cuda")
+        jit_o = t_jit(x, y, 2.0)
+        jit_o = t_jit(x, y, 2.0)
+        o = t(x, y, 2.0)
+        self.assertEqual(o, jit_o)
+        subgraph = self._getSubgraphInFusion(t_jit.graph_for(x, y, 2.0))
+        self.assertGraphContainsExactly(subgraph, 'aten::add', 2, consider_subgraphs=False)
+
+    # test_broadcasting_partition_logic_X
+    # Testing partition logic that is capable to avoid creating unsupported
+    # broadcasting semantics in CudaFusionGroup
+    @unittest.skipIf(not RUN_CUDA, "requires CUDA")
+    @unittest.skipIf(GRAPH_EXECUTOR != ProfilingMode.PROFILING and GRAPH_EXECUTOR !=
+                     ProfilingMode.LEGACY, "Requires fusion optimization pass to be effective")
+    def test_broadcasting_partition_logic_0(self):
+
+        def t(x: torch.Tensor, y: torch.Tensor, z: torch.Tensor):
+            x = x + 12.0
+            o1 = x + y
+            o2 = x + z
+            o = o1 + o2
+            return o
+        t_jit = torch.jit.script(t)
+        x = torch.randn(4, 8, 6, 8, dtype=torch.float32, device="cuda")
+        y = torch.randn(8, 6, 8, dtype=torch.float32, device="cuda")
+        z = torch.randn(6, 8, dtype=torch.float32, device="cuda")
+        jit_o = t_jit(x, y, z)
+        jit_o = t_jit(x, y, z)
+        o = t(x, y, z)
+        self.assertEqual(o, jit_o)
+        subgraph = self._getSubgraphInFusion(t_jit.graph_for(x, y, z))
+        self.assertGraphContainsExactly(subgraph, 'aten::add', 4, consider_subgraphs=False)
+
+    @unittest.skipIf(not RUN_CUDA, "requires CUDA")
+    @unittest.skipIf(GRAPH_EXECUTOR != ProfilingMode.PROFILING and GRAPH_EXECUTOR !=
+                     ProfilingMode.LEGACY, "Requires fusion optimization pass to be effective")
+    def test_broadcasting_partition_logic_1(self):
+
+        def t(x: torch.Tensor, y: torch.Tensor, z: torch.Tensor):
+            x = x + 12.0
+            o1 = x + y
+            o2 = x + z
+            o = o1 + o2
+            return o
+        t_jit = torch.jit.script(t)
+        x = torch.randn(8, 6, 8, dtype=torch.float32, device="cuda")
+        y = torch.randn(4, 8, 6, 8, dtype=torch.float32, device="cuda")
+        z = torch.randn(4, 1, 6, 8, dtype=torch.float32, device="cuda")
+        jit_o = t_jit(x, y, z)
+        jit_o = t_jit(x, y, z)
+        o = t(x, y, z)
+        self.assertEqual(o, jit_o)
+        subgraph = self._getSubgraphInFusion(t_jit.graph_for(x, y, z))
+        self.assertGraphContainsExactly(subgraph, 'aten::add', 2, consider_subgraphs=False)
 
     @unittest.skipIf(True, "Broadcast with different output not supported yet")
     @unittest.skipIf(not RUN_CUDA, "requires CUDA")
@@ -407,12 +479,11 @@ class TestCudaFuser(JitTestCase):
         addcmul_const_alpha_jit = torch.jit.script(addcmul_const_alpha)
         self._run_helper(addcmul_const_alpha_jit, addcmul_const_alpha, x, y, z)
 
-    @unittest.skipIf(DISABLE_BCAST, "disable bcast tests")
     @unittest.skipIf(not RUN_CUDA, "requires CUDA")
     @unittest.skipIf(GRAPH_EXECUTOR != ProfilingMode.PROFILING and GRAPH_EXECUTOR !=
                      ProfilingMode.LEGACY, "Requires fusion optimization pass to be effective")
     def test_dynamic_size(self):
-        torch._C._jit_set_bailout_depth(2)
+        torch._C._jit_set_bailout_depth(3)
 
         def t(x: torch.Tensor, y: torch.Tensor, z: float):
             o = x + y
@@ -425,7 +496,12 @@ class TestCudaFuser(JitTestCase):
         jit_o = t_jit(x, y, 2.0)
         o = t(x, y, 2.0)
         self.assertEqual(o, jit_o)
-        self.assertGraphContains(t_jit.graph_for(x, y, 2.0), FUSION_GROUP)
+        subgraph = self._getSubgraphInFusion(t_jit.graph_for(x, y, 2.0))
+        self.assertGraphContainsExactly(subgraph, 'aten::add', 2, consider_subgraphs=False)
+
+        # this test is not ideal, as we rely on the bailout to test it and we
+        # don't know a way to verify the bailout graph to validate the proper
+        # fusion.
         x = torch.randn(8, 32, 16, 8, dtype=torch.float, device="cuda")
         y = torch.randn(16, 8, dtype=torch.float, device="cuda")
         jit_o = t_jit(x, y, 2.0)
@@ -496,8 +572,6 @@ class TestCudaFuser(JitTestCase):
         # to single element (codegen limitation at this moment)
         x = [7, 8, 12]
         b_axes = range(-1, len(x))
-        if DISABLE_BCAST:
-            b_axes = (-1,)
         for b_axis in b_axes:
             for perm0 in itertools.permutations(range(len(x))):
                 for perm1 in itertools.permutations(range(len(x))):
@@ -596,9 +670,6 @@ class TestCudaFuser(JitTestCase):
         x = torch.randn([7, 4, 8], dtype=dtype, device=device)
         y = torch.randn([4, 8], dtype=dtype, device=device)
         z = torch.randn([1, 4, 8], dtype=dtype, device=device)
-        if DISABLE_BCAST:
-            y = torch.randn([7, 4, 8], dtype=dtype, device=device)
-            z = torch.randn([7, 4, 8], dtype=dtype, device=device)
 
         def t(x: torch.Tensor, y: torch.Tensor, z: torch.Tensor):
             o = torch.add(x, y)

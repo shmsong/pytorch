@@ -30,11 +30,6 @@ void IRPrinter::handle(const Statement* s) {
 }
 
 void IRPrinter::handle(const Val* v) {
-  if (follow_val_map) {
-    // Follow a single maping (permutation chains are not expected)
-    v = FusionGuard::getCurFusion()->loweredVal(v);
-    TORCH_INTERNAL_ASSERT(v == FusionGuard::getCurFusion()->loweredVal(v));
-  }
   OptInConstDispatch::handle(v);
 }
 
@@ -66,6 +61,13 @@ void IRPrinter::printHeader(
       case ValType::TensorView:
         os << "Tensor<" << val->getDataType().value() << ", "
            << TensorDomain::noReductions(val->as<TensorView>()->getRootDomain())
+                  .size()
+           << "> T" << val->name();
+        break;
+      case ValType::KirTensorView:
+        os << "Tensor<" << val->getDataType().value() << ", "
+           << kir::TensorDomain::noReductions(
+                  val->as<kir::TensorView>()->domain()->rootDomain())
                   .size()
            << "> T" << val->name();
         break;
@@ -243,11 +245,6 @@ void IRPrinter::handle(const Half* h) {
 }
 
 void IRPrinter::handle(const Int* i) {
-  // Make sure we didn't bypass the value mapping
-  // (for example calling IRPrinter::handle() with a Int*)
-  TORCH_CHECK(
-      !follow_val_map || i == FusionGuard::getCurFusion()->loweredVal(i));
-
   if (print_inline_) {
     if (auto def = FusionGuard::getCurFusion()->origin(i)) {
       os << "( ";
@@ -317,11 +314,6 @@ void IRPrinter::handle(const kir::Half* h) {
 }
 
 void IRPrinter::handle(const kir::Int* i) {
-  // Make sure we didn't bypass the value mapping
-  // (for example calling IRPrinter::handle() with a Int*)
-  TORCH_CHECK(
-      !follow_val_map || i == FusionGuard::getCurFusion()->loweredVal(i));
-
   if (print_inline_) {
     if (auto def = FusionGuard::getCurFusion()->origin(i)) {
       os << "( ";
@@ -712,11 +704,13 @@ void IRPrinter::handle(const kir::GridReduction* gr) {
   const auto op_type = rop->getReductionOpType();
   TORCH_INTERNAL_ASSERT(
       gr->reduction_buffer()->buffer()->getValType().value() ==
-      ValType::TensorView);
+      ValType::KirTensorView);
   TORCH_INTERNAL_ASSERT(
-      gr->sync_buffer()->buffer()->getValType().value() == ValType::TensorView);
-  TensorView* work_buffer = gr->reduction_buffer()->buffer()->as<TensorView>();
-  TensorView* sync_buffer = gr->sync_buffer()->buffer()->as<TensorView>();
+      gr->sync_buffer()->buffer()->getValType().value() ==
+      ValType::KirTensorView);
+  const auto work_buffer =
+      gr->reduction_buffer()->buffer()->as<kir::TensorView>();
+  const auto sync_buffer = gr->sync_buffer()->buffer()->as<kir::TensorView>();
   indent();
   // Since block-level reduction is already done, those dimensions
   // with tidx/y/z being true do not participate in the grid reduction.
@@ -848,46 +842,24 @@ void IRPrinter::handle(const kir::IfThenElse* ite) {
 
 void IRPrinter::handle(const kir::Allocate* a) {
   indent();
-  if (a->buffer()->getValType().value() == ValType::TensorView) {
-    auto tv = a->buffer()->as<TensorView>();
-
+  if (a->buffer()->getValType().value() == ValType::KirTensorView) {
+    const auto tv = a->buffer()->as<kir::TensorView>();
+    TORCH_INTERNAL_ASSERT(tv->domain()->nDims() > 0);
+    TORCH_INTERNAL_ASSERT(a->size() != nullptr);
     switch (tv->getMemoryType()) {
       case MemoryType::Global:
-        os << "// Allocate global tensor " << a->buffer_type() << " T"
-           << tv->name() << "[";
-        if (a->size() == nullptr) {
-          handle(tv);
-        } else {
-          print_inline(a->size());
-        }
-        os << "];\n";
+        os << "// Allocate global tensor ";
         break;
       case MemoryType::Shared:
         os << "__shared__ ";
-        os << a->buffer_type();
-        if (tv->nDims() == 0) {
-          os << tv;
-        } else {
-          os << " T" << tv->name();
-          os << "[";
-          print_inline(a->size());
-          os << "]";
-        }
-        os << ";\n";
         break;
       case MemoryType::Local:
-        os << a->buffer_type();
-        if (tv->nDims() == 0) {
-          os << tv;
-        } else {
-          os << " T" << tv->name();
-          os << "[";
-          print_inline(a->size());
-          os << "]";
-        }
-        os << ";\n";
         break;
     }
+    os << a->buffer_type();
+    os << " T" << tv->name() << "[";
+    print_inline(a->size());
+    os << "];\n";
   } else {
     os << a->buffer_type() << " ";
     handle(a->buffer());

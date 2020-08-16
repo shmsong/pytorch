@@ -165,6 +165,8 @@ class TORCH_CUDA_API Int : public Val {
 
 class TORCH_CUDA_API IterDomain : public Val {
  public:
+  IterDomain(Val* start, Val* extent);
+
   explicit IterDomain(const fuser::IterDomain* iter_domain);
 
   IterDomain(const IterDomain* src, IrCloner* ir_cloner);
@@ -231,6 +233,8 @@ class TORCH_CUDA_API IterDomain : public Val {
 
 class TORCH_CUDA_API TensorDomain : public Val {
  public:
+  explicit TensorDomain(std::vector<IterDomain*> domain);
+
   explicit TensorDomain(const fuser::TensorDomain* tensor_domain);
 
   TensorDomain(const TensorDomain* src, IrCloner* ir_cloner);
@@ -284,16 +288,8 @@ class TORCH_CUDA_API TensorDomain : public Val {
 
   IterDomain* axis(int i) const;
 
-  size_t posOf(IterDomain* id) const;
-
   static std::vector<IterDomain*> noReductions(const std::vector<IterDomain*>&);
   static std::vector<IterDomain*> noBroadcasts(const std::vector<IterDomain*>&);
-
-  static bool hasBroadcast(const std::vector<IterDomain*>&);
-  static bool hasReduction(const std::vector<IterDomain*>&);
-
-  // pair is in order where second is the consumer of first
-  std::pair<TensorDomain*, TensorDomain*> rFactor(const std::vector<int>& axes);
 
  private:
   std::vector<IterDomain*> root_domain_;
@@ -319,6 +315,7 @@ class TORCH_CUDA_API TensorView : public Val {
   }
 
   const fuser::TensorView* fuserTv() const {
+    TORCH_INTERNAL_ASSERT(fuser_tv_ != nullptr);
     return fuser_tv_;
   }
 
@@ -339,6 +336,7 @@ class TORCH_CUDA_API UnaryOp : public Expr {
   Val* out() const {
     return out_;
   }
+
   Val* in() const {
     return in_;
   }
@@ -362,9 +360,11 @@ class TORCH_CUDA_API BinaryOp : public Expr {
   Val* out() const {
     return out_;
   }
+
   Val* lhs() const {
     return lhs_;
   }
+
   Val* rhs() const {
     return rhs_;
   }
@@ -393,9 +393,11 @@ class TORCH_CUDA_API TernaryOp : public Expr {
   Val* in1() const {
     return in1_;
   }
+
   Val* in2() const {
     return in2_;
   }
+
   Val* in3() const {
     return in3_;
   }
@@ -421,9 +423,11 @@ class TORCH_CUDA_API ReductionOp : public Expr {
   Val* out() const {
     return out_;
   }
+
   Val* in() const {
     return in_;
   }
+
   Val* init() const {
     return init_;
   }
@@ -481,6 +485,7 @@ class TORCH_CUDA_API BroadcastOp : public Expr {
   Val* out() const {
     return out_;
   }
+
   Val* in() const {
     return in_;
   }
