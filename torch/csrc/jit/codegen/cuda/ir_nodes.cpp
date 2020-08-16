@@ -200,7 +200,7 @@ BroadcastOp::BroadcastOp(Val* _out, Val* _in)
   // Maybe we shouldn't relegate it to this constructor.
   const auto c_tv = out()->as<TensorView>();
   const auto p_tv = in()->as<TensorView>();
-  
+
   const auto c_root = c_tv->getRootDomain();
   const auto p_root = p_tv->getMaybeRFactorDomain();
 
