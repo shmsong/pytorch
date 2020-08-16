@@ -107,7 +107,7 @@ kir::Bool* PredicateCompute::getInlinePredicate(
   auto root_indices = pred_inds.first;
   bool use_maybe_rfactor = pred_inds.second;
 
-  if (out_tv->getMemoryType() != MemoryType::Global && out_tv->hasReduction() &&
+  if (out_tv->getMemoryType() == MemoryType::Local && out_tv->hasReduction() &&
       !use_maybe_rfactor) {
     auto tv_filter_inp_view =
         ir_utils::filterByType<TensorView>(expr->inputs());
