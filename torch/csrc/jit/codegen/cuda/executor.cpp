@@ -177,6 +177,14 @@ LaunchParams FusionExecutor::computeLaunchParams(
     }
   }
 
+  // Add workspace for reduction and broadcast
+  // TODO: figure the minimal size. Currently using worst case for block size
+  if (fusion_.hasBlockReduction() || fusion_.hasGridReduction() || fusion_.hasBroadcast()) {
+    // Not using nThreads here since it does not handle uninitialized value
+    // TODO: calculate from proper data type. Currently assume 4 bit same as before
+    launch_params.setSmem(4*launch_params.bdimx()*launch_params.bdimy()*launch_params.bdimz());
+  }
+
   return launch_params;
 }
 
@@ -267,7 +275,7 @@ std::vector<at::Tensor> FusionExecutor::runFusion(
       launch_params.bdimx(),
       launch_params.bdimy(),
       launch_params.bdimz(),
-      0, // smem
+      launch_params.smem(),
       stream,
       kernel_arguments.getBuffer(),
       nullptr));

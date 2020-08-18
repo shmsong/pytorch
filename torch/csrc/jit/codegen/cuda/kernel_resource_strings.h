@@ -197,7 +197,7 @@ template<bool X_REDUCE, bool Y_REDUCE, bool Z_REDUCE, typename T, typename Func>
 __inline__ __device__
 void blockReduce(T& out, const T inp_val, Func reduction_op, const dim3& thread_idx, const dim3& block_dim, T* shared_mem) {
 
-  unsigned int reduction_size 
+  unsigned int reduction_size
     = (X_REDUCE ? block_dim.x : 1)
     * (Y_REDUCE ? block_dim.y : 1)
     * (Z_REDUCE ? block_dim.z : 1);
@@ -223,8 +223,8 @@ void blockReduce(T& out, const T inp_val, Func reduction_op, const dim3& thread_
     reduction_tid = threadIdx.z * blockDim.x + threadIdx.x;
   } else {
     // Normal reduction in order
-    reduction_stride 
-    = (X_REDUCE ? 1 
+    reduction_stride
+    = (X_REDUCE ? 1
     : (Y_REDUCE ? block_dim.x
     : (Z_REDUCE ? block_dim.x * block_dim.y : 0)));
 
@@ -258,7 +258,7 @@ void blockReduce(T& out, const T inp_val, Func reduction_op, const dim3& thread_
   }
   if(should_write)
     out = shared_mem[linear_tid];
-  
+
 }
 )";
 
@@ -595,10 +595,7 @@ __host__ __device__ unsigned offset_of_source(const dim3& block_dim, const dim3&
     out: Per-thread output location
  */
 template <bool X_THREAD, bool Y_THREAD, bool Z_THREAD, typename T>
-__device__ void blockBroadcast(T& out, T inp_val) {
-
-  // Use worst case for memory.
-  __shared__ T shared_mem[1024];
+__device__ void blockBroadcast(T& out, T inp_val, T* shared_mem) {
 
   const bool has_valid_data =
       (!X_THREAD || threadIdx.x == 0) &&

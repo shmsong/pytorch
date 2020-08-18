@@ -598,6 +598,16 @@ bool Fusion::hasGridReduction() {
   return false;
 }
 
+bool Fusion::hasBroadcast() {
+  for (auto expr : exprs(true))
+    for (auto out : expr->outputs())
+      if (out->getValType() == ValType::TensorView)
+        if (out->as<TensorView>()->hasBroadcast())
+          return true;
+
+  return false;
+}
+
 std::vector<Val*> Fusion::getTerminatingOutputs() {
   FusionGuard fg(this);
 

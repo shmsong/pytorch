@@ -95,11 +95,11 @@ void IRPrinter::printHeader(
     indent();
     os << "Philox rnd(seed, idx, offset);\n";
   }
-  if (fusion->hasBlockReduction() || fusion->hasGridReduction()) {
+  // all reduction and broadcast share workspace through dynamic shared memory
+  if (fusion->hasBlockReduction() || fusion->hasGridReduction() || fusion->hasBroadcast()) {
     indent();
-    // TODO: Dynamic sizing possible? blockReduce originally used 1024
-    // values of a given type
-    os << "__shared__ float shared_mem[1024];\n";
+    // Use float here is ok since the pointer will be later casted before use
+    os << "extern __shared__ float shared_mem[];\n";
   }
 }
 
@@ -757,6 +757,8 @@ void IRPrinter::handle(const kir::BroadcastOp* bop) {
   const bool grid_broadcast_needed = block_x || block_y || block_z;
   const bool block_broadcast_needed = thread_x || thread_y || thread_z;
 
+  auto d_type = bop->out()->getDataType().value();
+
   TORCH_INTERNAL_ASSERT(
       !grid_broadcast_needed, "Parallel broadcast across blocks not supported");
 
@@ -770,6 +772,7 @@ void IRPrinter::handle(const kir::BroadcastOp* bop) {
     handle(bop->out());
     os << ", ";
     handle(bop->in());
+    os << ", reinterpret_cast<" << d_type << "*>(shared_mem)";;
     os << ");\n";
   } else {
     indent();

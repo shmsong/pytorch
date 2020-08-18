@@ -209,6 +209,7 @@ class TORCH_CUDA_API Fusion final {
   bool hasReduction();
   bool hasBlockReduction();
   bool hasGridReduction();
+  bool hasBroadcast();
   size_t gridReductionTempBufferSize();
 
   const auto& inputs() const {
