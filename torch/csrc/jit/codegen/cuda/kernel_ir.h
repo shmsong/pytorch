@@ -22,38 +22,6 @@ namespace jit {
 namespace fuser {
 namespace kir {
 
-#if 0
-
-// Base class for Kernel IR nodes
-class TORCH_CUDA_API Node : public NonCopyable, public PolymorphicBase {};
-
-// A generic value (scalar or tensor)
-class TORCH_CUDA_API Val : public Node {
- public:
-  explicit Val(ValType vtype, DataType dtype = DataType::Null)
-      : vtype_(vtype), dtype_(dtype) {}
-
- private:
-  const ValType vtype_;
-  const DataType dtype_;
-};
-
-// A computation, with inputs and outputs
-//
-// TODO: rename to Statement/Operation?
-//
-class TORCH_CUDA_API Expr : public Node {
- public:
-  explicit Expr(ExprType type) : type_(type) {}
-
- private:
-  ExprType type_ = ExprType::Invalid;
-  std::vector<Val*> inputs_;
-  std::vector<Val*> outputs_;
-};
-
-#endif
-
 class TORCH_CUDA_API NamedScalar : public Val {
  public:
   NamedScalar(std::string name, DataType dtype)
@@ -659,6 +627,8 @@ class TORCH_CUDA_API ForLoop : public Expr {
     return parent_scope_;
   }
 
+  void setParentScope(Expr* scope);
+
  private:
   Val* const index_ = nullptr;
   IterDomain* const iter_domain_;
@@ -707,6 +677,8 @@ class TORCH_CUDA_API IfThenElse : public Expr {
   Expr* parentScope() const {
     return parent_scope_;
   }
+
+  void setParentScope(Expr* scope);
 
  private:
   Bool* const cond_ = nullptr;

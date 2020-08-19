@@ -20,6 +20,7 @@ kir::Bool* UnrollPass::getThreadPredicate(TensorView* tv) {
       return nullptr;
     }
   }
+}
 
   return thread_predicates_.getExpr(tv);
 }
@@ -28,8 +29,6 @@ kir::Bool* UnrollPass::getThreadPredicate(TensorView* tv) {
 void UnrollPass::handle(Expr* expr) {
   // If tv op, predciate it.
   if (ir_utils::isTVOp(expr)) {
-    TensorView* out = ir_utils::asTV(ir_utils::asExpr(expr)->outputs()[0]);
-
     TORCH_INTERNAL_ASSERT(for_loops.size() != 0);
 
     auto pred = PredicateCompute::getInlinePredicate(
@@ -37,6 +36,7 @@ void UnrollPass::handle(Expr* expr) {
 
     // If we need a predicate, put expr inside an if then else
     if (!(pred->isConst()) || !(pred->isConst() && pred->value().value())) {
+      non_trivial_pred_found = true;
       kir::IfThenElse* inline_ite =
           new kir::IfThenElse(pred, {expr}, {}, for_loops.back());
       for_loops.back()->body().insert_before(expr, inline_ite);
@@ -71,8 +71,10 @@ void UnrollPass::handle(kir::ForLoop* fl) {
 
   auto unroll_pred = UnrollPredicate::get(for_loops, fl, p2c_root_map);
 
+  kir::ForLoop* parent_scope = for_loops.empty() ? nullptr : for_loops.back();
+
   kir::IfThenElse* unroll_ite =
-      new kir::IfThenElse(unroll_pred, {}, {}, for_loops.back());
+      new kir::IfThenElse(unroll_pred, {}, {}, parent_scope);
 
   // Get the loop nest for the unrolled path
   kir::ForLoop* unrolled_loop_nest = scope_utils::cloneLoopNest(fl, unroll_ite);
@@ -84,16 +86,16 @@ void UnrollPass::handle(kir::ForLoop* fl) {
 
   // Add inline predicates for inlined loop nest
   look_for_unroll = false;
+  non_trivial_pred_found = false;
   handle(inlined_loop);
   look_for_unroll = true;
-
-  unroll_ite->elseBody().push_back(inlined_loop);
-
-  // Inner most inlined loop
-  Expr* inner_most_inlined_loop =
-      scope_utils::firstInnerMostScope(inlined_loop);
-
-  loop_replacement_map.insert({fl, unroll_ite});
+  if (!non_trivial_pred_found) {
+    inlined_loop->setParentScope(parent_scope);
+    loop_replacement_map.insert({fl, inlined_loop});
+  } else {
+    unroll_ite->elseBody().push_back(inlined_loop);
+    loop_replacement_map.insert({fl, unroll_ite});
+  }
 }
 
 // Generate the loop nest structure and place it in lowered_exprs

@@ -9,7 +9,7 @@
 #include <ATen/cuda/Exceptions.h>
 #include <c10/core/DeviceGuard.h>
 #include <c10/cuda/CUDAFunctions.h>
-#include <c10/cuda/CUDAStream.cpp>
+#include <c10/cuda/CUDAStream.h>
 
 namespace torch {
 namespace jit {
@@ -227,7 +227,6 @@ std::vector<at::Tensor> FusionExecutor::runFusion(
 
   executor_utils::validateKernelInputs(&fusion_, inputs, options_.device);
 
-  const auto prior_device = at::cuda::current_device();
   c10::DeviceGuard dg(options_.device);
   auto stream = at::cuda::getCurrentCUDAStream();
 

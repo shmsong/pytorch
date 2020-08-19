@@ -10,6 +10,8 @@
 
 #include <torch/csrc/jit/codegen/cuda/executor_utils.h>
 
+#include <fstream>
+
 namespace torch {
 namespace jit {
 namespace fuser {
@@ -218,7 +220,7 @@ EvaluationContext bindInputs(
       auto aten_tensor = aten_inputs[i].toTensor();
       auto root_dom = TensorDomain::noReductions(cg_tensor->getRootDomain());
       TORCH_INTERNAL_ASSERT(
-          aten_tensor.ndimension() == root_dom.size(),
+          aten_tensor.ndimension() == (int64_t)root_dom.size(),
           "Something went wrong configuring launch. Inputs no longer match.");
 
       for (size_t dim = 0; dim < root_dom.size(); dim++) {
