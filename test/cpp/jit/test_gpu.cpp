@@ -5346,7 +5346,6 @@ void testGPU_FusionSmemBlockGemm() {
 }
 
 void testGPU_FusionSmemBlockGemmCache() {
-#if 0
   Fusion fusion;
   FusionGuard fg(&fusion);
 
@@ -5429,7 +5428,6 @@ void testGPU_FusionSmemBlockGemmCache() {
       aten_output.allclose(outputs[0], 1e-5, 1e-5),
       "Error of: ",
       aten_output.sub(outputs[0]).abs().max());
-#endif
 }
 
 void testGPU_FusionConstCheck() {
