@@ -468,55 +468,37 @@ void sortGroup(TensorView* target, ExprListT& exprs, ExprScoreMapT& scores) {
       });
 }
 
-void reorderBFSSegment(
+// Reorder expressions that are computed at the same position in a
+// breadth-first order.
+void reorderSegmentBreadthFirst(
     ExprListT::iterator seg_begin,
-    ExprListT::iterator seg_end) {
-  if (seg_begin == seg_end)
-    return;
-#if 0
-  {
-    std::cerr << "Before reorder BFS segment:\n";
-    for (auto it = seg_begin; it != seg_end; ++it) {
-      std::cerr << *it;
-    }
-  }
-#endif
-  std::unordered_map<const Expr*, bool> exprs;
+    ExprListT::const_iterator seg_end) {
+  // mapping of each expression to a bool flag indicating if it's
+  // already been visited
+  std::unordered_map<const Expr*, bool> expr_status;
   for (auto it = seg_begin; it != seg_end; ++it) {
-    exprs.insert({*it, false});
+    expr_status.insert({*it, false});
   }
 
   while (seg_begin != seg_end) {
     std::vector<const Expr*> visited_exprs;
     for (auto it = seg_begin; it != seg_end; ++it) {
-      auto expr = *it;
+      const auto expr = *it;
       const auto& expr_inputs =
           ir_utils::filterByType<TensorView>(expr->inputs());
-#if 0
-      std::cerr << "Checking " << expr;
-      for (const auto& input: expr_inputs) {
-        std::cerr << "Input: " << input
-                  << ", expr: ";
-        if (input->getOrigin()) {
-          std::cerr << input->getOrigin();
-        } else {
-          std::cerr << "null\n";
-        }
-      }
-#endif
-      bool ready_to_visit = std::all_of(
+      // expr can be visited if all input expressions are already
+      // visited. If an input expression is not found in expr_status,
+      // that should be safe to ignore.
+      const bool ready_to_visit = std::all_of(
           expr_inputs.begin(),
           expr_inputs.end(),
-          [&exprs](const TensorView* input) {
+          [&expr_status](const TensorView* input) {
             const Expr* input_origin = input->getOrigin();
             return input_origin == nullptr ||
-                exprs.find(input_origin) == exprs.end() ||
-                exprs.at(input_origin);
+                expr_status.find(input_origin) == expr_status.end() ||
+                expr_status.at(input_origin);
           });
       if (ready_to_visit) {
-#if 0
-        std::cerr << "Visiting " << expr;
-#endif
         std::iter_swap(seg_begin, it);
         TORCH_INTERNAL_ASSERT(*seg_begin == expr);
         ++seg_begin;
@@ -524,28 +506,16 @@ void reorderBFSSegment(
       }
     }
     for (const auto& visited_expr : visited_exprs) {
-      exprs.at(visited_expr) = true;
+      expr_status.at(visited_expr) = true;
     }
   }
-#if 0
-  {
-    std::cerr << "After  reorder BFS segment:\n";
-    for (auto it = seg_begin; it != seg_end; ++it) {
-      std::cerr << *it;
-    }
-  }
-#endif
 }
 
-void reorderBFS(ExprListT& exprs, const ExprScoreMapT& scores) {
-#if 0
-  {
-    std::cerr << "Before reorder BFS:\n";
-    for (const auto& e: exprs) {
-      std::cerr << e;
-    }
-  }
-#endif
+// Reorder expressions in a group in a breadth-first order. Reordering
+// is done within a subset of expressions that have the same score
+// (i.e., computeAt position). For each subset,
+// reorderSegmentBreadthFirst is called.
+void reorderGroupBreadthFirst(ExprListT& exprs, const ExprScoreMapT& scores) {
   auto seg_begin = exprs.begin();
   auto seg_end = exprs.begin();
   ScoreT seg_score = scores.at(*seg_begin);
@@ -558,7 +528,7 @@ void reorderBFS(ExprListT& exprs, const ExprScoreMapT& scores) {
       continue;
     } else if (seg_score < cur_score) {
       // segment ended
-      reorderBFSSegment(seg_begin, seg_end);
+      reorderSegmentBreadthFirst(seg_begin, seg_end);
       seg_begin = seg_end;
       seg_score = cur_score;
     } else {
@@ -568,15 +538,7 @@ void reorderBFS(ExprListT& exprs, const ExprScoreMapT& scores) {
           false, "Unexpected expression: ", expr, ", score: ", cur_score);
     }
   }
-  reorderBFSSegment(seg_begin, seg_end);
-#if 0
-  {
-    std::cerr << "After reorder BFS:\n";
-    for (const auto& e: exprs) {
-      std::cerr << e;
-    }
-  }
-#endif
+  reorderSegmentBreadthFirst(seg_begin, seg_end);
 }
 
 void mergeNonRootGroupsIntoRootGroups(
@@ -662,7 +624,8 @@ void reorderExprsForComputeAt(std::vector<Expr*>& exprs) {
   // 2. Sort each loop-nest group based on axis (i.e., score)
   for (auto& group : computed_at_exprs) {
     sortGroup(group.first, group.second, scores);
-    reorderBFS(group.second, scores);
+    // Reorder expressions in a breadth-first order
+    reorderGroupBreadthFirst(group.second, scores);
   }
 
   // 3. Merge non-root loop-nests into root loop-nests
