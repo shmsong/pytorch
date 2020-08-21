@@ -1,9 +1,11 @@
 #include <torch/csrc/jit/codegen/cuda/lower_loops.h>
 #include <torch/csrc/jit/codegen/cuda/arith.h>
 #include <torch/csrc/jit/codegen/cuda/ir_iostream.h>
+#include <torch/csrc/jit/codegen/cuda/ir_utils.h>
 #include <torch/csrc/jit/codegen/cuda/lower_utils.h>
 #include <torch/csrc/jit/codegen/cuda/transform_replay.h>
 
+#include <algorithm>
 #include <numeric>
 
 namespace torch {
@@ -466,6 +468,117 @@ void sortGroup(TensorView* target, ExprListT& exprs, ExprScoreMapT& scores) {
       });
 }
 
+void reorderBFSSegment(
+    ExprListT::iterator seg_begin,
+    ExprListT::iterator seg_end) {
+  if (seg_begin == seg_end)
+    return;
+#if 0
+  {
+    std::cerr << "Before reorder BFS segment:\n";
+    for (auto it = seg_begin; it != seg_end; ++it) {
+      std::cerr << *it;
+    }
+  }
+#endif
+  std::unordered_map<const Expr*, bool> exprs;
+  for (auto it = seg_begin; it != seg_end; ++it) {
+    exprs.insert({*it, false});
+  }
+
+  while (seg_begin != seg_end) {
+    std::vector<const Expr*> visited_exprs;
+    for (auto it = seg_begin; it != seg_end; ++it) {
+      auto expr = *it;
+      const auto& expr_inputs =
+          ir_utils::filterByType<TensorView>(expr->inputs());
+#if 0
+      std::cerr << "Checking " << expr;
+      for (const auto& input: expr_inputs) {
+        std::cerr << "Input: " << input
+                  << ", expr: ";
+        if (input->getOrigin()) {
+          std::cerr << input->getOrigin();
+        } else {
+          std::cerr << "null\n";
+        }
+      }
+#endif
+      bool ready_to_visit = std::all_of(
+          expr_inputs.begin(),
+          expr_inputs.end(),
+          [&exprs](const TensorView* input) {
+            const Expr* input_origin = input->getOrigin();
+            return input_origin == nullptr ||
+                exprs.find(input_origin) == exprs.end() ||
+                exprs.at(input_origin);
+          });
+      if (ready_to_visit) {
+#if 0
+        std::cerr << "Visiting " << expr;
+#endif
+        std::iter_swap(seg_begin, it);
+        TORCH_INTERNAL_ASSERT(*seg_begin == expr);
+        ++seg_begin;
+        visited_exprs.push_back(expr);
+      }
+    }
+    for (const auto& visited_expr : visited_exprs) {
+      exprs.at(visited_expr) = true;
+    }
+  }
+#if 0
+  {
+    std::cerr << "After  reorder BFS segment:\n";
+    for (auto it = seg_begin; it != seg_end; ++it) {
+      std::cerr << *it;
+    }
+  }
+#endif
+}
+
+void reorderBFS(ExprListT& exprs, const ExprScoreMapT& scores) {
+#if 0
+  {
+    std::cerr << "Before reorder BFS:\n";
+    for (const auto& e: exprs) {
+      std::cerr << e;
+    }
+  }
+#endif
+  auto seg_begin = exprs.begin();
+  auto seg_end = exprs.begin();
+  ScoreT seg_score = scores.at(*seg_begin);
+  while (seg_end != exprs.end()) {
+    const auto expr = *seg_end;
+    const auto cur_score = scores.at(expr);
+    if (seg_score == cur_score) {
+      // advance further
+      ++seg_end;
+      continue;
+    } else if (seg_score < cur_score) {
+      // segment ended
+      reorderBFSSegment(seg_begin, seg_end);
+      seg_begin = seg_end;
+      seg_score = cur_score;
+    } else {
+      // expre list is assumed to be sorted in the order of scores, so
+      // this should never be reachable
+      TORCH_INTERNAL_ASSERT(
+          false, "Unexpected expression: ", expr, ", score: ", cur_score);
+    }
+  }
+  reorderBFSSegment(seg_begin, seg_end);
+#if 0
+  {
+    std::cerr << "After reorder BFS:\n";
+    for (const auto& e: exprs) {
+      std::cerr << e;
+    }
+  }
+#endif
+}
+
 void mergeNonRootGroupsIntoRootGroups(
     TargetGroupMapT& computed_at_exprs,
     ExprTargetMapT& target_map) {
@@ -549,6 +662,7 @@ void reorderExprsForComputeAt(std::vector<Expr*>& exprs) {
   // 2. Sort each loop-nest group based on axis (i.e., score)
   for (auto& group : computed_at_exprs) {
     sortGroup(group.first, group.second, scores);
+    reorderBFS(group.second, scores);
   }
 
   // 3. Merge non-root loop-nests into root loop-nests
