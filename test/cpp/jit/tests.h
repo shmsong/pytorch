@@ -216,8 +216,7 @@ namespace jit {
   _(GPU_FusionTraversalOrder7)                      \
   _(GPU_FusionBranches)                             \
   _(GPU_FusionThreadPredicate)                      \
-  _(GPU_FusionLSTMCell)                             \
-  _(GPU_FusionBreadthFirstOrdering)
+  _(GPU_FusionLSTMCell)
 #else
 #define TH_FORALL_TESTS_CUDA(_) \
   _(ArgumentSpec)               \

@@ -6055,60 +6055,6 @@ void testGPU_FusionLSTMCell() {
   TORCH_CHECK(at_hy.allclose(outputs[1], 1e-4, 1e-7));
 }
 
-void testGPU_FusionBreadthFirstOrdering() {
-  Fusion fusion;
-  FusionGuard fg(&fusion);
-
-  // First expression group
-  TensorView* tv0 = makeDummyTensor(2);
-  fusion.addInput(tv0);
-  TensorView* tv1 = add(tv0, new Float(1));
-  TensorView* tv2 = add(tv1, new Float(2));
-  fusion.addOutput(tv2);
-
-  // Second expression group
-  TensorView* tv3 = makeDummyTensor(2);
-  fusion.addInput(tv3);
-  TensorView* tv4 = add(tv3, new Float(1));
-  TensorView* tv5 = add(tv4, new Float(2));
-  fusion.addOutput(tv5);
-
-  TensorView* tv6 = add(tv2, tv5);
-  fusion.addOutput(tv6);
-
-  tv6->split(1, 128);
-
-  tv1->computeAt(tv6, -1);
-  tv3->computeAt(tv6, -1);
-
-  fusion.printMath();
-  fusion.printKernel();
-
-  tv6->axis(0)->parallelize(ParallelType::BIDx);
-  tv6->axis(-1)->parallelize(ParallelType::TIDx);
-
-  const int numel_x = 100;
-  const int numel_y = 100;
-
-  auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
-  at::Tensor t0 = at::rand({numel_x, numel_y}, options);
-  at::Tensor t3 = at::rand({numel_x, numel_y}, options);
-  at::Tensor cg_output_tv2 = at::empty_like(t0, options);
-  at::Tensor cg_output_tv5 = at::empty_like(t0, options);
-  at::Tensor cg_output_tv6 = at::empty_like(t0, options);
-
-  torch::jit::fuser::cuda::FusionExecutor fe;
-  fe.compileFusion(&fusion);
-  fe.runFusion({t0, t3}, {cg_output_tv2, cg_output_tv5, cg_output_tv6});
-
-  auto t2 = t0 + 1 + 2;
-  TORCH_CHECK(t2.allclose(cg_output_tv2));
-  auto t5 = t3 + 1 + 2;
-  TORCH_CHECK(t5.allclose(cg_output_tv5));
-  auto t6 = t2 + t5;
-  TORCH_CHECK(t6.allclose(cg_output_tv6));
-}
-
 } // namespace jit
 } // namespace torch
 
