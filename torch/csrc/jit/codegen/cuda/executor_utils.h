@@ -24,12 +24,12 @@ std::string kernelPreamble();
 void validateKernelInputs(
     Fusion* fusion,
     const at::ArrayRef<IValue>& inputs,
-    c10::Device device);
+    const c10::Device& device);
 
 void validateKernelOutputs(
     Fusion* fusion,
     const std::vector<at::Tensor>& outputs,
-    c10::Device device);
+    const c10::Device& device);
 
 // Check if a value is already bound, if so validate we're trying to bind to the
 // same value
