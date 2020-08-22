@@ -65,6 +65,12 @@ class TORCH_CUDA_API FusionExecutor : public NonCopyable {
 
   std::vector<at::Tensor> allocOutputs(EvaluationContext& ec);
 
+  void setUsedTVs();
+
+  const std::vector<TensorView*>& getUsedTVs() const {
+    return used_tvs;
+  };
+
  private:
   bool compiled_ = false;
 
@@ -73,6 +79,9 @@ class TORCH_CUDA_API FusionExecutor : public NonCopyable {
   CompileOptions options_;
 
   executor_utils::NvrtcFunction compiled_kernel_;
+
+  // TensorViews actually used in the kernel.
+  std::vector<TensorView*> used_tvs;
 
   // State of the fusion that's important
   bool has_random_ = false;
