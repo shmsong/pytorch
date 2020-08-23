@@ -340,14 +340,12 @@ std::vector<at::Tensor> FusionExecutor::runFusion(
   if (outputs.empty() || outputs.size() != fusion_.outputs().size()) {
     alloced_outputs = allocOutputs(evaluation_context);
   }
-
-  executor_utils::validateKernelOutputs(
-      &fusion_, alloced_outputs, options_.device);
+  
+  auto buffers = allocGlobalVals(evaluation_context);
 
   KernelArgumentHolder kernel_arguments;
   kernel_arguments.push(inputs);
   kernel_arguments.push(alloced_outputs);
-  auto buffers = allocGlobalVals(evaluation_context);
   kernel_arguments.push(buffers);
 
   if (has_random_) {
