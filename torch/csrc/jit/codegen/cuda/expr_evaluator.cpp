@@ -269,34 +269,30 @@ void StatefulExpressionEvaluator::safeBind(
 
 c10::optional<Int::ScalarType> StatefulExpressionEvaluator::inferValue(
     Val* value) {
+  auto maybe_concrete = getValue(value);
+
+  if (maybe_concrete.has_value())
+    return maybe_concrete;
+
+  IterVisitor::traverseFrom(fusion(), {value});
+
+  return getValue(value);
+}
+
+inline c10::optional<Int::ScalarType> StatefulExpressionEvaluator::getValue(
+    Val* value) {
   TORCH_INTERNAL_ASSERT(
       value->isAnInt(),
       "Expressoin Evaluation does not support values other than integers at this time.");
 
-  if (value->isConstScalar()) {
-    auto const_value = value->as<Int>()->value().value();
-    return c10::optional<Int::ScalarType>(const_value);
-  } else {
-    auto it = bindings_.find(value);
-    if (it == bindings_.end()) {
-      IterVisitor::traverseFrom(fusion(), {value});
-      it = bindings_.find(value);
-    }
-    return (it != bindings_.end()) ? c10::optional<Int::ScalarType>(it->second)
-                                   : c10::nullopt;
+  if (value->as<Int>()->value().has_value()) {
+    return value->as<Int>()->value();
   }
-}
-
-c10::optional<Int::ScalarType> StatefulExpressionEvaluator::getValue(
-    Val* value) {
-  if (value->isConstScalar()) {
-    auto const_value = value->as<Int>()->value().value();
-    return c10::optional<Int::ScalarType>(const_value);
-  } else {
-    auto it = bindings_.find(value);
-    return (it != bindings_.end()) ? c10::optional<Int::ScalarType>(it->second)
-                                   : c10::nullopt;
+  auto it = bindings_.find(value);
+  if (it != bindings_.end()) {
+    return c10::optional<Int::ScalarType>(it->second);
   }
+  return c10::nullopt;
 }
 
 void StatefulExpressionEvaluator::handle(UnaryOp* uop) {

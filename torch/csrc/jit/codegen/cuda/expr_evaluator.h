@@ -103,6 +103,29 @@ class TORCH_CUDA_API StatefulExpressionEvaluator : private IterVisitor {
   using IterVisitor::handle;
   using IterVisitor::next;
 
+  void handle(Expr* expr) override {
+    switch (expr->getExprType().value()) {
+      case ExprType::UnaryOp:
+        handle(expr->as<UnaryOp>());
+        break;
+      case ExprType::BinaryOp:
+        handle(expr->as<BinaryOp>());
+        break;
+      case ExprType::KirUnaryOp:
+        handle(expr->as<kir::UnaryOp>());
+        break;
+      case ExprType::KirBinaryOp:
+        handle(expr->as<kir::BinaryOp>());
+        break;
+      default:
+        TORCH_INTERNAL_ASSERT(
+            false,
+            "Cannot handle Expr type: ",
+            expr->getExprType().value(),
+            " in stateful expression evaluator.");
+    }
+  }
+
   void handle(UnaryOp*) override;
   void handle(BinaryOp*) override;
 
