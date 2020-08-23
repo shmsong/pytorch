@@ -110,12 +110,12 @@ namespace {
 
 at::Tensor inferAndAlloc(
     const TensorView* tv,
-    EvaluationContext& ec,
+    StatefulExpressionEvaluator& see,
     const CompileOptions& options,
     bool zero_init = false) {
   std::vector<int64_t> sizes;
   for (auto id : TensorDomain::noReductions(tv->getRootDomain())) {
-    auto inferred_val = ExpressionEvaluator::evaluate(id->rawExtent(), &ec);
+    auto infered_val = see.inferValue(id->rawExtent());
     TORCH_INTERNAL_ASSERT(
         inferred_val.has_value(),
         "Could not launch kernel as program could not infer ",
@@ -169,7 +169,7 @@ uint64_t FusionExecutor::computeSharedMemory(
 LaunchParams FusionExecutor::computeLaunchParams(
     const at::ArrayRef<IValue>& aten_inputs,
     const LaunchParams& launch_constraints,
-    EvaluationContext& ec) {
+    StatefulExpressionEvaluator& see) {
   LaunchParams launch_params;
 
   // Grab all values that are actually used in the fusion
@@ -206,10 +206,9 @@ LaunchParams FusionExecutor::computeLaunchParams(
       if (launch_constraints.hasDim(p_type)) {
         auto parallel_ids = entry.second;
         for (auto parallel_id : parallel_ids) {
-          auto inferred_val =
-              ExpressionEvaluator::evaluate(parallel_id->rawExtent(), &ec);
-          if (inferred_val.has_value()) {
-            // This value could have been inferred, make sure it was set right.
+          auto infered_val = see.inferValue(parallel_id->rawExtent());
+          if (infered_val.has_value()) {
+            // This value could have been infered, make sure it was set right.
             TORCH_CHECK(
                 inferred_val.value() == launch_constraints.getDim(p_type) ||
                     launch_constraints.getRawVal(p_type) == -1,
@@ -221,8 +220,7 @@ LaunchParams FusionExecutor::computeLaunchParams(
                 launch_constraints.getDim(p_type));
           } else {
             // Bind the launch constraint into our evaluation context
-            executor_utils::safeBind(
-                ec,
+            see.safeBind(
                 parallel_id->rawExtent(),
                 launch_constraints.getDim(entry.first));
             executor_utils::safeBind(
@@ -241,7 +239,7 @@ LaunchParams FusionExecutor::computeLaunchParams(
     auto p_type = entry.first;
     auto parallel_ids = entry.second;
     for (auto parallel_id : parallel_ids) {
-      auto val = ExpressionEvaluator::evaluate(parallel_id->rawExtent(), &ec);
+      auto val = see.inferValue(parallel_id->rawExtent());
       TORCH_INTERNAL_ASSERT(
           val,
           "Tried to evaluate the extent of ",
@@ -275,7 +273,8 @@ LaunchParams FusionExecutor::computeLaunchParams(
   return launch_params;
 }
 
-std::vector<at::Tensor> FusionExecutor::allocGlobalVals(EvaluationContext& ec) {
+std::vector<at::Tensor> FusionExecutor::allocGlobalVals(
+    StatefulExpressionEvaluator& see) {
   std::vector<at::Tensor> global_buffers;
   for (auto alloc : lowered_.global_allocations()) {
     TORCH_INTERNAL_ASSERT(
@@ -283,7 +282,7 @@ std::vector<at::Tensor> FusionExecutor::allocGlobalVals(EvaluationContext& ec) {
         "Cannot allocate global buffers that are not tensors.");
     global_buffers.push_back(inferAndAlloc(
         alloc->buffer()->as<kir::TensorView>()->fuserTv(),
-        ec,
+        see,
         options_,
         false));
   }
@@ -293,20 +292,24 @@ std::vector<at::Tensor> FusionExecutor::allocGlobalVals(EvaluationContext& ec) {
         alloc->buffer()->getValType() == ValType::KirTensorView,
         "Cannot allocate global buffers that are not tensors.");
     global_buffers.push_back(inferAndAlloc(
-        alloc->buffer()->as<kir::TensorView>()->fuserTv(), ec, options_, true));
+        alloc->buffer()->as<kir::TensorView>()->fuserTv(),
+        see,
+        options_,
+        true));
   }
 
   return global_buffers;
 }
 
-std::vector<at::Tensor> FusionExecutor::allocOutputs(EvaluationContext& ec) {
+std::vector<at::Tensor> FusionExecutor::allocOutputs(
+    StatefulExpressionEvaluator& see) {
   std::vector<at::Tensor> outputs;
   for (auto output : fusion_.outputs()) {
     TORCH_INTERNAL_ASSERT(
         output->getValType() == ValType::TensorView,
         "Cannot allocate outputs that are not tensors.");
     outputs.push_back(
-        inferAndAlloc(output->as<TensorView>(), ec, options_, false));
+        inferAndAlloc(output->as<TensorView>(), see, options_, false));
   }
   return outputs;
 }
@@ -325,15 +328,15 @@ std::vector<at::Tensor> FusionExecutor::runFusion(
   c10::DeviceGuard dg(options_.device);
   auto stream = at::cuda::getCurrentCUDAStream();
 
-  EvaluationContext evaluation_context =
-      executor_utils::bindInputs(inputs, &fusion_, &lowered_);
+  StatefulExpressionEvaluator evaluator =
+      executor_utils::statefulBindInputs(inputs, &fusion_);
 
   LaunchParams launch_params =
-      computeLaunchParams(inputs, launch_constraints, evaluation_context);
+      computeLaunchParams(inputs, launch_constraints, evaluator);
 
   std::vector<at::Tensor> alloced_outputs = outputs;
   if (outputs.empty() || outputs.size() != fusion_.outputs().size()) {
-    alloced_outputs = allocOutputs(evaluation_context);
+    alloced_outputs = allocOutputs(evaluator);
   }
 
   executor_utils::validateKernelOutputs(
@@ -342,7 +345,7 @@ std::vector<at::Tensor> FusionExecutor::runFusion(
   KernelArgumentHolder kernel_arguments;
   kernel_arguments.push(inputs);
   kernel_arguments.push(alloced_outputs);
-  auto buffers = allocGlobalVals(evaluation_context);
+  auto buffers = allocGlobalVals(evaluator);
   kernel_arguments.push(buffers);
 
   if (has_random_) {

@@ -44,11 +44,9 @@ EvaluationContext bindInputs(
     const at::ArrayRef<IValue>& aten_inputs,
     Fusion* fusion);
 
-// Bind Inputs to Fusion and Kernel IR
-EvaluationContext bindInputs(
+StatefulExpressionEvaluator statefulBindInputs(
     const at::ArrayRef<IValue>& aten_inputs,
-    Fusion* fusion,
-    GpuLower* lowered);
+    Fusion* fusion);
 
 struct NvrtcFunction {
   CUmodule module = CUmodule();

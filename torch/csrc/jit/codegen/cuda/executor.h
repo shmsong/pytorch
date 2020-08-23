@@ -67,7 +67,7 @@ class TORCH_CUDA_API FusionExecutor : public NonCopyable {
   LaunchParams computeLaunchParams(
       const at::ArrayRef<IValue>& aten_inputs,
       const LaunchParams& launch_constraints,
-      EvaluationContext& ec);
+      StatefulExpressionEvaluator& see);
 
   uint64_t computeSharedMemory(
       EvaluationContext& ec,
@@ -75,9 +75,8 @@ class TORCH_CUDA_API FusionExecutor : public NonCopyable {
       bool align_padding = false,
       uint64_t total = 0);
 
-  std::vector<at::Tensor> allocGlobalVals(EvaluationContext& ec);
-
-  std::vector<at::Tensor> allocOutputs(EvaluationContext& ec);
+  std::vector<at::Tensor> allocGlobalVals(StatefulExpressionEvaluator& see);
+  std::vector<at::Tensor> allocOutputs(StatefulExpressionEvaluator& see);
 
  private:
   bool compiled_ = false;

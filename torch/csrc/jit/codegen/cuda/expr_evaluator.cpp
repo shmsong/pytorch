@@ -226,6 +226,181 @@ void ExpressionEvaluator::handle(kir::BinaryOp* bop) {
   }
 }
 
+void StatefulExpressionEvaluator::safeBind(
+    Val* value,
+    Int::ScalarType concrete_value) {
+  auto already_concrete_val = getValue(value);
+
+  if (already_concrete_val.has_value()) {
+    TORCH_INTERNAL_ASSERT(
+        concrete_value == already_concrete_val.value(),
+        "Tried to bind ",
+        value,
+        " to ",
+        " concrete value, but it's already set to ",
+        already_concrete_val.value());
+  } else {
+    TORCH_INTERNAL_ASSERT(
+        value->isAnInt(),
+        "Expressoin Evaluation does not support values other than integers at this time.");
+
+    if (value->isConstScalar()) {
+      auto const_value = value->as<Int>()->value().value();
+      TORCH_INTERNAL_ASSERT(
+          concrete_value == const_value,
+          "Tried to bind ",
+          concrete_value,
+          " to ",
+          value,
+          " however ",
+          value,
+          " is set to a constant ",
+          const_value);
+    }
+
+    TORCH_INTERNAL_ASSERT(
+        fusion_->origin(value) == nullptr,
+        "Tried to bind to a value that is computed in the fusion IR. ",
+        "Can only bind to symbolic values to the fusion that do not have an origin expr.");
+
+    bindings_[value] = concrete_value;
+  }
+}
+
+c10::optional<Int::ScalarType> StatefulExpressionEvaluator::inferValue(
+    Val* value) {
+  TORCH_INTERNAL_ASSERT(
+      value->isAnInt(),
+      "Expressoin Evaluation does not support values other than integers at this time.");
+
+  if (value->isConstScalar()) {
+    auto const_value = value->as<Int>()->value().value();
+    return c10::optional<Int::ScalarType>(const_value);
+  } else {
+    auto it = bindings_.find(value);
+    if (it == bindings_.end()) {
+      IterVisitor::traverseFrom(fusion(), {value});
+      it = bindings_.find(value);
+    }
+    return (it != bindings_.end()) ? c10::optional<Int::ScalarType>(it->second)
+                                   : c10::nullopt;
+  }
+}
+
+c10::optional<Int::ScalarType> StatefulExpressionEvaluator::getValue(
+    Val* value) {
+  if (value->isConstScalar()) {
+    auto const_value = value->as<Int>()->value().value();
+    return c10::optional<Int::ScalarType>(const_value);
+  } else {
+    auto it = bindings_.find(value);
+    return (it != bindings_.end()) ? c10::optional<Int::ScalarType>(it->second)
+                                   : c10::nullopt;
+  }
+}
+
+void StatefulExpressionEvaluator::handle(UnaryOp* uop) {
+  const auto in = getValue(uop->in());
+  if (in.has_value()) {
+    switch (uop->getUnaryOpType()) {
+      case UnaryOpType::Neg:
+        bindings_[uop->out()] = -*in;
+        break;
+      case UnaryOpType::Cast:
+        bindings_[uop->out()] = *in;
+        break;
+      default:
+        TORCH_CHECK(!"Unexpected operator type");
+    }
+  }
+}
+
+void StatefulExpressionEvaluator::handle(BinaryOp* bop) {
+  const auto lhs = getValue(bop->lhs());
+  const auto rhs = getValue(bop->rhs());
+  if (lhs.has_value() && rhs.has_value()) {
+    switch (bop->getBinaryOpType()) {
+      case BinaryOpType::Add:
+        bindings_[bop->out()] = *lhs + *rhs;
+        break;
+      case BinaryOpType::Sub:
+        bindings_[bop->out()] = *lhs - *rhs;
+        break;
+      case BinaryOpType::Mul:
+        bindings_[bop->out()] = *lhs * *rhs;
+        break;
+      case BinaryOpType::Div:
+        TORCH_CHECK(*rhs != 0);
+        bindings_[bop->out()] = *lhs / *rhs;
+        break;
+      case BinaryOpType::Mod:
+        TORCH_CHECK(*rhs != 0);
+        bindings_[bop->out()] = *lhs % *rhs;
+        break;
+      case BinaryOpType::CeilDiv:
+        TORCH_CHECK(*rhs != 0);
+        bindings_[bop->out()] = (*lhs + *rhs - 1) / *rhs;
+        break;
+      case BinaryOpType::And:
+        bindings_[bop->out()] = Int::ScalarType(*lhs && *rhs);
+        break;
+      default:
+        TORCH_CHECK(!"Unexpected operator type");
+    }
+  }
+}
+
+void StatefulExpressionEvaluator::handle(kir::UnaryOp* uop) {
+  const auto in = getValue(uop->in());
+  if (in.has_value()) {
+    switch (uop->getUnaryOpType()) {
+      case UnaryOpType::Neg:
+        bindings_[uop->out()] = -*in;
+        break;
+      case UnaryOpType::Cast:
+        bindings_[uop->out()] = *in;
+        break;
+      default:
+        TORCH_CHECK(!"Unexpected operator type");
+    }
+  }
+}
+
+void StatefulExpressionEvaluator::handle(kir::BinaryOp* bop) {
+  const auto lhs = getValue(bop->lhs());
+  const auto rhs = getValue(bop->rhs());
+  if (lhs.has_value() && rhs.has_value()) {
+    switch (bop->getBinaryOpType()) {
+      case BinaryOpType::Add:
+        bindings_[bop->out()] = *lhs + *rhs;
+        break;
+      case BinaryOpType::Sub:
+        bindings_[bop->out()] = *lhs - *rhs;
+        break;
+      case BinaryOpType::Mul:
+        bindings_[bop->out()] = *lhs * *rhs;
+        break;
+      case BinaryOpType::Div:
+        TORCH_CHECK(*rhs != 0);
+        bindings_[bop->out()] = *lhs / *rhs;
+        break;
+      case BinaryOpType::Mod:
+        TORCH_CHECK(*rhs != 0);
+        bindings_[bop->out()] = *lhs % *rhs;
+        break;
+      case BinaryOpType::CeilDiv:
+        TORCH_CHECK(*rhs != 0);
+        bindings_[bop->out()] = (*lhs + *rhs - 1) / *rhs;
+        break;
+      case BinaryOpType::And:
+        bindings_[bop->out()] = Int::ScalarType(*lhs && *rhs);
+        break;
+      default:
+        TORCH_CHECK(!"Unexpected operator type");
+    }
+  }
+}
+
 } // namespace fuser
 } // namespace jit
 } // namespace torch
