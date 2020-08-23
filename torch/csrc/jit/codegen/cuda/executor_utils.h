@@ -44,9 +44,8 @@ EvaluationContext bindInputs(
     const at::ArrayRef<IValue>& aten_inputs,
     Fusion* fusion);
 
-StatefulExpressionEvaluator statefulBindInputs(
-    const at::ArrayRef<IValue>& aten_inputs,
-    Fusion* fusion);
+TORCH_CUDA_API StatefulExpressionEvaluator
+statefulBindInputs(const at::ArrayRef<IValue>& aten_inputs, Fusion* fusion);
 
 struct NvrtcFunction {
   CUmodule module = CUmodule();
