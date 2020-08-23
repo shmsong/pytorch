@@ -43,7 +43,7 @@ class TORCH_CUDA_API EvaluationContext {
 // Evaluates expressions in a Fusion IR, using the passed in
 // context (EvaluationContext) to query for concrete_values. The
 // evaluation context may override concrete values in the IR as well.
-class TORCH_CUDA_API ExpressionEvaluator : private IterVisitor {
+class TORCH_CUDA_API ExpressionEvaluator : protected IterVisitor {
  public:
   // Returns the result of the specified expression, or nullopt if
   // the result cannot be evaluated
@@ -51,7 +51,7 @@ class TORCH_CUDA_API ExpressionEvaluator : private IterVisitor {
       Val* val,
       const EvaluationContext* context);
 
- private:
+ protected:
   explicit ExpressionEvaluator(const EvaluationContext* context)
       : context_(context) {}
 
@@ -60,6 +60,8 @@ class TORCH_CUDA_API ExpressionEvaluator : private IterVisitor {
   c10::optional<Int::ScalarType> value(const Statement* stmt) const;
 
   using IterVisitor::handle;
+  using IterVisitor::next;
+  using IterVisitor::traverseFrom;
 
   void handle(NamedScalar*) override;
   void handle(Int*) override;
@@ -72,9 +74,48 @@ class TORCH_CUDA_API ExpressionEvaluator : private IterVisitor {
   void handle(kir::UnaryOp*) override;
   void handle(kir::BinaryOp*) override;
 
- private:
+ protected:
   const EvaluationContext* context_ = nullptr;
   std::unordered_map<const Statement*, Int::ScalarType> values_;
+};
+
+class TORCH_CUDA_API StatefulExpressionEvaluator : private IterVisitor {
+ public:
+  explicit StatefulExpressionEvaluator(Fusion* fusion) : fusion_(fusion) {}
+
+  Fusion* fusion() const {
+    return fusion_;
+  }
+
+  void safeBind(Val* value, Int::ScalarType concrete_value);
+
+  // Returns value if found in mapping, otherwise returns c10::nullopt
+  c10::optional<Int::ScalarType> getValue(Val* value);
+
+  // Checks if value is already infered, returns infered value if so, otherwise
+  // runs traversal on value. Warning: should not be called in traversal.
+  c10::optional<Int::ScalarType> inferValue(Val* value);
+
+ private:
+  std::unordered_map<const Val*, Int::ScalarType> bindings_;
+  Fusion* fusion_ = nullptr;
+
+  using IterVisitor::handle;
+  using IterVisitor::next;
+
+  void handle(UnaryOp*) override;
+  void handle(BinaryOp*) override;
+
+  // TODO(kir): remove this
+  void handle(kir::UnaryOp*) override;
+  void handle(kir::BinaryOp*) override;
+
+  std::vector<Statement*> next(Val* val) override {
+    if (getValue(val).has_value()) {
+      return std::vector<Statement*>();
+    }
+    return IterVisitor::next(val);
+  }
 };
 
 } // namespace fuser

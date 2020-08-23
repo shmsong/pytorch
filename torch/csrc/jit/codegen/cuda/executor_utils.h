@@ -42,6 +42,10 @@ EvaluationContext bindInputs(
     const at::ArrayRef<IValue>& aten_inputs,
     Fusion* fusion);
 
+StatefulExpressionEvaluator statefulBindInputs(
+    const at::ArrayRef<IValue>& aten_inputs,
+    Fusion* fusion);
+
 struct NvrtcFunction {
   CUmodule module = CUmodule();
   CUfunction function = CUfunction();

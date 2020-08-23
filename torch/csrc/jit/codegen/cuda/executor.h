@@ -59,11 +59,11 @@ class TORCH_CUDA_API FusionExecutor : public NonCopyable {
   LaunchParams computeLaunchParams(
       const at::ArrayRef<IValue>& aten_inputs,
       const LaunchParams& launch_constraints,
-      EvaluationContext& ec);
+      StatefulExpressionEvaluator& see);
 
-  std::vector<at::Tensor> allocGlobalVals(EvaluationContext& ec);
+  std::vector<at::Tensor> allocGlobalVals(StatefulExpressionEvaluator& see);
 
-  std::vector<at::Tensor> allocOutputs(EvaluationContext& ec);
+  std::vector<at::Tensor> allocOutputs(StatefulExpressionEvaluator& see);
 
   void setUsedTVs();
 
