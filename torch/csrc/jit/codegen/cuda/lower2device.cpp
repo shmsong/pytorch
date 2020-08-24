@@ -2,6 +2,7 @@
 #include <torch/csrc/jit/codegen/cuda/lower2device.h>
 #include <torch/csrc/jit/codegen/cuda/dispatch.h>
 #include <torch/csrc/jit/codegen/cuda/fusion.h>
+#include <torch/csrc/jit/codegen/cuda/instrumentation.h>
 #include <torch/csrc/jit/codegen/cuda/ir_iostream.h>
 #include <torch/csrc/jit/codegen/cuda/lower_index.h>
 #include <torch/csrc/jit/codegen/cuda/lower_loops.h>
@@ -23,6 +24,7 @@ class GridReductionBuffers : OptOutDispatch {
  public:
   static std::vector<kir::Allocate*> getGlobalAllocs(
       const std::vector<Expr*>& exprs) {
+    FUSER_PERF_SCOPE("getGlobalAllocs");
     GridReductionBuffers fgr;
     for (auto expr : exprs) {
       fgr.handle(expr);
@@ -32,6 +34,7 @@ class GridReductionBuffers : OptOutDispatch {
 
   static std::vector<kir::Allocate*> getSyncAllocs(
       const std::vector<Expr*>& exprs) {
+    FUSER_PERF_SCOPE("getSyncAllocs");
     GridReductionBuffers fgr;
     for (auto expr : exprs) {
       fgr.handle(expr);
@@ -74,6 +77,8 @@ class GridReductionBuffers : OptOutDispatch {
 } // namespace
 
 void GpuLower::buildSizesMap() {
+  FUSER_PERF_SCOPE("buildSizesMap");
+
   // Grab inputs and outputs
   // TODO: Only run through inputs for the size map, outputs don't actually set
   // any sizes of the problem.
@@ -129,6 +134,8 @@ void GpuLower::buildSizesMap() {
 }
 
 void GpuLower::adjustMemoryTypes() {
+  FUSER_PERF_SCOPE("adjustMemoryTypes");
+
   for (auto val : fusion_->deterministic_vals()) {
     if (ir_utils::isTV(val)) {
       auto tv = val->as<TensorView>();
@@ -142,6 +149,8 @@ void GpuLower::adjustMemoryTypes() {
 }
 
 void GpuLower::lower() {
+  FUSER_PERF_SCOPE("Lower");
+
   TORCH_INTERNAL_ASSERT(fusion_ != nullptr);
   TORCH_INTERNAL_ASSERT(
       active_gpu_lower == nullptr, "Nested lowering passes are not supported");
@@ -189,6 +198,8 @@ void GpuLower::lower() {
 std::ostream& GpuLower::printKernel(
     std::ostream& os,
     const std::string& kernel_name) {
+  FUSER_PERF_SCOPE("printKernel");
+
   FusionGuard fg(fusion_);
 
   std::vector<kir::Allocate*> allocs;
@@ -333,6 +344,7 @@ class TORCH_CUDA_API GpuLower::KernelIrMapper : private OptInConstDispatch {
 };
 
 Val* GpuLower::lowerValue(const Val* val) {
+  FUSER_PERF_SCOPE("lowerValue");
   TORCH_INTERNAL_ASSERT(active_gpu_lower != nullptr);
   KernelIrMapper kir_mapper(active_gpu_lower);
   return kir_mapper.lower(val);

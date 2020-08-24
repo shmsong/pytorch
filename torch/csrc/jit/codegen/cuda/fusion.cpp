@@ -1,5 +1,6 @@
 
 #include <torch/csrc/jit/codegen/cuda/fusion.h>
+#include <torch/csrc/jit/codegen/cuda/instrumentation.h>
 #include <torch/csrc/jit/codegen/cuda/ir_all_nodes.h>
 #include <torch/csrc/jit/codegen/cuda/ir_cloner.h>
 #include <torch/csrc/jit/codegen/cuda/ir_printer.h>
@@ -554,6 +555,8 @@ bool Fusion::hasRNG() {
 
 // Indicate to kernel to set itself up to generate random numbers
 bool Fusion::hasReduction() {
+  FUSER_PERF_SCOPE("Fusion::hasReduction");
+
   for (auto expr : exprs(true))
     for (auto out : expr->outputs())
       if (out->getValType() == ValType::TensorView)
@@ -564,6 +567,8 @@ bool Fusion::hasReduction() {
 }
 
 bool Fusion::hasBlockReduction() {
+  FUSER_PERF_SCOPE("Fusion::hasBlockReduction");
+
   for (auto expr : exprs(true))
     for (auto out : expr->outputs())
       if (out->getValType() == ValType::TensorView)
@@ -574,6 +579,8 @@ bool Fusion::hasBlockReduction() {
 }
 
 bool Fusion::hasGridReduction() {
+  FUSER_PERF_SCOPE("Fusion::hasGridReduction");
+
   for (auto expr : exprs(true))
     for (auto out : expr->outputs())
       if (out->getValType() == ValType::TensorView)
@@ -584,6 +591,8 @@ bool Fusion::hasGridReduction() {
 }
 
 std::vector<Val*> Fusion::getTerminatingOutputs() {
+  FUSER_PERF_SCOPE("getTerminatingOutputs");
+
   FusionGuard fg(this);
 
   std::unordered_set<Val*> used_vals;
