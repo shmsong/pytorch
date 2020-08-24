@@ -115,11 +115,10 @@ uint64_t FusionExecutor::computeSharedMemory(
   for (auto smem_alloc : buffers) {
     auto inferred_size = ExpressionEvaluator::evaluate(smem_alloc->size(), &ec);
     if (inferred_size.has_value()) {
-      unsigned data_size = dataTypeSize(smem_alloc->buffer_type());
+      const uint64_t data_size = dataTypeSize(smem_alloc->buffer_type());
       // Add padding to align dynamic shared memory
-      if (align_padding && total > 0) {
-        auto aligned = std::ceil(total / data_size) * data_size;
-        total += (aligned - total);
+      if (align_padding) {
+        total = ceilDiv(total, data_size) * data_size;
       }
       total += inferred_size.value() * data_size;
     } else {
