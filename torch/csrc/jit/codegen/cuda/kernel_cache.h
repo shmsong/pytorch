@@ -8,11 +8,25 @@
 #include <torch/csrc/WindowsTorchApiMacro.h>
 
 #include <type_traits>
+#include <unordered_map>
 
 namespace torch {
 namespace jit {
 namespace fuser {
 namespace cuda {
+
+class InputsCodeLookup {
+ public:
+  // encode each unique input sets to an encoded id;
+  size_t getCode(const at::ArrayRef<IValue>& inputs);
+
+ protected:
+  size_t current_id_ = 1;
+
+  // TODO: change this to a trie for efficiency;
+  std::unordered_map<std::string, size_t> inputs_code_lookup_;
+};
+
 
 // [ Note -- 2 level cache implementation ]
 //
@@ -65,7 +79,8 @@ class FusionExecutorCache {
 
   // Execute fusion graph with given inputs, create `FusionExecutor` as needed;
   std::vector<at::Tensor> runFusionWithInputs(
-      const at::ArrayRef<IValue>& inputs);
+      const at::ArrayRef<IValue>& inputs,
+      const size_t code);
 
  private:
   // device_ where compiled binaries are loaded on & inputs are expected to
@@ -102,6 +117,9 @@ class FusionExecutorCache {
   std::unique_ptr<FusionExecutor> pw_fusion_executor_cache_;
   std::unordered_map<ReductionParams, FusionExecutor, ReductionParamsHash>
       red_fusion_executor_cache_;
+
+  // short cut for cache
+  std::unordered_map<size_t, FusionExecutor*> code_to_fe_lookup_;
 };
 
 class GraphCache {
@@ -157,7 +175,7 @@ class GraphCache {
   // construct FusionExecutorCache per InputsRequirement.
   // This function makes sure that we properly insert both `input_stacks_` and
   // `fe_cache_` at the same time.
-  FusionExecutorCache* createFusionExecutorCache(
+  FusionExecutorCache* appendFusionExecutorCache(
       const InputsRequirement& input_stack);
 
  private:
@@ -166,10 +184,16 @@ class GraphCache {
   // TODO: poor name, we should use `eliminated_axes_` instead;
   at::DimVector reduction_axes_;
 
+  // short cut for cache
+  std::unordered_map<size_t, size_t> code_to_index_lookup_;
+
   // TODO: we should really hash instead of iterative check. Optimize later...
   //       unordered_map<InputsRequirement, FusionExecutorCache>;
   std::vector<InputsRequirement> input_stacks_;
   std::vector<std::unique_ptr<FusionExecutorCache>> fe_cache_;
+
+  // inputs to code lookup table;
+  InputsCodeLookup input_code_lookup_;
 };
 
 } // namespace cuda
