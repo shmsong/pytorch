@@ -287,7 +287,7 @@ std::vector<at::Tensor> FusionExecutor::runFusion(
   TORCH_INTERNAL_ASSERT(
       fusion_id_ > 0, "Cannot run fusion, it was not compiled.");
   TORCH_INTERNAL_ASSERT(
-      !opt_code.has_value() || !outputs.empty(), "short cut input cache is not compatible with pre-allocated output");
+      !opt_code.has_value() || outputs.empty(), "short cut input cache is not compatible with pre-allocated output");
 
   ExecutorEntry* executor_entry = nullptr;
   if (opt_code.has_value()) {
@@ -364,6 +364,7 @@ std::vector<at::Tensor> FusionExecutor::runFusion(
         executor_entry->zero_buffer_types.push_back(buffer.scalar_type());
       }
       executor_entry->rand_offset = rand_offset;
+      executor_entry->init = true;
     }
   }
 

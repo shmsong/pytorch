@@ -272,7 +272,7 @@ std::vector<at::Tensor> FusionExecutorCache::runFusionWithInputs(
     }
   }
   // TODO: plumb code to FusionExecutor;
-  return code_to_fe_lookup_[code]->runFusion(inputs);
+  return code_to_fe_lookup_[code]->runFusion(inputs, LaunchParams(), code);
 }
 
 GraphCache::InputsRequirement::InputsRequirement(
