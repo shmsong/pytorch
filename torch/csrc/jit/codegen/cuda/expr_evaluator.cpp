@@ -241,25 +241,7 @@ void StatefulExpressionEvaluator::safeBind(
         already_concrete_val.value());
   } else {
     TORCH_INTERNAL_ASSERT(
-        value->isAnInt(),
-        "Expressoin Evaluation does not support values other than integers at this time.");
-
-    if (value->isConstScalar()) {
-      auto const_value = value->as<Int>()->value().value();
-      TORCH_INTERNAL_ASSERT(
-          concrete_value == const_value,
-          "Tried to bind ",
-          concrete_value,
-          " to ",
-          value,
-          " however ",
-          value,
-          " is set to a constant ",
-          const_value);
-    }
-
-    TORCH_INTERNAL_ASSERT(
-        fusion_->origin(value) == nullptr,
+        value->getOrigin() == nullptr,
         "Tried to bind to a value that is computed in the fusion IR. ",
         "Can only bind to symbolic values to the fusion that do not have an origin expr.");
 
@@ -288,6 +270,7 @@ inline c10::optional<Int::ScalarType> StatefulExpressionEvaluator::getValue(
   if (value->as<Int>()->value().has_value()) {
     return value->as<Int>()->value();
   }
+
   auto it = bindings_.find(value);
   if (it != bindings_.end()) {
     return c10::optional<Int::ScalarType>(it->second);
