@@ -1,7 +1,7 @@
 
 #include <torch/csrc/jit/codegen/cuda/instrumentation.h>
 
-#include <assert.h>
+#include <cassert>
 
 namespace torch {
 namespace jit {
