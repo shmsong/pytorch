@@ -663,7 +663,7 @@ bool isNodeParsible(const Node* node) {
 
 std::unique_ptr<Fusion> parseJitIR(std::shared_ptr<Graph>& graph) {
   FUSER_PERF_SCOPE("parseJitIR");
-  
+
   IrParser parser(graph);
   return parser.parse();
 }

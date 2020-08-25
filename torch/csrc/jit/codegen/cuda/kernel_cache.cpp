@@ -72,7 +72,7 @@ void debugPrint(const TensorTypePtr& type) {
 
 at::DimVector graphReductionAxes(const std::shared_ptr<Graph>& graph) {
   FUSER_PERF_SCOPE("graphReductionAxes");
-  
+
   at::DimVector reduction_axes;
   for (const auto& n : graph->nodes()) {
     if (isReductionNode(n)) {

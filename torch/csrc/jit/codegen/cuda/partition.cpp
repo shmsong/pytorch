@@ -1,6 +1,6 @@
 #include <torch/csrc/jit/codegen/cuda/partition.h>
-#include <torch/csrc/jit/codegen/cuda/instrumentation.h>
 #include <ATen/core/jit_type.h>
+#include <torch/csrc/jit/codegen/cuda/instrumentation.h>
 #include <torch/csrc/jit/codegen/cuda/parser.h>
 
 namespace torch {

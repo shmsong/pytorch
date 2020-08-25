@@ -5,9 +5,6 @@
 
 namespace torch {
 namespace jit {
-namespace fuser {
-
-
-} // namespace fuser
+namespace fuser {} // namespace fuser
 } // namespace jit
 } // namespace torch

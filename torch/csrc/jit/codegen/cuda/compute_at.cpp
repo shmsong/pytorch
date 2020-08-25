@@ -356,7 +356,7 @@ void ComputeAt::traverseForward() {
 
 void ComputeAt::runPass() {
   FUSER_PERF_SCOPE("ComputeAt::runPass");
-  
+
   // Initialize tv_data for all TensorViews we may modify
   auto chains = producer_use_chains_;
   if (common_consumer_ != nullptr) {
@@ -402,7 +402,7 @@ void ComputeAt::runPass() {
 
 void ComputeAt::setupOutputs() {
   FUSER_PERF_SCOPE("ComputeAt::setupOutputs");
-  
+
   if (common_consumer_ != nullptr)
     return;
 

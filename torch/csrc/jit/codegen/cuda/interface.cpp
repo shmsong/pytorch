@@ -1,7 +1,7 @@
 
 #include <torch/csrc/jit/codegen/cuda/interface.h>
-#include <torch/csrc/jit/codegen/cuda/instrumentation.h>
 #include <ATen/core/dispatch/OperatorOptions.h>
+#include <torch/csrc/jit/codegen/cuda/instrumentation.h>
 #include <torch/csrc/jit/runtime/custom_operator.h>
 
 namespace torch {

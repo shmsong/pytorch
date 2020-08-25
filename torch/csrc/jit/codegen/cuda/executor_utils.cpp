@@ -309,7 +309,7 @@ NvrtcFunction nvrtcCompile(
   const int major = prop->major;
   const int minor = prop->minor;
   nvrtcProgram program;
-  
+
   {
     FUSER_PERF_SCOPE("nvrtcCreateProgram");
     AT_CUDA_NVRTC_CHECK(at::globalContext().getNVRTC().nvrtcCreateProgram(
