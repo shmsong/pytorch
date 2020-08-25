@@ -72,6 +72,8 @@ at::Tensor inferAndAlloc(
     EvaluationContext& ec,
     const CompileOptions& options,
     bool zero_init = false) {
+  FUSER_PERF_SCOPE("inferAndAlloc");
+
   std::vector<int64_t> sizes;
   for (auto id : TensorDomain::noReductions(tv->getRootDomain())) {
     auto infered_val = ExpressionEvaluator::evaluate(id->rawExtent(), &ec);
