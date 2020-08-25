@@ -117,6 +117,7 @@ uint64_t FusionExecutor::computeSharedMemory(
     const std::vector<kir::Allocate*>& buffers,
     bool align_padding,
     uint64_t total) {
+  FUSER_PERF_SCOPE("computeSharedMemory");
   for (auto smem_alloc : buffers) {
     auto inferred_size = ExpressionEvaluator::evaluate(smem_alloc->size(), &ec);
     if (inferred_size.has_value()) {
