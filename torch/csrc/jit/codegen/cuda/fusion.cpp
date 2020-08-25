@@ -56,6 +56,8 @@ std::unordered_set<Val*> InputsOf::output(Fusion* fusion, Val* output_) {
 }
 
 void swap(Fusion& a, Fusion& b) noexcept {
+  FUSER_PERF_SCOPE("Fusion swap");
+
   using std::swap;
 
   // Swap the content
@@ -108,6 +110,8 @@ void swap(Fusion& a, Fusion& b) noexcept {
 }
 
 Fusion::Fusion(const Fusion& other) {
+  FUSER_PERF_SCOPE("Fusion copy");
+
   IrCloner ir_cloner(this);
 
   for (auto val : other.val_set_) {
@@ -145,10 +149,12 @@ Fusion::Fusion(const Fusion& other) {
 }
 
 Fusion::Fusion(Fusion&& other) noexcept {
+  FUSER_PERF_SCOPE("Fusion move");
   swap(*this, other);
 }
 
 Fusion& Fusion::operator=(const Fusion& other) {
+  FUSER_PERF_SCOPE("Fusion copy assign");
   Fusion copy(other);
   clear();
   swap(*this, copy);
@@ -156,6 +162,7 @@ Fusion& Fusion::operator=(const Fusion& other) {
 }
 
 Fusion& Fusion::operator=(Fusion&& other) noexcept {
+  FUSER_PERF_SCOPE("Fusion move assign");
   clear();
   swap(*this, other);
   return *this;
@@ -166,6 +173,8 @@ Fusion::~Fusion() {
 }
 
 void Fusion::clear() noexcept {
+  FUSER_PERF_SCOPE("Fusion clear");
+
   // Free the owned values
   for (auto ptr : val_set_) {
     delete ptr;
@@ -358,6 +367,8 @@ void Fusion::validateInputs() {
 }
 
 void Fusion::print() {
+  FUSER_PERF_SCOPE("Fusion::print");
+
   FusionGuard fg(this);
   std::cout << "%kernel {\n";
   IRMathPrinter op_exprs(std::cout);
@@ -368,17 +379,23 @@ void Fusion::print() {
 }
 
 void Fusion::printKernel() {
+  FUSER_PERF_SCOPE("Fusion::printKernel");
+
   GpuLower lower(this);
   lower.printKernel(std::cout);
 }
 
 void Fusion::printMath() {
+  FUSER_PERF_SCOPE("Fusion::printMath");
+
   FusionGuard fg(this);
   for (auto expr : exprs(true))
     std::cout << expr;
 }
 
 void Fusion::printTransforms() {
+  FUSER_PERF_SCOPE("Fusion::printTransforms");
+
   FusionGuard fg(this);
   IRTransformPrinter t_exprs(std::cout);
   t_exprs.handle(this);

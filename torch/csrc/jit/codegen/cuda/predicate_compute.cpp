@@ -2,6 +2,7 @@
 
 #include <torch/csrc/jit/codegen/cuda/arith.h>
 #include <torch/csrc/jit/codegen/cuda/fusion.h>
+#include <torch/csrc/jit/codegen/cuda/instrumentation.h>
 #include <torch/csrc/jit/codegen/cuda/index_compute.h>
 #include <torch/csrc/jit/codegen/cuda/ir_utils.h>
 #include <torch/csrc/jit/codegen/cuda/lower_utils.h>
@@ -15,6 +16,8 @@ std::vector<kir::Bool*> PredicateCompute::computePredicates(
     const TensorView* tv,
     const std::vector<Val*>& indices,
     bool use_rfactor) {
+  FUSER_PERF_SCOPE("computePredicates");
+
   const std::vector<IterDomain*>& root =
       use_rfactor ? tv->getMaybeRFactorDomain() : tv->getRootDomain();
 
@@ -72,6 +75,8 @@ kir::Bool* PredicateCompute::getInlinePredicate(
     Expr* expr,
     const std::vector<kir::ForLoop*>& loops,
     kir::Bool* thread_pred) {
+  FUSER_PERF_SCOPE("getInlinePredicate");
+
   if (loops.empty()) {
     return new kir::Bool(true);
   }
@@ -158,6 +163,8 @@ kir::Bool* UnrollPredicate::get(
     const std::vector<kir::ForLoop*>& outer_loops,
     kir::ForLoop* unrolled_loop,
     const std::unordered_map<IterDomain*, IterDomain*>& p2c_root_map) {
+  FUSER_PERF_SCOPE("UnrollPredicate::get");
+
   UnrollPredicate up(outer_loops, unrolled_loop, p2c_root_map);
 
   std::unordered_set<kir::Bool*> pred_set;
@@ -184,6 +191,8 @@ kir::Bool* UnrollPredicate::get(
 }
 
 void UnrollPredicate::predicateOn(Expr* tv_expr) {
+  FUSER_PERF_SCOPE("UnrollPredicate::predicateOn");
+
   if (for_loops.empty())
     return;
 
@@ -234,6 +243,8 @@ void UnrollPredicate::predicateOn(Expr* tv_expr) {
 }
 
 void UnrollPredicate::openLoop(kir::ForLoop* fl) {
+  FUSER_PERF_SCOPE("UnrollPredicate::openLoop");
+
   for_loops.push_back(fl);
 
   for (auto expr : fl->body().exprs()) {

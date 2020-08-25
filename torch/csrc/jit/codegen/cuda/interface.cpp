@@ -1,4 +1,6 @@
+
 #include <torch/csrc/jit/codegen/cuda/interface.h>
+#include <torch/csrc/jit/codegen/cuda/instrumentation.h>
 #include <ATen/core/dispatch/OperatorOptions.h>
 #include <torch/csrc/jit/runtime/custom_operator.h>
 
@@ -13,6 +15,7 @@ CudaFuserInterface* getFuserInterface() {
 }
 
 void compileFusionGroup(Node* fusion_node) {
+  FUSER_PERF_SCOPE("compileFusionGroup");
   TORCH_CHECK(
       getFuserInterface()->fn_compile_n_ != nullptr,
       "Running the CUDA fuser requires a CUDA build.");
@@ -20,6 +23,7 @@ void compileFusionGroup(Node* fusion_node) {
 }
 
 void runFusionGroup(const Node* fusion_node, Stack& stack) {
+  FUSER_PERF_SCOPE("runFusionGroup");
   TORCH_CHECK(
       getFuserInterface()->fn_run_n_s_ != nullptr,
       "Running the CUDA fuser requires a CUDA build.");
@@ -27,6 +31,7 @@ void runFusionGroup(const Node* fusion_node, Stack& stack) {
 }
 
 void fuseGraph(std::shared_ptr<Graph>& graph) {
+  FUSER_PERF_SCOPE("fuseGraph");
   TORCH_CHECK(
       getFuserInterface()->fn_fuse_graph != nullptr,
       "Running the CUDA fuser requires a CUDA build.");

@@ -1,4 +1,6 @@
+
 #include <torch/csrc/jit/codegen/cuda/ir_iostream.h>
+#include <torch/csrc/jit/codegen/cuda/instrumentation.h>
 #include <torch/csrc/jit/codegen/cuda/fusion.h>
 #include <torch/csrc/jit/codegen/cuda/ir_all_nodes.h>
 #include <torch/csrc/jit/codegen/cuda/lower_thread_predicate.h>
@@ -104,6 +106,8 @@ void IRPrinter::printHeader(
 }
 
 void IRPrinter::handle(Fusion* fusion) {
+  FUSER_PERF_SCOPE("IRPrinter");
+  
   resetIndent();
   for (const Expr* expr : fusion->exprs()) {
     handle(expr);
