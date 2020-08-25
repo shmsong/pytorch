@@ -70,7 +70,6 @@ void FusionExecutor::compileFusion(Fusion* fusion, CompileOptions options) {
       structured_code,
       (kernelNamespace() + "::" + kernelName()).c_str(),
       fusion_id_);
-  compiled_ = true;
 }
 
 namespace {
@@ -244,13 +243,13 @@ LaunchParams FusionExecutor::computeLaunchParams(
   return launch_params;
 }
 
-std::vector<at::Tensor> FusionExecutor::allocGlobalVals(EvaluationContext& ec) {
-  std::vector<at::Tensor> global_buffers;
+std::pair<std::vector<at::Tensor>, std::vector<at::Tensor>> FusionExecutor::allocGlobalVals(EvaluationContext& ec) {
+  std::pair<std::vector<at::Tensor>, std::vector<at::Tensor>> global_buffers;
   for (auto alloc : lowered_.global_allocations()) {
     TORCH_INTERNAL_ASSERT(
         alloc->buffer()->getValType() == ValType::KirTensorView,
         "Cannot allocate global buffers that are not tensors.");
-    global_buffers.push_back(inferAndAlloc(
+    global_buffers.first.push_back(inferAndAlloc(
         alloc->buffer()->as<kir::TensorView>()->fuserTv(),
         ec,
         options_,
@@ -261,7 +260,7 @@ std::vector<at::Tensor> FusionExecutor::allocGlobalVals(EvaluationContext& ec) {
     TORCH_INTERNAL_ASSERT(
         alloc->buffer()->getValType() == ValType::KirTensorView,
         "Cannot allocate global buffers that are not tensors.");
-    global_buffers.push_back(inferAndAlloc(
+    global_buffers.second.push_back(inferAndAlloc(
         alloc->buffer()->as<kir::TensorView>()->fuserTv(), ec, options_, true));
   }
 
@@ -283,42 +282,97 @@ std::vector<at::Tensor> FusionExecutor::allocOutputs(EvaluationContext& ec) {
 std::vector<at::Tensor> FusionExecutor::runFusion(
     const at::ArrayRef<IValue>& inputs,
     const std::vector<at::Tensor>& outputs,
-    const LaunchParams& launch_constraints) {
+    const LaunchParams& launch_constraints,
+    const c10::optional<size_t> opt_code) {
   TORCH_INTERNAL_ASSERT(
       fusion_id_ > 0, "Cannot run fusion, it was not compiled.");
+  TORCH_INTERNAL_ASSERT(
+      !opt_code.has_value() || !outputs.empty(), "short cut input cache is not compatible with pre-allocated output");
+
+  ExecutorEntry* executor_entry = nullptr;
+  if (opt_code.has_value()) {
+    executor_entry = &executor_entry_lookup_[*opt_code];
+  }
 
   FusionGuard fg(&fusion_);
-
-  executor_utils::validateKernelInputs(&fusion_, inputs, options_.device);
-
   c10::DeviceGuard dg(options_.device);
   auto stream = at::cuda::getCurrentCUDAStream();
 
-  EvaluationContext evaluation_context =
-      executor_utils::bindInputs(inputs, &fusion_, &lowered_);
-
-  LaunchParams launch_params =
-      computeLaunchParams(inputs, launch_constraints, evaluation_context);
-
+  LaunchParams launch_params;
   std::vector<at::Tensor> alloced_outputs = outputs;
-  if (outputs.empty() || outputs.size() != fusion_.outputs().size()) {
-    alloced_outputs = allocOutputs(evaluation_context);
-  }
+  std::vector<at::Tensor> empty_buffers;
+  std::vector<at::Tensor> zero_buffers;
+  uint64_t rand_offset = 0;
 
-  executor_utils::validateKernelOutputs(
-      &fusion_, alloced_outputs, options_.device);
+  // only validate inputs if we haven't seen/record the input set;
+  if (executor_entry && executor_entry->init) {
+    launch_params = executor_entry->launch_params;
+    for (int i = 0; i < executor_entry->output_sizes.size(); i++) {
+      auto tensor_options =
+          at::TensorOptions().dtype(executor_entry->output_types[i]).device(options_.device);
+      alloced_outputs.push_back(at::empty(executor_entry->output_sizes[i], tensor_options));
+    }
+    for (int i = 0; i < executor_entry->empty_buffer_sizes.size(); i++) {
+      auto tensor_options =
+          at::TensorOptions().dtype(executor_entry->empty_buffer_types[i]).device(options_.device);
+      empty_buffers.push_back(at::empty(executor_entry->empty_buffer_sizes[i], tensor_options));
+    }
+    for (int i = 0; i < executor_entry->zero_buffer_sizes.size(); i++) {
+      auto tensor_options =
+          at::TensorOptions().dtype(executor_entry->zero_buffer_types[i]).device(options_.device);
+      zero_buffers.push_back(at::empty(executor_entry->zero_buffer_sizes[i], tensor_options));
+    }
+    rand_offset = executor_entry->rand_offset;
+  } else {
+    executor_utils::validateKernelInputs(&fusion_, inputs, options_.device);
+
+    EvaluationContext evaluation_context =
+        executor_utils::bindInputs(inputs, &fusion_, &lowered_);
+
+    launch_params = 
+          computeLaunchParams(inputs, launch_constraints, evaluation_context);
+
+    if (outputs.empty() || outputs.size() != fusion_.outputs().size()) {
+      alloced_outputs = allocOutputs(evaluation_context);
+    }
+
+
+    executor_utils::validateKernelOutputs(
+        &fusion_, alloced_outputs, options_.device);
+
+    std::tie(empty_buffers, zero_buffers) = allocGlobalVals(evaluation_context);
+
+    if (has_random_) {
+      rand_offset = 4 *
+          (std::ceil(
+               alloced_outputs[0].numel() / (4.0 * 128 * launch_params.gdimx())) +
+           1);
+    }
+
+    if (executor_entry) {
+      executor_entry->launch_params = launch_params;
+      for (const auto& output : alloced_outputs) {
+        executor_entry->output_sizes.push_back(output.sizes().vec());
+        executor_entry->output_types.push_back(output.scalar_type());
+      }
+      for (const auto& buffer : empty_buffers) {
+        executor_entry->empty_buffer_sizes.push_back(buffer.sizes().vec());
+        executor_entry->empty_buffer_types.push_back(buffer.scalar_type());
+      }
+      for (const auto& buffer : zero_buffers) {
+        executor_entry->zero_buffer_sizes.push_back(buffer.sizes().vec());
+        executor_entry->zero_buffer_types.push_back(buffer.scalar_type());
+      }
+      executor_entry->rand_offset = rand_offset;
+    }
+  }
 
   KernelArgumentHolder kernel_arguments;
   kernel_arguments.push(inputs);
   kernel_arguments.push(alloced_outputs);
-  auto buffers = allocGlobalVals(evaluation_context);
-  kernel_arguments.push(buffers);
-
+  kernel_arguments.push(empty_buffers);
+  kernel_arguments.push(zero_buffers);
   if (has_random_) {
-    const auto rand_offset = 4 *
-        (std::ceil(
-             alloced_outputs[0].numel() / (4.0 * 128 * launch_params.gdimx())) +
-         1);
     kernel_arguments.appendPhiloxRNGSeed(rand_offset);
   }
 
