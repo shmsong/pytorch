@@ -224,11 +224,13 @@ FusionExecutorCache::FusionExecutorCache(
   has_reduction_ = fusion_->hasReduction();
 }
 
-// TODO: dummy cache
 std::vector<at::Tensor> FusionExecutorCache::runFusionWithInputs(
     const at::ArrayRef<IValue>& inputs,
     const size_t code) {
   if (code_to_fe_lookup_.count(code) == 0) {
+    // enter when we get a new input set. We need to search for compatible
+    // entries in cached `FusionExecutor` or compile new one as needed.
+
     // caching strategy is different for pw-fusion and reduction-fusion.
     if (has_reduction_) {
       // copy the fusion, since each FusionExecutor needs to manipulate the
@@ -256,6 +258,7 @@ std::vector<at::Tensor> FusionExecutorCache::runFusionWithInputs(
         options.device = device_;
         fusion_executor->compileFusion(&fusion, options);
       }
+      // record new short cut to `FusionExecutor`
       code_to_fe_lookup_[code] = fusion_executor;
     } else {
       if (!pw_fusion_executor_cache_) {
@@ -267,10 +270,10 @@ std::vector<at::Tensor> FusionExecutorCache::runFusionWithInputs(
         scheduleFusion(fusion_.get(), inputs);
         pw_fusion_executor_cache_->compileFusion(fusion_.get(), options);
       }
+      // record new short cut to `FusionExecutor`
       code_to_fe_lookup_[code] = pw_fusion_executor_cache_.get();
     }
   }
-  // TODO: plumb code to FusionExecutor;
   return code_to_fe_lookup_[code]->runFusion(inputs, LaunchParams(), code);
 }
 
@@ -557,29 +560,29 @@ GraphCache::GraphCache(std::shared_ptr<Graph> graph)
 
 std::vector<at::Tensor> GraphCache::runGraphWithInputs(
     const at::ArrayRef<IValue>& inputs) {
+  // get unique id `code` for given input set `inputs`;
   size_t code = input_code_lookup_.getCode(inputs);
 
   FusionExecutorCache* fusion_executor_cache = nullptr;
 
   if (code_to_index_lookup_.count(code) == 0) {
-    nvtxRangePush("input_stack");
     InputsRequirement input_stack(inputs, toVector(reduction_axes_));
-    nvtxRangePop();
-
-    // TODO: hash indexing;
     for (size_t i = 0; i < fe_cache_.size(); i++) {
       if (input_stack.complyWith(input_stacks_[i])) {
         // found compliable fe_cache_ entry
         fusion_executor_cache = fe_cache_[i].get();
+        // record short cut to designated fusion executor
         code_to_index_lookup_[code] = i;
         break;
       }
     }
     if (!fusion_executor_cache) {
       fusion_executor_cache = appendFusionExecutorCache(input_stack);
+      // record short cut to designated fusion executor
       code_to_index_lookup_[code] = fe_cache_.size() - 1;
     }
   } else {
+    // take short cut to designated fusion executor
     fusion_executor_cache = fe_cache_[code_to_index_lookup_[code]].get();
   }
   InputsRequirement* input_requirement =

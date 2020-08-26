@@ -306,8 +306,8 @@ std::vector<at::Tensor> FusionExecutor::runFusion(
   std::vector<at::Tensor> zero_buffers;
   uint64_t rand_offset = 0;
 
-  // only validate inputs if we haven't seen/record the input set;
   if (executor_entry && executor_entry->init) {
+    // take the short-cut for launch if we see a recorded input set again;
     launch_params = executor_entry->launch_params;
     for (size_t i = 0; i < executor_entry->output_sizes.size(); i++) {
       auto tensor_options = at::TensorOptions()
@@ -357,6 +357,7 @@ std::vector<at::Tensor> FusionExecutor::runFusion(
            1);
     }
 
+    // record the the short-cut executor entry for the given input set;
     if (executor_entry) {
       executor_entry->launch_params = launch_params;
       for (const auto& output : alloced_outputs) {

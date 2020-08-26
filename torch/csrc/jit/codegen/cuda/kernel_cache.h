@@ -15,9 +15,11 @@ namespace jit {
 namespace fuser {
 namespace cuda {
 
+// Note, the uniqueness of the ide generated for a given input set is only local
+// to the instance of `InputsCodeLookup`.
 class InputsCodeLookup {
  public:
-  // encode each unique input sets to an encoded id;
+  // encode each unique input sets to an unique id;
   size_t getCode(const at::ArrayRef<IValue>& inputs);
 
  protected:
@@ -117,7 +119,7 @@ class FusionExecutorCache {
   std::unordered_map<ReductionParams, FusionExecutor, ReductionParamsHash>
       red_fusion_executor_cache_;
 
-  // short cut for cache
+  // short cut to FusionExecutor for input set encoded with id;
   std::unordered_map<size_t, FusionExecutor*> code_to_fe_lookup_;
 };
 
@@ -183,7 +185,7 @@ class GraphCache {
   // TODO: poor name, we should use `eliminated_axes_` instead;
   at::DimVector reduction_axes_;
 
-  // short cut for cache
+  // short cut to index of stack for input set encoded with id;
   std::unordered_map<size_t, size_t> code_to_index_lookup_;
 
   // TODO: we should really hash instead of iterative check. Optimize later...

@@ -46,7 +46,8 @@ class TORCH_CUDA_API FusionExecutor : public NonCopyable {
 
   // TODO: strides would also be important when we handle permutations in
   //       codegen.
-  // struct used to hold launch configurations;
+  // struct used to hold necessary information to launch compiled kernel on a
+  // given input set;
   struct ExecutorEntry {
     bool init = false;
     LaunchParams launch_params;
@@ -84,6 +85,8 @@ class TORCH_CUDA_API FusionExecutor : public NonCopyable {
       bool align_padding = false,
       uint64_t total = 0);
 
+  // return a pair of vector of tensors, where tensors in the first vector are
+  // not initialized, while the second vector contains zero-initiliazed tensors
   std::pair<std::vector<at::Tensor>, std::vector<at::Tensor>> allocGlobalVals(
       EvaluationContext& ec);
 
@@ -105,6 +108,8 @@ class TORCH_CUDA_API FusionExecutor : public NonCopyable {
 
   GpuLower lowered_;
 
+  // lookup table to take short cut to retrieve recorded information in order to
+  // launch kernels without re-inference parameters.
   std::unordered_map<size_t, ExecutorEntry> executor_entry_lookup_;
 };
 
