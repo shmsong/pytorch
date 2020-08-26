@@ -94,12 +94,19 @@ class BuffersExtractor : OptOutDispatch {
   }
 
   void handle(kir::Allocate* a) final {
-    if (a->getMemoryType() == MemoryType::Shared) {
-      if (a->size()->isConstScalar()) {
-        static_allocations_.push_back(a);
-      } else {
-        dynamic_allocations_.push_back(a);
-      }
+    switch (a->getMemoryType()) {
+      case MemoryType::Global:
+        global_allocations_.push_back(a);
+        break;
+      case MemoryType::Shared:
+        if (a->size()->isConstScalar()) {
+          static_allocations_.push_back(a);
+        } else {
+          dynamic_allocations_.push_back(a);
+        }
+        break;
+      case MemoryType::Local:
+        break;
     }
   }
 };
@@ -167,8 +174,6 @@ void GpuLower::adjustMemoryTypes() {
       auto tv = val->as<TensorView>();
       if (fusion_->hasInput(tv) || fusion_->hasOutput(tv)) {
         tv->setMemoryType(MemoryType::Global);
-      } else if (tv->getMemoryType() == MemoryType::Global) {
-        tv->setMemoryType(MemoryType::Local);
       }
     }
   }

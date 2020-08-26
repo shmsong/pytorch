@@ -116,7 +116,7 @@ at::Tensor inferAndAlloc(
     const CompileOptions& options,
     bool zero_init = false) {
   std::vector<int64_t> sizes;
-  for (auto id : TensorDomain::noReductions(tv->getRootDomain())) {
+  for (auto id : TensorDomain::noReductions(tv->getMaybeRFactorDomain())) {
     auto inferred_val = ExpressionEvaluator::evaluate(id->rawExtent(), &ec);
     TORCH_INTERNAL_ASSERT(
         inferred_val.has_value(),
