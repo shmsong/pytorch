@@ -196,13 +196,13 @@ size_t InputsCodeLookup::getCode(const at::ArrayRef<IValue>& inputs) {
       auto sep = "";
       for (auto size : input_tensor.sizes()) {
         encoded_inputs << sep << size;
-				sep = ",";
+        sep = ",";
       }
       encoded_inputs << "@";
       sep = "";
       for (auto stride : input_tensor.strides()) {
         encoded_inputs << sep << stride;
-				sep = ",";
+        sep = ",";
       }
     } else {
       // encode s for scalar;
@@ -228,12 +228,11 @@ FusionExecutorCache::FusionExecutorCache(
 std::vector<at::Tensor> FusionExecutorCache::runFusionWithInputs(
     const at::ArrayRef<IValue>& inputs,
     const size_t code) {
-
   if (code_to_fe_lookup_.count(code) == 0) {
     // caching strategy is different for pw-fusion and reduction-fusion.
     if (has_reduction_) {
-      // copy the fusion, since each FusionExecutor needs to manipulate the fusion
-      // in order to generate kernel.
+      // copy the fusion, since each FusionExecutor needs to manipulate the
+      // fusion in order to generate kernel.
       Fusion fusion = *fusion_;
       FusionGuard fg(&fusion);
       TensorView* red_tv = nullptr;
@@ -558,7 +557,6 @@ GraphCache::GraphCache(std::shared_ptr<Graph> graph)
 
 std::vector<at::Tensor> GraphCache::runGraphWithInputs(
     const at::ArrayRef<IValue>& inputs) {
-
   size_t code = input_code_lookup_.getCode(inputs);
 
   FusionExecutorCache* fusion_executor_cache = nullptr;
@@ -584,7 +582,8 @@ std::vector<at::Tensor> GraphCache::runGraphWithInputs(
   } else {
     fusion_executor_cache = fe_cache_[code_to_index_lookup_[code]].get();
   }
-  InputsRequirement* input_requirement = &input_stacks_[code_to_index_lookup_[code]];
+  InputsRequirement* input_requirement =
+      &input_stacks_[code_to_index_lookup_[code]];
 
   // GraphCache need to permute inputs/outputs to accommodate dimension
   // coalescing
@@ -599,7 +598,8 @@ std::vector<at::Tensor> GraphCache::runGraphWithInputs(
         permuted_inputs.emplace_back(input);
       }
     }
-    auto outputs = fusion_executor_cache->runFusionWithInputs(permuted_inputs, code);
+    auto outputs =
+        fusion_executor_cache->runFusionWithInputs(permuted_inputs, code);
     std::vector<at::Tensor> permuted_outputs;
     permuted_outputs.reserve(outputs.size());
     for (const auto& output : outputs) {

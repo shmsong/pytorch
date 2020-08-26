@@ -243,7 +243,8 @@ LaunchParams FusionExecutor::computeLaunchParams(
   return launch_params;
 }
 
-std::pair<std::vector<at::Tensor>, std::vector<at::Tensor>> FusionExecutor::allocGlobalVals(EvaluationContext& ec) {
+std::pair<std::vector<at::Tensor>, std::vector<at::Tensor>> FusionExecutor::
+    allocGlobalVals(EvaluationContext& ec) {
   std::pair<std::vector<at::Tensor>, std::vector<at::Tensor>> global_buffers;
   for (auto alloc : lowered_.global_allocations()) {
     TORCH_INTERNAL_ASSERT(
@@ -287,7 +288,8 @@ std::vector<at::Tensor> FusionExecutor::runFusion(
   TORCH_INTERNAL_ASSERT(
       fusion_id_ > 0, "Cannot run fusion, it was not compiled.");
   TORCH_INTERNAL_ASSERT(
-      !opt_code.has_value() || outputs.empty(), "short cut input cache is not compatible with pre-allocated output");
+      !opt_code.has_value() || outputs.empty(),
+      "short cut input cache is not compatible with pre-allocated output");
 
   ExecutorEntry* executor_entry = nullptr;
   if (opt_code.has_value()) {
@@ -308,19 +310,25 @@ std::vector<at::Tensor> FusionExecutor::runFusion(
   if (executor_entry && executor_entry->init) {
     launch_params = executor_entry->launch_params;
     for (int i = 0; i < executor_entry->output_sizes.size(); i++) {
-      auto tensor_options =
-          at::TensorOptions().dtype(executor_entry->output_types[i]).device(options_.device);
-      alloced_outputs.push_back(at::empty(executor_entry->output_sizes[i], tensor_options));
+      auto tensor_options = at::TensorOptions()
+                                .dtype(executor_entry->output_types[i])
+                                .device(options_.device);
+      alloced_outputs.push_back(
+          at::empty(executor_entry->output_sizes[i], tensor_options));
     }
     for (int i = 0; i < executor_entry->empty_buffer_sizes.size(); i++) {
-      auto tensor_options =
-          at::TensorOptions().dtype(executor_entry->empty_buffer_types[i]).device(options_.device);
-      empty_buffers.push_back(at::empty(executor_entry->empty_buffer_sizes[i], tensor_options));
+      auto tensor_options = at::TensorOptions()
+                                .dtype(executor_entry->empty_buffer_types[i])
+                                .device(options_.device);
+      empty_buffers.push_back(
+          at::empty(executor_entry->empty_buffer_sizes[i], tensor_options));
     }
     for (int i = 0; i < executor_entry->zero_buffer_sizes.size(); i++) {
-      auto tensor_options =
-          at::TensorOptions().dtype(executor_entry->zero_buffer_types[i]).device(options_.device);
-      zero_buffers.push_back(at::zeros(executor_entry->zero_buffer_sizes[i], tensor_options));
+      auto tensor_options = at::TensorOptions()
+                                .dtype(executor_entry->zero_buffer_types[i])
+                                .device(options_.device);
+      zero_buffers.push_back(
+          at::zeros(executor_entry->zero_buffer_sizes[i], tensor_options));
     }
     rand_offset = executor_entry->rand_offset;
   } else {
@@ -329,13 +337,12 @@ std::vector<at::Tensor> FusionExecutor::runFusion(
     EvaluationContext evaluation_context =
         executor_utils::bindInputs(inputs, &fusion_, &lowered_);
 
-    launch_params = 
-          computeLaunchParams(inputs, launch_constraints, evaluation_context);
+    launch_params =
+        computeLaunchParams(inputs, launch_constraints, evaluation_context);
 
     if (outputs.empty() || outputs.size() != fusion_.outputs().size()) {
       alloced_outputs = allocOutputs(evaluation_context);
     }
-
 
     executor_utils::validateKernelOutputs(
         &fusion_, alloced_outputs, options_.device);
@@ -345,7 +352,8 @@ std::vector<at::Tensor> FusionExecutor::runFusion(
     if (has_random_) {
       rand_offset = 4 *
           (std::ceil(
-               alloced_outputs[0].numel() / (4.0 * 128 * launch_params.gdimx())) +
+               alloced_outputs[0].numel() /
+               (4.0 * 128 * launch_params.gdimx())) +
            1);
     }
 

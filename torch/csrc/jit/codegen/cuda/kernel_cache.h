@@ -27,7 +27,6 @@ class InputsCodeLookup {
   std::unordered_map<std::string, size_t> inputs_code_lookup_;
 };
 
-
 // [ Note -- 2 level cache implementation ]
 //
 // 2 level hierarchically nested cache is to handle the code generation and

@@ -84,7 +84,8 @@ class TORCH_CUDA_API FusionExecutor : public NonCopyable {
       bool align_padding = false,
       uint64_t total = 0);
 
-  std::pair<std::vector<at::Tensor>, std::vector<at::Tensor>> allocGlobalVals(EvaluationContext& ec);
+  std::pair<std::vector<at::Tensor>, std::vector<at::Tensor>> allocGlobalVals(
+      EvaluationContext& ec);
 
   std::vector<at::Tensor> allocOutputs(EvaluationContext& ec);
 
