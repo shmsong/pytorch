@@ -320,7 +320,7 @@ std::vector<at::Tensor> FusionExecutor::runFusion(
     for (int i = 0; i < executor_entry->zero_buffer_sizes.size(); i++) {
       auto tensor_options =
           at::TensorOptions().dtype(executor_entry->zero_buffer_types[i]).device(options_.device);
-      zero_buffers.push_back(at::empty(executor_entry->zero_buffer_sizes[i], tensor_options));
+      zero_buffers.push_back(at::zeros(executor_entry->zero_buffer_sizes[i], tensor_options));
     }
     rand_offset = executor_entry->rand_offset;
   } else {

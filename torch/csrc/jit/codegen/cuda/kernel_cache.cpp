@@ -248,16 +248,16 @@ std::vector<at::Tensor> FusionExecutorCache::runFusionWithInputs(
       TORCH_INTERNAL_ASSERT(
           reduction_params.has_value(),
           "reduction schedule failed in `scheduleReduction`");
-      auto& fusion_executor =
-          red_fusion_executor_cache_[reduction_params.value()];
-      if (!fusion_executor.compiled()) {
+      auto fusion_executor =
+          &red_fusion_executor_cache_[reduction_params.value()];
+      if (!fusion_executor->compiled()) {
         // This means we have not found a previously generated kernel that's
         // compatible with the new reduction params. We need to finish codegen.
         CompileOptions options;
         options.device = device_;
-        fusion_executor.compileFusion(&fusion, options);
+        fusion_executor->compileFusion(&fusion, options);
       }
-      code_to_fe_lookup_[code] = &fusion_executor;
+      code_to_fe_lookup_[code] = fusion_executor;
     } else {
       if (!pw_fusion_executor_cache_) {
         pw_fusion_executor_cache_ = std::make_unique<FusionExecutor>();
