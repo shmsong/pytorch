@@ -284,7 +284,7 @@ std::vector<at::Tensor> FusionExecutor::runFusion(
     const at::ArrayRef<IValue>& inputs,
     const std::vector<at::Tensor>& outputs,
     const LaunchParams& launch_constraints,
-    const c10::optional<size_t> opt_code) {
+    const c10::optional<size_t>& opt_code) {
   TORCH_INTERNAL_ASSERT(
       fusion_id_ > 0, "Cannot run fusion, it was not compiled.");
   TORCH_INTERNAL_ASSERT(
@@ -309,21 +309,21 @@ std::vector<at::Tensor> FusionExecutor::runFusion(
   // only validate inputs if we haven't seen/record the input set;
   if (executor_entry && executor_entry->init) {
     launch_params = executor_entry->launch_params;
-    for (int i = 0; i < executor_entry->output_sizes.size(); i++) {
+    for (size_t i = 0; i < executor_entry->output_sizes.size(); i++) {
       auto tensor_options = at::TensorOptions()
                                 .dtype(executor_entry->output_types[i])
                                 .device(options_.device);
       alloced_outputs.push_back(
           at::empty(executor_entry->output_sizes[i], tensor_options));
     }
-    for (int i = 0; i < executor_entry->empty_buffer_sizes.size(); i++) {
+    for (size_t i = 0; i < executor_entry->empty_buffer_sizes.size(); i++) {
       auto tensor_options = at::TensorOptions()
                                 .dtype(executor_entry->empty_buffer_types[i])
                                 .device(options_.device);
       empty_buffers.push_back(
           at::empty(executor_entry->empty_buffer_sizes[i], tensor_options));
     }
-    for (int i = 0; i < executor_entry->zero_buffer_sizes.size(); i++) {
+    for (size_t i = 0; i < executor_entry->zero_buffer_sizes.size(); i++) {
       auto tensor_options = at::TensorOptions()
                                 .dtype(executor_entry->zero_buffer_types[i])
                                 .device(options_.device);
@@ -353,7 +353,7 @@ std::vector<at::Tensor> FusionExecutor::runFusion(
       rand_offset = 4 *
           (std::ceil(
                alloced_outputs[0].numel() /
-               (4.0 * 128 * launch_params.gdimx())) +
+               (4.0 * 128 * launch_params.gdimx())) + // NOLINT
            1);
     }
 

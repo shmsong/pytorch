@@ -29,12 +29,12 @@ class TORCH_CUDA_API FusionExecutor : public NonCopyable {
       const at::ArrayRef<IValue>& inputs,
       const std::vector<at::Tensor>& outputs,
       const LaunchParams& launch_constraints = LaunchParams(),
-      const c10::optional<size_t> opt_code = c10::nullopt);
+      const c10::optional<size_t>& opt_code = c10::nullopt);
 
   std::vector<at::Tensor> runFusion(
       const at::ArrayRef<IValue>& inputs,
       const LaunchParams& launch_constraints = LaunchParams(),
-      const c10::optional<size_t> opt_code = c10::nullopt) {
+      const c10::optional<size_t>& opt_code = c10::nullopt) {
     return runFusion(inputs, {}, launch_constraints, opt_code);
   }
 
