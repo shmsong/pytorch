@@ -300,7 +300,7 @@ class TORCH_CUDA_API TensorView : public Val {
 
  private:
   TensorDomain* domain_ = nullptr;
-  MemoryType memory_type_ = MemoryType::Global;
+  MemoryType memory_type_ = MemoryType::Local;
 
   // TODO(kir): remove temporary hack
   const fuser::TensorView* fuser_tv_ = nullptr;

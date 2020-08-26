@@ -378,7 +378,10 @@ Allocate::Allocate(Val* buffer, MemoryType memory_type, Val* size)
         "Cannot allocate a non-TensorView buffer with a size != 1, received buffer: ",
         buffer_);
   } else {
-    TORCH_CHECK(buffer_->getValType().value() == ValType::KirTensorView);
+    TORCH_INTERNAL_ASSERT(
+        buffer_->getValType().value() == ValType::KirTensorView);
+    TORCH_INTERNAL_ASSERT(
+        buffer_->as<TensorView>()->getMemoryType() == memory_type_);
     const auto domain = buffer_->as<TensorView>()->domain();
     size_ = domain->nDims() == 0 ? new Int(1) : domain->axis(0)->extent();
     for (size_t i = 1; i < domain->nDims(); i++) {

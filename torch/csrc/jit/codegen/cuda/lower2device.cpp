@@ -30,11 +30,11 @@ class BuffersExtractor : OptOutDispatch {
     }
   }
 
-  std::vector<kir::Allocate*> getGlobalAllocs() {
+  std::unordered_set<kir::Allocate*> getGlobalAllocs() {
     return global_allocations_;
   }
 
-  std::vector<kir::Allocate*> getSyncAllocs() {
+  std::unordered_set<kir::Allocate*> getSyncAllocs() {
     return sync_allocations_;
   }
 
@@ -53,8 +53,8 @@ class BuffersExtractor : OptOutDispatch {
  private:
   ThreadPredicateMap& thread_predicates_;
   bool has_block_broadcast_;
-  std::vector<kir::Allocate*> global_allocations_;
-  std::vector<kir::Allocate*> sync_allocations_;
+  std::unordered_set<kir::Allocate*> global_allocations_;
+  std::unordered_set<kir::Allocate*> sync_allocations_;
   std::vector<kir::Allocate*> dynamic_allocations_;
   std::vector<kir::Allocate*> static_allocations_;
 
@@ -89,14 +89,20 @@ class BuffersExtractor : OptOutDispatch {
   }
 
   void handle(kir::GridReduction* gr) final {
-    global_allocations_.push_back(gr->reduction_buffer());
-    sync_allocations_.push_back(gr->sync_buffer());
+    auto sba = gr->sync_buffer();
+    sync_allocations_.insert(sba);
+    // Remove sync buffer from global allocations
+    if (global_allocations_.find(sba) != global_allocations_.end()) {
+      global_allocations_.erase(sba);
+    }
   }
 
   void handle(kir::Allocate* a) final {
     switch (a->getMemoryType()) {
       case MemoryType::Global:
-        global_allocations_.push_back(a);
+        if (sync_allocations_.find(a) == sync_allocations_.end()) {
+          global_allocations_.insert(a);
+        }
         break;
       case MemoryType::Shared:
         if (a->size()->isConstScalar()) {
