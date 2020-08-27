@@ -5011,7 +5011,7 @@ void testGPU_FusionReductionScheduler() {
   auto aten_output = input.sum({red_dim});
 
   TORCH_CHECK(
-      aten_output.allclose( outputs[0], 1e-04, 1e-04),
+      aten_output.allclose(outputs[0], 1e-04, 1e-04),
       "Error of: ",
       aten_output.sub(outputs[0]).abs().max());
 }

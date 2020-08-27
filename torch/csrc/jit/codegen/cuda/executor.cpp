@@ -58,10 +58,7 @@ void FusionExecutor::compileFusionFromStr(
   fusion_id_ = id;
   has_random_ = fusion->hasRNG();
   lowered_ = GpuLower(&fusion_);
-  compiled_kernel_ = executor_utils::nvrtcCompile(
-      code,
-      name,
-      fusion_id_);
+  compiled_kernel_ = executor_utils::nvrtcCompile(code, name, fusion_id_);
   compiled_ = true;
 }
 
@@ -435,12 +432,14 @@ std::vector<at::Tensor> FusionExecutor::runFusion(
   auto buffers = allocGlobalVals(evaluation_context);
 
   /*for(auto &buf : buffers) {
-    std::cout << buf.sizes() << " " << buf.strides() << " " << buf.scalar_type() << std::endl;
+    std::cout << buf.sizes() << " " << buf.strides() << " " << buf.scalar_type()
+  << std::endl;
   }
   auto options = buffers[0].options();
   buffers[0] = at::zeros({buffers[0].size(0) * 4}, options);
   for(auto &buf : buffers) {
-    std::cout << buf.sizes() << " " << buf.strides() << " " << buf.scalar_type() << std::endl;
+    std::cout << buf.sizes() << " " << buf.strides() << " " << buf.scalar_type()
+  << std::endl;
   }*/
   kernel_arguments.push(buffers);
 

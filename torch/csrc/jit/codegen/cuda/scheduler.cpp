@@ -327,7 +327,8 @@ ReductionParams reductionHeuristic(
   int target_grid_size = device_multiprocessor_count * blocks_per_sm;
 
   // Setting the number of blocks based on the number of outputs
-  gdimx = ceilDiv(ceilDiv(red_outputs, output_vec_size), outputs_produced_per_block_iter);
+  gdimx = ceilDiv(
+      ceilDiv(red_outputs, output_vec_size), outputs_produced_per_block_iter);
 
   // Cross-block reductions (if necessary)
   if (rparams.cross_block && red_elems_per_thread >= kMaxValuesPerThread &&
