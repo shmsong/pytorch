@@ -288,15 +288,7 @@ FusionExecutor::GlobalBuffers FusionExecutor::allocGlobalVals(
         alloc->buffer()->as<kir::TensorView>()->fuserTv(),
         ec,
         options_,
-        false));
-  }
-
-  for (auto alloc : lowered_.sync_allocations()) {
-    TORCH_INTERNAL_ASSERT(
-        alloc->buffer()->getValType() == ValType::KirTensorView,
-        "Cannot allocate global buffers that are not tensors.");
-    global_buffers.zero_buffers.push_back(inferAndAlloc(
-        alloc->buffer()->as<kir::TensorView>()->fuserTv(), ec, options_, true));
+        alloc->zeroInit()));
   }
 
   return global_buffers;

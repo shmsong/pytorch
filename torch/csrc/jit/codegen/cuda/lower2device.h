@@ -29,12 +29,8 @@ class TORCH_CUDA_API GpuLower {
 
   std::string getKernel(const std::string& kernel_name = "CUDAGeneratedKernel");
 
-  std::unordered_set<kir::Allocate*> global_allocations() {
+  std::vector<kir::Allocate*> global_allocations() {
     return global_allocations_;
-  }
-
-  std::unordered_set<kir::Allocate*> sync_allocations() {
-    return sync_allocations_;
   }
 
   std::vector<kir::Allocate*> dynamic_allocations() {
@@ -68,12 +64,9 @@ class TORCH_CUDA_API GpuLower {
   void adjustMemoryTypes();
 
  private:
-  // List of global buffers (not including buffers for grid syncronization)
-  std::unordered_set<kir::Allocate*> global_allocations_;
-
-  // List of syncronization buffers that must be initialized to 0 when running
-  // the fusion
-  std::unordered_set<kir::Allocate*> sync_allocations_;
+  // List of global buffers
+  // Allocate nodes track if it needs to be initialized to 0
+  std::vector<kir::Allocate*> global_allocations_;
 
   // List of dynamic shared memory buffers
   std::vector<kir::Allocate*> dynamic_smem_allocations_;

@@ -30,12 +30,8 @@ class BuffersExtractor : OptOutDispatch {
     }
   }
 
-  std::unordered_set<kir::Allocate*> getGlobalAllocs() {
+  std::vector<kir::Allocate*> getGlobalAllocs() {
     return global_allocations_;
-  }
-
-  std::unordered_set<kir::Allocate*> getSyncAllocs() {
-    return sync_allocations_;
   }
 
   std::vector<kir::Allocate*> getDynamicAllocs() {
@@ -53,8 +49,7 @@ class BuffersExtractor : OptOutDispatch {
  private:
   ThreadPredicateMap& thread_predicates_;
   bool has_block_broadcast_;
-  std::unordered_set<kir::Allocate*> global_allocations_;
-  std::unordered_set<kir::Allocate*> sync_allocations_;
+  std::vector<kir::Allocate*> global_allocations_;
   std::vector<kir::Allocate*> dynamic_allocations_;
   std::vector<kir::Allocate*> static_allocations_;
 
@@ -88,21 +83,10 @@ class BuffersExtractor : OptOutDispatch {
     has_block_broadcast_ |= block_broadcast_needed;
   }
 
-  void handle(kir::GridReduction* gr) final {
-    auto sba = gr->sync_buffer();
-    sync_allocations_.insert(sba);
-    // Remove sync buffer from global allocations
-    if (global_allocations_.find(sba) != global_allocations_.end()) {
-      global_allocations_.erase(sba);
-    }
-  }
-
   void handle(kir::Allocate* a) final {
     switch (a->getMemoryType()) {
       case MemoryType::Global:
-        if (sync_allocations_.find(a) == sync_allocations_.end()) {
-          global_allocations_.insert(a);
-        }
+        global_allocations_.push_back(a);
         break;
       case MemoryType::Shared:
         if (a->size()->isConstScalar()) {
@@ -227,7 +211,6 @@ void GpuLower::lower() {
   // Get allocations
   BuffersExtractor be(lowered_exprs_, preds);
   global_allocations_ = be.getGlobalAllocs();
-  sync_allocations_ = be.getSyncAllocs();
   dynamic_smem_allocations_ = be.getDynamicAllocs();
   static_smem_allocations_ = be.getStaticAllocs();
 }
@@ -241,8 +224,6 @@ std::ostream& GpuLower::printKernel(
   std::vector<kir::Allocate*> allocs;
   allocs.insert(
       allocs.end(), global_allocations_.begin(), global_allocations_.end());
-  allocs.insert(
-      allocs.end(), sync_allocations_.begin(), sync_allocations_.end());
 
   std::vector<Val*> global_tensors(allocs.size(), nullptr);
   std::transform(

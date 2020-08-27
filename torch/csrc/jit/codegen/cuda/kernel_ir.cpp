@@ -366,11 +366,16 @@ Val* TensorIndex::index(int i) const {
   return indices_[i];
 }
 
-Allocate::Allocate(Val* buffer, MemoryType memory_type, Val* size)
+Allocate::Allocate(
+    Val* buffer,
+    MemoryType memory_type,
+    Val* size,
+    bool zero_init)
     : Expr(ExprType::Allocate),
       buffer_(buffer),
       memory_type_(memory_type),
-      size_(size) {
+      size_(size),
+      zero_init_(zero_init) {
   if (size_ != nullptr) {
     TORCH_INTERNAL_ASSERT(
         size_->isOneInt() ||

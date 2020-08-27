@@ -228,7 +228,10 @@ void IndexLowering::handle(ReductionOp* rop) {
     const auto reduce_buffer = new kir::Allocate(
         kir::lowerValue(reduce_buffer_tv), reduce_sync_tv->getMemoryType());
     const auto sync_buffer = new kir::Allocate(
-        kir::lowerValue(reduce_sync_tv), reduce_sync_tv->getMemoryType());
+        kir::lowerValue(reduce_sync_tv),
+        reduce_sync_tv->getMemoryType(),
+        nullptr,
+        true);
 
     const auto grid_reduction_op = block_reduction_op == nullptr
         ? new kir::ReductionOp(
