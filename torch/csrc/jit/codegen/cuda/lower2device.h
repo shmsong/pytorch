@@ -60,9 +60,6 @@ class TORCH_CUDA_API GpuLower {
   // tensors to reference the runtime structure containing sizes.
   void buildSizesMap();
 
-  // Adjust memory types to make sure they are valid
-  void adjustMemoryTypes();
-
  private:
   // List of global buffers
   // Allocate nodes track if it needs to be initialized to 0

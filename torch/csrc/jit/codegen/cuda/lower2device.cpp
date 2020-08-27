@@ -158,17 +158,6 @@ void GpuLower::buildSizesMap() {
   }
 }
 
-void GpuLower::adjustMemoryTypes() {
-  for (auto val : fusion_->deterministic_vals()) {
-    if (ir_utils::isTV(val)) {
-      auto tv = val->as<TensorView>();
-      if (fusion_->hasInput(tv) || fusion_->hasOutput(tv)) {
-        tv->setMemoryType(MemoryType::Global);
-      }
-    }
-  }
-}
-
 void GpuLower::lower() {
   TORCH_INTERNAL_ASSERT(fusion_ != nullptr);
   TORCH_INTERNAL_ASSERT(
@@ -189,7 +178,6 @@ void GpuLower::lower() {
   // prepare for lowering
   validateIr(fusion_);
   buildSizesMap();
-  adjustMemoryTypes();
 
   // Compute thread predicates
   ThreadPredicateMap preds(fusion_);
