@@ -79,7 +79,7 @@ class TORCH_CUDA_API ExpressionEvaluator : protected IterVisitor {
   std::unordered_map<const Statement*, Int::ScalarType> values_;
 };
 
-class TORCH_CUDA_API StatefulExpressionEvaluator : private IterVisitor {
+class TORCH_CUDA_API StatefulExpressionEvaluator : private OptOutDispatch {
  public:
   explicit StatefulExpressionEvaluator(Fusion* fusion) : fusion_(fusion) {}
 
@@ -100,8 +100,7 @@ class TORCH_CUDA_API StatefulExpressionEvaluator : private IterVisitor {
   std::unordered_map<const Val*, Int::ScalarType> bindings_;
   Fusion* fusion_ = nullptr;
 
-  using IterVisitor::handle;
-  using IterVisitor::next;
+  using OptOutDispatch::handle;
 
   void handle(Expr* expr) override {
     switch (expr->getExprType().value()) {
@@ -126,19 +125,14 @@ class TORCH_CUDA_API StatefulExpressionEvaluator : private IterVisitor {
     }
   }
 
+  c10::optional<Int::ScalarType> maybeHandle(Val*);
+
   void handle(UnaryOp*) override;
   void handle(BinaryOp*) override;
 
   // TODO(kir): remove this
   void handle(kir::UnaryOp*) override;
   void handle(kir::BinaryOp*) override;
-
-  std::vector<Statement*> next(Val* val) override {
-    if (getValue(val).has_value()) {
-      return std::vector<Statement*>();
-    }
-    return IterVisitor::next(val);
-  }
 };
 
 } // namespace fuser
