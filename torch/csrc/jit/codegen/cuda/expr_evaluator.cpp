@@ -251,14 +251,7 @@ void StatefulExpressionEvaluator::safeBind(
 
 c10::optional<Int::ScalarType> StatefulExpressionEvaluator::inferValue(
     Val* value) {
-  auto maybe_concrete = getValue(value);
-
-  if (maybe_concrete.has_value())
-    return maybe_concrete;
-
-  IterVisitor::traverseFrom(fusion(), {value});
-
-  return getValue(value);
+  return maybeHandle(value);
 }
 
 inline c10::optional<Int::ScalarType> StatefulExpressionEvaluator::getValue(
@@ -282,8 +275,21 @@ inline c10::optional<Int::ScalarType> StatefulExpressionEvaluator::getValue(
   return c10::nullopt;
 }
 
+c10::optional<Int::ScalarType> StatefulExpressionEvaluator::maybeHandle(
+    Val* val) {
+  auto maybe_concrete_value = getValue(val);
+  if (!maybe_concrete_value.has_value()) {
+    auto origin = val->getOrigin();
+    if (origin != nullptr) {
+      handle(origin);
+      maybe_concrete_value = getValue(val);
+    }
+  }
+  return maybe_concrete_value;
+}
+
 void StatefulExpressionEvaluator::handle(UnaryOp* uop) {
-  const auto in = getValue(uop->in());
+  const auto in = maybeHandle(uop->in());
   if (in.has_value()) {
     switch (uop->getUnaryOpType()) {
       case UnaryOpType::Neg:
@@ -299,8 +305,8 @@ void StatefulExpressionEvaluator::handle(UnaryOp* uop) {
 }
 
 void StatefulExpressionEvaluator::handle(BinaryOp* bop) {
-  const auto lhs = getValue(bop->lhs());
-  const auto rhs = getValue(bop->rhs());
+  const auto lhs = maybeHandle(bop->lhs());
+  const auto rhs = maybeHandle(bop->rhs());
   if (lhs.has_value() && rhs.has_value()) {
     switch (bop->getBinaryOpType()) {
       case BinaryOpType::Add:
@@ -334,7 +340,7 @@ void StatefulExpressionEvaluator::handle(BinaryOp* bop) {
 }
 
 void StatefulExpressionEvaluator::handle(kir::UnaryOp* uop) {
-  const auto in = getValue(uop->in());
+  const auto in = maybeHandle(uop->in());
   if (in.has_value()) {
     switch (uop->getUnaryOpType()) {
       case UnaryOpType::Neg:
