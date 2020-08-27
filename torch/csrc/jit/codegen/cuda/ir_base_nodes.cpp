@@ -90,7 +90,10 @@ Val::Val(const Val* fusion_ir_node)
 }
 
 Val::Val(const Val* src, IrCloner* ir_cloner)
-    : Statement(src, ir_cloner), vtype_(src->vtype_), dtype_(src->dtype_) {}
+    : Statement(src, ir_cloner),
+      vtype_(src->vtype_),
+      dtype_(src->dtype_),
+      origin(ir_cloner->clone(src->origin)) {}
 
 // Traverse origin of all values involved in constructing the provided val.
 // Check if all values involved are constant values, meaning the provided
@@ -196,14 +199,6 @@ c10::optional<DataType> Val::getDataType() const {
   TORCH_INTERNAL_ASSERT(
       dtype_ != DataType::Null, "Value does not have a data type.");
   return dtype_;
-}
-
-Expr* Val::getOrigin() {
-  return fusion_->origin(this);
-}
-
-const Expr* Val::getOrigin() const {
-  return fusion_->origin(this);
 }
 
 // We don't register with the active fusion in Expr as this needs to be done
