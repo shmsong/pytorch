@@ -267,7 +267,11 @@ inline c10::optional<Int::ScalarType> StatefulExpressionEvaluator::getValue(
       value->isAnInt(),
       "Expressoin Evaluation does not support values other than integers at this time.");
 
-  if (value->as<Int>()->value().has_value()) {
+  auto v_type = value->getValType().value();
+  bool is_named_scalar =
+      v_type == ValType::NamedScalar || v_type == ValType::KirNamedScalar;
+
+  if (!is_named_scalar && value->as<Int>()->value().has_value()) {
     return value->as<Int>()->value();
   }
 
