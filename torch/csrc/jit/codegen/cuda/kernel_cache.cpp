@@ -3,10 +3,6 @@
 #include <torch/csrc/jit/codegen/cuda/scheduler.h>
 #include <torch/csrc/jit/runtime/graph_executor.h>
 
-#include <nvToolsExt.h>
-// TODO: This class is dead at the moment, but we need to figure out a generic
-// cacheing system that will suite our needs.
-
 namespace torch {
 namespace jit {
 namespace fuser {
@@ -186,7 +182,7 @@ at::DimVector inversePermutation(
 
 } // namespace
 
-size_t InputsCodeLookup::getCode(const at::ArrayRef<IValue>& inputs) {
+size_t InputsIdLookup::getCode(const at::ArrayRef<IValue>& inputs) {
   std::stringstream encoded_inputs;
   for (const auto& input : inputs) {
     if (input.isTensor()) {
@@ -209,7 +205,7 @@ size_t InputsCodeLookup::getCode(const at::ArrayRef<IValue>& inputs) {
       encoded_inputs << ";s";
     }
   }
-  auto& iter = inputs_code_lookup_[encoded_inputs.str()];
+  auto& iter = encoding_lookup_[encoded_inputs.str()];
   if (iter == 0) {
     iter = current_id_++;
   }
@@ -226,8 +222,8 @@ FusionExecutorCache::FusionExecutorCache(
 
 std::vector<at::Tensor> FusionExecutorCache::runFusionWithInputs(
     const at::ArrayRef<IValue>& inputs,
-    const size_t code) {
-  if (code_to_fe_lookup_.count(code) == 0) {
+    size_t unique_id) {
+  if (code_to_fe_lookup_.count(unique_id) == 0) {
     // enter when we get a new input set. We need to search for compatible
     // entries in cached `FusionExecutor` or compile new one as needed.
 
@@ -259,7 +255,7 @@ std::vector<at::Tensor> FusionExecutorCache::runFusionWithInputs(
         fusion_executor->compileFusion(&fusion, options);
       }
       // record new short cut to `FusionExecutor`
-      code_to_fe_lookup_[code] = fusion_executor;
+      code_to_fe_lookup_[unique_id] = fusion_executor;
     } else {
       if (!pw_fusion_executor_cache_) {
         pw_fusion_executor_cache_ = std::make_unique<FusionExecutor>();
@@ -271,10 +267,10 @@ std::vector<at::Tensor> FusionExecutorCache::runFusionWithInputs(
         pw_fusion_executor_cache_->compileFusion(fusion_.get(), options);
       }
       // record new short cut to `FusionExecutor`
-      code_to_fe_lookup_[code] = pw_fusion_executor_cache_.get();
+      code_to_fe_lookup_[unique_id] = pw_fusion_executor_cache_.get();
     }
   }
-  return code_to_fe_lookup_[code]->runFusion(inputs, LaunchParams(), code);
+  return code_to_fe_lookup_[unique_id]->runFusion(inputs, LaunchParams(), unique_id);
 }
 
 GraphCache::InputsRequirement::InputsRequirement(
@@ -560,33 +556,33 @@ GraphCache::GraphCache(std::shared_ptr<Graph> graph)
 
 std::vector<at::Tensor> GraphCache::runGraphWithInputs(
     const at::ArrayRef<IValue>& inputs) {
-  // get unique id `code` for given input set `inputs`;
-  size_t code = input_code_lookup_.getCode(inputs);
+  // get unique id `unique_id` for given input set `inputs`;
+  const size_t unique_id = inputs_id_lookup_.getCode(inputs);
 
   FusionExecutorCache* fusion_executor_cache = nullptr;
 
-  if (code_to_index_lookup_.count(code) == 0) {
+  if (code_to_index_lookup_.count(unique_id) == 0) {
     InputsRequirement input_stack(inputs, toVector(reduction_axes_));
     for (size_t i = 0; i < fe_cache_.size(); i++) {
       if (input_stack.complyWith(input_stacks_[i])) {
         // found compliable fe_cache_ entry
         fusion_executor_cache = fe_cache_[i].get();
         // record short cut to designated fusion executor
-        code_to_index_lookup_[code] = i;
+        code_to_index_lookup_[unique_id] = i;
         break;
       }
     }
     if (!fusion_executor_cache) {
       fusion_executor_cache = appendFusionExecutorCache(input_stack);
       // record short cut to designated fusion executor
-      code_to_index_lookup_[code] = fe_cache_.size() - 1;
+      code_to_index_lookup_[unique_id] = fe_cache_.size() - 1;
     }
   } else {
     // take short cut to designated fusion executor
-    fusion_executor_cache = fe_cache_[code_to_index_lookup_[code]].get();
+    fusion_executor_cache = fe_cache_[code_to_index_lookup_[unique_id]].get();
   }
   InputsRequirement* input_requirement =
-      &input_stacks_[code_to_index_lookup_[code]];
+      &input_stacks_[code_to_index_lookup_[unique_id]];
 
   // GraphCache need to permute inputs/outputs to accommodate dimension
   // coalescing
@@ -602,7 +598,7 @@ std::vector<at::Tensor> GraphCache::runGraphWithInputs(
       }
     }
     auto outputs =
-        fusion_executor_cache->runFusionWithInputs(permuted_inputs, code);
+        fusion_executor_cache->runFusionWithInputs(permuted_inputs, unique_id);
     std::vector<at::Tensor> permuted_outputs;
     permuted_outputs.reserve(outputs.size());
     for (const auto& output : outputs) {
@@ -611,7 +607,7 @@ std::vector<at::Tensor> GraphCache::runGraphWithInputs(
     }
     return permuted_outputs;
   } else {
-    return fusion_executor_cache->runFusionWithInputs(inputs, code);
+    return fusion_executor_cache->runFusionWithInputs(inputs, unique_id);
   }
 }
 

@@ -16,17 +16,17 @@ namespace fuser {
 namespace cuda {
 
 // Note, the uniqueness of the ide generated for a given input set is only local
-// to the instance of `InputsCodeLookup`.
-class InputsCodeLookup {
+// to the instance of `InputsIdLookup`.
+class InputsIdLookup {
  public:
   // encode each unique input sets to an unique id;
   size_t getCode(const at::ArrayRef<IValue>& inputs);
 
- protected:
+ private:
   size_t current_id_ = 1;
 
   // TODO: change this to a trie for efficiency;
-  std::unordered_map<std::string, size_t> inputs_code_lookup_;
+  std::unordered_map<std::string, size_t> encoding_lookup_;
 };
 
 // [ Note -- 2 level cache implementation ]
@@ -81,7 +81,7 @@ class FusionExecutorCache {
   // Execute fusion graph with given inputs, create `FusionExecutor` as needed;
   std::vector<at::Tensor> runFusionWithInputs(
       const at::ArrayRef<IValue>& inputs,
-      const size_t code);
+      size_t unique_id);
 
  private:
   // device_ where compiled binaries are loaded on & inputs are expected to
@@ -165,7 +165,6 @@ class GraphCache {
         const at::ArrayRef<IValue>& inputs,
         const std::vector<size_t>& reduction_axes);
 
-    // bool operator==(const InputsRequirement& other);
     bool complyWith(const InputsRequirement& expect);
 
     // helper function used at run-time to check whether a common permutation is
@@ -193,8 +192,8 @@ class GraphCache {
   std::vector<InputsRequirement> input_stacks_;
   std::vector<std::unique_ptr<FusionExecutorCache>> fe_cache_;
 
-  // inputs to code lookup table;
-  InputsCodeLookup input_code_lookup_;
+  // inputs to unique_id lookup table;
+  InputsIdLookup inputs_id_lookup_;
 };
 
 } // namespace cuda

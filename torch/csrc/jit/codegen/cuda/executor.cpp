@@ -70,6 +70,8 @@ void FusionExecutor::compileFusion(Fusion* fusion, CompileOptions options) {
       structured_code,
       (kernelNamespace() + "::" + kernelName()).c_str(),
       fusion_id_);
+  TORCH_INTERNAL_ASSERT(
+      fusion_id_ > 0, "failed to assign a fusion_id_ after compilation.");
 }
 
 namespace {
@@ -243,14 +245,13 @@ LaunchParams FusionExecutor::computeLaunchParams(
   return launch_params;
 }
 
-std::pair<std::vector<at::Tensor>, std::vector<at::Tensor>> FusionExecutor::
-    allocGlobalVals(EvaluationContext& ec) {
-  std::pair<std::vector<at::Tensor>, std::vector<at::Tensor>> global_buffers;
+FusionExecutor::GlobalBuffers FusionExecutor::allocGlobalVals(EvaluationContext& ec) {
+  GlobalBuffers global_buffers;
   for (auto alloc : lowered_.global_allocations()) {
     TORCH_INTERNAL_ASSERT(
         alloc->buffer()->getValType() == ValType::KirTensorView,
         "Cannot allocate global buffers that are not tensors.");
-    global_buffers.first.push_back(inferAndAlloc(
+    global_buffers.empty_buffers.push_back(inferAndAlloc(
         alloc->buffer()->as<kir::TensorView>()->fuserTv(),
         ec,
         options_,
@@ -261,7 +262,7 @@ std::pair<std::vector<at::Tensor>, std::vector<at::Tensor>> FusionExecutor::
     TORCH_INTERNAL_ASSERT(
         alloc->buffer()->getValType() == ValType::KirTensorView,
         "Cannot allocate global buffers that are not tensors.");
-    global_buffers.second.push_back(inferAndAlloc(
+    global_buffers.zero_buffers.push_back(inferAndAlloc(
         alloc->buffer()->as<kir::TensorView>()->fuserTv(), ec, options_, true));
   }
 
@@ -302,8 +303,7 @@ std::vector<at::Tensor> FusionExecutor::runFusion(
 
   LaunchParams launch_params;
   std::vector<at::Tensor> alloced_outputs = outputs;
-  std::vector<at::Tensor> empty_buffers;
-  std::vector<at::Tensor> zero_buffers;
+  GlobalBuffers global_buffers;
   uint64_t rand_offset = 0;
 
   if (executor_entry && executor_entry->init) {
@@ -320,14 +320,14 @@ std::vector<at::Tensor> FusionExecutor::runFusion(
       auto tensor_options = at::TensorOptions()
                                 .dtype(executor_entry->empty_buffer_types[i])
                                 .device(options_.device);
-      empty_buffers.push_back(
+      global_buffers.empty_buffers.push_back(
           at::empty(executor_entry->empty_buffer_sizes[i], tensor_options));
     }
     for (size_t i = 0; i < executor_entry->zero_buffer_sizes.size(); i++) {
       auto tensor_options = at::TensorOptions()
                                 .dtype(executor_entry->zero_buffer_types[i])
                                 .device(options_.device);
-      zero_buffers.push_back(
+      global_buffers.zero_buffers.push_back(
           at::zeros(executor_entry->zero_buffer_sizes[i], tensor_options));
     }
     rand_offset = executor_entry->rand_offset;
@@ -347,9 +347,15 @@ std::vector<at::Tensor> FusionExecutor::runFusion(
     executor_utils::validateKernelOutputs(
         &fusion_, alloced_outputs, options_.device);
 
-    std::tie(empty_buffers, zero_buffers) = allocGlobalVals(evaluation_context);
+    global_buffers = allocGlobalVals(evaluation_context);
 
     if (has_random_) {
+      // NOTE: this is how we map offset to PW kernels in order to have
+      // identical random number generator to match native PyTorch results.
+      // But it doesn't really work as it takes assumption how threads are
+      // binded but is not generally how we handle that in scheduler.
+      // Refer to `Philox` in generated kernel to understand how the mapping
+      // works.
       rand_offset = 4 *
           (std::ceil(
                alloced_outputs[0].numel() /
@@ -364,11 +370,11 @@ std::vector<at::Tensor> FusionExecutor::runFusion(
         executor_entry->output_sizes.push_back(output.sizes().vec());
         executor_entry->output_types.push_back(output.scalar_type());
       }
-      for (const auto& buffer : empty_buffers) {
+      for (const auto& buffer : global_buffers.empty_buffers) {
         executor_entry->empty_buffer_sizes.push_back(buffer.sizes().vec());
         executor_entry->empty_buffer_types.push_back(buffer.scalar_type());
       }
-      for (const auto& buffer : zero_buffers) {
+      for (const auto& buffer : global_buffers.zero_buffers) {
         executor_entry->zero_buffer_sizes.push_back(buffer.sizes().vec());
         executor_entry->zero_buffer_types.push_back(buffer.scalar_type());
       }
@@ -380,8 +386,8 @@ std::vector<at::Tensor> FusionExecutor::runFusion(
   KernelArgumentHolder kernel_arguments;
   kernel_arguments.push(inputs);
   kernel_arguments.push(alloced_outputs);
-  kernel_arguments.push(empty_buffers);
-  kernel_arguments.push(zero_buffers);
+  kernel_arguments.push(global_buffers.empty_buffers);
+  kernel_arguments.push(global_buffers.zero_buffers);
   if (has_random_) {
     kernel_arguments.appendPhiloxRNGSeed(rand_offset);
   }
