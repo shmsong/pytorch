@@ -37,7 +37,7 @@ std::string FusionExecutor::getStructuredCode(const std::string& kernel) {
   return code;
 }
 
-void FusionExecutor::debugCompileFusionFromStr(
+void FusionExecutor::compileFusionFromStr(
     Fusion* fusion,
     const std::string& code,
     const std::string& name,
@@ -58,9 +58,11 @@ void FusionExecutor::debugCompileFusionFromStr(
   fusion_id_ = id;
   has_random_ = fusion->hasRNG();
   lowered_ = GpuLower(&fusion_);
-  compiled_kernel_ = executor_utils::nvrtcCompile(code, name, fusion_id_);
-  TORCH_INTERNAL_ASSERT(
-      fusion_id_ > 0, "assign a fusion_id_ <= 0 is not accepted.");
+  compiled_kernel_ = executor_utils::nvrtcCompile(
+      code,
+      name,
+      fusion_id_);
+  compiled_ = true;
 }
 
 void FusionExecutor::compileFusion(Fusion* fusion, CompileOptions options) {
@@ -430,8 +432,18 @@ std::vector<at::Tensor> FusionExecutor::runFusion(
   KernelArgumentHolder kernel_arguments;
   kernel_arguments.push(inputs);
   kernel_arguments.push(alloced_outputs);
-  kernel_arguments.push(global_buffers.empty_buffers);
-  kernel_arguments.push(global_buffers.zero_buffers);
+  auto buffers = allocGlobalVals(evaluation_context);
+
+  /*for(auto &buf : buffers) {
+    std::cout << buf.sizes() << " " << buf.strides() << " " << buf.scalar_type() << std::endl;
+  }
+  auto options = buffers[0].options();
+  buffers[0] = at::zeros({buffers[0].size(0) * 4}, options);
+  for(auto &buf : buffers) {
+    std::cout << buf.sizes() << " " << buf.strides() << " " << buf.scalar_type() << std::endl;
+  }*/
+  kernel_arguments.push(buffers);
+
   if (has_random_) {
     kernel_arguments.appendPhiloxRNGSeed(rand_offset);
   }

@@ -38,7 +38,7 @@ size_t coalescReduction(TensorView* tv) {
   std::unordered_map<int, int> coalesc_permute;
   for (size_t i = 0; i < reduction_axes.size(); i++) {
     size_t new_pos = i + n_dims - reduction_axes.size();
-    if ((int)new_pos == reduction_axes[i]) {
+    if (new_pos == reduction_axes[i]) {
       break;
     } else {
       coalesc_permute[reduction_axes[i]] = new_pos;
@@ -77,17 +77,16 @@ bool scheduleFusion(Fusion* fusion, const at::ArrayRef<c10::IValue> inputs) {
 
       // Merge all iteration dimensions
       while (out->nDims() > num_reduction_axes + 1) {
-        // we merge the last two iterative axes;
-        out->merge(static_cast<int>(out->nDims() - num_reduction_axes) - 2);
+        out->merge(0, 1);
       }
       // Merge all reduction dimensions
       while (out->nDims() > 2) {
-        out->merge(-2, -1);
+        out->merge(1, 2);
       }
     } else {
       // Merge all dimensions because we're only supporting pointwise
       while (out->nDims() > 1)
-        out->merge(-2, -1);
+        out->merge(0, 1);
     }
   }
 
@@ -240,9 +239,11 @@ ReductionParams reductionHeuristic(
 
   // Evaluate Dimensions of Reduction TensorView
   TORCH_INTERNAL_ASSERT(red_elems > 0 && red_outputs > 0);
+  int red_inputs = red_elems * red_outputs;
 
   // 2. Initial Definition of Block Dimensions
 
+  int output_vec_size = 1;
   // Is fastest dimension a reduction dimension?
   if (rparams.fastest_dim) {
     if (red_elems < rparams.loop_unroll) {
@@ -251,13 +252,14 @@ ReductionParams reductionHeuristic(
     bdimx = ceilDiv(red_elems, rparams.loop_unroll);
     bdimy = red_outputs;
   } else {
-    bdimx = red_outputs;
+    output_vec_size = 4;
+    bdimx = red_outputs / output_vec_size;
     bdimy = red_elems;
   }
 
   // 3. Applying Power of 2 Blocking based on the Maximum Number of threads
 
-  constexpr int kMaxNumThreads = 512;
+  int kMaxNumThreads = 512 / output_vec_size;
   int num_threads = kMaxNumThreads;
   int device_warp_size = at::cuda::warp_size();
 
@@ -325,7 +327,7 @@ ReductionParams reductionHeuristic(
   int target_grid_size = device_multiprocessor_count * blocks_per_sm;
 
   // Setting the number of blocks based on the number of outputs
-  gdimx = ceilDiv(red_outputs, outputs_produced_per_block_iter);
+  gdimx = ceilDiv(ceilDiv(red_outputs, output_vec_size), outputs_produced_per_block_iter);
 
   // Cross-block reductions (if necessary)
   if (rparams.cross_block && red_elems_per_thread >= kMaxValuesPerThread &&
@@ -400,15 +402,15 @@ c10::optional<ReductionParams> scheduleReduction(
 
   // Merge all iteration dimensions
   while (red_tv->nDims() > num_reduction_axes + 1) {
-    red_tv->merge(static_cast<int>(red_tv->nDims() - num_reduction_axes) - 2);
+    red_tv->merge(0, 1);
   }
   // Merge all reduction dimensions
   while (red_tv->nDims() > 2) {
-    red_tv->merge(-2, -1);
+    red_tv->merge(1, 2);
   }
 
-  StatefulExpressionEvaluator evaluator(
-      executor_utils::statefulBindInputs(fusion_inputs, fusion));
+  EvaluationContext eval_context(
+      std::move(executor_utils::bindInputs(fusion_inputs, fusion)));
 
   // Evaluate Dimensions of Reduction TensorView
   auto red_ids = red_tv->domain()->domain();

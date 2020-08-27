@@ -23,14 +23,7 @@ struct TORCH_CUDA_API CompileOptions {
 
 class TORCH_CUDA_API FusionExecutor : public NonCopyable {
  public:
-  // Unsafe compilation that's useful for debugging kernels, iterating over
-  // slight modifications of a generated kernel
-  void debugCompileFusionFromStr(
-      Fusion* fusion,
-      const std::string& code,
-      const std::string& name,
-      int id,
-      CompileOptions options = CompileOptions());
+  void compileFusionFromStr(Fusion* fusion, const std::string& code, const std::string& name, int id, CompileOptions options = CompileOptions());
   void compileFusion(Fusion* fusion, CompileOptions options = CompileOptions());
 
   std::vector<at::Tensor> runFusion(
