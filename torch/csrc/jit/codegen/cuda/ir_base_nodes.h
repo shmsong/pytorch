@@ -215,8 +215,13 @@ class TORCH_CUDA_API Val : public Statement {
 
   // Returns the Expr that this value is an output of, returns nullptr if none
   // was found
-  Expr* getOrigin();
-  const Expr* getOrigin() const;
+  Expr* getOrigin() {
+    return origin;
+  };
+
+  const Expr* getOrigin() const {
+    return origin;
+  };
 
   virtual bool sameType(const Statement* other) {
     return Statement::sameType(other) &&
@@ -240,9 +245,19 @@ class TORCH_CUDA_API Val : public Statement {
   template <typename T>
   static Statement* mutatorDispatch(T mutator, Val*);
 
+  friend Fusion;
+
  protected:
   const ValType vtype_;
   const DataType dtype_;
+
+  void setOrigin(Expr* expr) {
+    origin = expr;
+  };
+
+ private:
+  // Origin is managed by Fusion and can change.
+  Expr* origin = nullptr;
 };
 
 //  A Expr represents a "computation." These are functions that takes inputs
