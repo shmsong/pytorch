@@ -243,7 +243,6 @@ ReductionParams reductionHeuristic(
 
   // 2. Initial Definition of Block Dimensions
 
-  int output_vec_size = 1;
   // Is fastest dimension a reduction dimension?
   if (rparams.fastest_dim) {
     if (red_elems < rparams.loop_unroll) {
@@ -252,14 +251,13 @@ ReductionParams reductionHeuristic(
     bdimx = ceilDiv(red_elems, rparams.loop_unroll);
     bdimy = red_outputs;
   } else {
-    output_vec_size = 4;
-    bdimx = red_outputs / output_vec_size;
+    bdimx = red_outputs;
     bdimy = red_elems;
   }
 
   // 3. Applying Power of 2 Blocking based on the Maximum Number of threads
 
-  int kMaxNumThreads = 512 / output_vec_size;
+  constexpr int kMaxNumThreads = 512;
   int num_threads = kMaxNumThreads;
   int device_warp_size = at::cuda::warp_size();
 
@@ -327,8 +325,7 @@ ReductionParams reductionHeuristic(
   int target_grid_size = device_multiprocessor_count * blocks_per_sm;
 
   // Setting the number of blocks based on the number of outputs
-  gdimx = ceilDiv(
-      ceilDiv(red_outputs, output_vec_size), outputs_produced_per_block_iter);
+  gdimx = ceilDiv(red_outputs, outputs_produced_per_block_iter);
 
   // Cross-block reductions (if necessary)
   if (rparams.cross_block && red_elems_per_thread >= kMaxValuesPerThread &&
