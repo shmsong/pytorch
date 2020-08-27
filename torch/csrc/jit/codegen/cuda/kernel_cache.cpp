@@ -232,7 +232,6 @@ std::vector<at::Tensor> FusionExecutorCache::runFusionWithInputs(
       // copy the fusion, since each FusionExecutor needs to manipulate the
       // fusion in order to generate kernel.
       Fusion fusion = *fusion_;
-      FusionGuard fg(&fusion);
       TensorView* red_tv = nullptr;
       for (auto expr : fusion.exprs()) {
         if (expr->getExprType().has_value() &&

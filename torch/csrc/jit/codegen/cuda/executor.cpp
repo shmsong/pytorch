@@ -47,7 +47,6 @@ void FusionExecutor::compileFusion(Fusion* fusion, CompileOptions options) {
   }
 
   fusion_ = *fusion;
-  FusionGuard fg(&fusion_);
   options_ = options;
 
   fusion_id_ = ++fusion_id_counter_;
