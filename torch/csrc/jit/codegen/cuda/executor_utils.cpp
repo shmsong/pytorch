@@ -259,9 +259,6 @@ EvaluationContext bindInputs(
 
       for (size_t dim = 0; dim < root_dom.size(); dim++) {
         auto extent = root_dom[dim]->extent();
-        // For some reason, the next line requires FusionGuard, otherwise it
-        // segfaults
-        FusionGuard fg(fusion);
         safeBind(eval_context, extent, aten_tensor.sizes()[dim]);
         if (!extent->isConstScalar()) {
           safeBind(

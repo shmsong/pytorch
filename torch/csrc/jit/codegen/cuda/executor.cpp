@@ -47,6 +47,7 @@ void FusionExecutor::compileFusion(Fusion* fusion, CompileOptions options) {
   }
 
   fusion_ = *fusion;
+  FusionGuard fg(&fusion_);
   options_ = options;
 
   fusion_id_ = ++fusion_id_counter_;
@@ -296,6 +297,7 @@ std::vector<at::Tensor> FusionExecutor::runFusion(
     executor_entry = &executor_entry_lookup_[*opt_code];
   }
 
+  FusionGuard fg(&fusion_);
   c10::DeviceGuard dg(options_.device);
   auto stream = at::cuda::getCurrentCUDAStream();
 
