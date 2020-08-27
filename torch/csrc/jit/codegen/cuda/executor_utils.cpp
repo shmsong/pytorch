@@ -124,7 +124,7 @@ inline bool validateKernelArg(
     const Val* param,
     const c10::Device& device,
     std::stringstream& msg) {
-  if (arg.type()->kind() == c10::TypeKind::TensorType) {
+  if (arg.isTensor()) {
     return validateKernelArgTensor(arg.toTensor(), param, device, msg);
   } else {
     return validateKernelArgScalar(arg.type(), param, msg);
