@@ -70,15 +70,9 @@ void debugPrint(const TensorTypePtr& type) {
 
 at::DimVector graphReductionAxes(const std::shared_ptr<Graph>& graph) {
   at::DimVector reduction_axes;
+  // TODO: let check that we have only single reduction node in the graph.
   for (const auto& n : graph->nodes()) {
     if (isReductionNode(n)) {
-      // TODO: I think this is enough to detect reduction that's not the output
-      // as well. Since we go in topological order, we would run into
-      // intermediate reduction, if there's any.
-      TORCH_INTERNAL_ASSERT(
-          graph->outputs().size() == 1 && graph->outputs()[0] == n->output(),
-          "support for graph with reduction is limited to single output from reduction node");
-
       // TODO: we should return empty when `keepdim` is True?
       auto dims_list = constant_as<c10::List<int64_t>>(n->input(1));
       TORCH_INTERNAL_ASSERT(
