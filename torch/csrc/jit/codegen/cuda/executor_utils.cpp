@@ -135,8 +135,6 @@ void validateKernelInputs(
     Fusion* fusion,
     const at::ArrayRef<IValue>& inputs,
     c10::Device device) {
-  // This is necessary as we were traversing the fusion graph later in the check
-  FusionGuard fg(fusion);
   // Check inputs
   TORCH_INTERNAL_ASSERT(
       inputs.size() == fusion->inputs().size(),
@@ -261,6 +259,9 @@ EvaluationContext bindInputs(
 
       for (size_t dim = 0; dim < root_dom.size(); dim++) {
         auto extent = root_dom[dim]->extent();
+        // For some reason, the next line requires FusionGuard, otherwise it
+        // segfaults
+        FusionGuard fg(fusion);
         safeBind(eval_context, extent, aten_tensor.sizes()[dim]);
         if (!extent->isConstScalar()) {
           safeBind(
