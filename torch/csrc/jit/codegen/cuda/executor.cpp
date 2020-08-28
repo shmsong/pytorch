@@ -430,7 +430,6 @@ std::vector<at::Tensor> FusionExecutor::runFusion(
   kernel_arguments.push(inputs);
   kernel_arguments.push(alloced_outputs);
   auto buffers = allocGlobalVals(evaluation_context);
-
   kernel_arguments.push(buffers);
 
   if (has_random_) {
