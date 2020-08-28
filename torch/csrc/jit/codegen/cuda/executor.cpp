@@ -431,16 +431,6 @@ std::vector<at::Tensor> FusionExecutor::runFusion(
   kernel_arguments.push(alloced_outputs);
   auto buffers = allocGlobalVals(evaluation_context);
 
-  /*for(auto &buf : buffers) {
-    std::cout << buf.sizes() << " " << buf.strides() << " " << buf.scalar_type()
-  << std::endl;
-  }
-  auto options = buffers[0].options();
-  buffers[0] = at::zeros({buffers[0].size(0) * 4}, options);
-  for(auto &buf : buffers) {
-    std::cout << buf.sizes() << " " << buf.strides() << " " << buf.scalar_type()
-  << std::endl;
-  }*/
   kernel_arguments.push(buffers);
 
   if (has_random_) {
