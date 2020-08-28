@@ -38,7 +38,7 @@ size_t coalescReduction(TensorView* tv) {
   std::unordered_map<int, int> coalesc_permute;
   for (size_t i = 0; i < reduction_axes.size(); i++) {
     size_t new_pos = i + n_dims - reduction_axes.size();
-    if (new_pos == reduction_axes[i]) {
+    if ((int)new_pos == reduction_axes[i]) {
       break;
     } else {
       coalesc_permute[reduction_axes[i]] = new_pos;
@@ -77,16 +77,17 @@ bool scheduleFusion(Fusion* fusion, const at::ArrayRef<c10::IValue> inputs) {
 
       // Merge all iteration dimensions
       while (out->nDims() > num_reduction_axes + 1) {
-        out->merge(0, 1);
+        // we merge the last two iterative axes;
+        out->merge(static_cast<int>(out->nDims() - num_reduction_axes) - 2);
       }
       // Merge all reduction dimensions
       while (out->nDims() > 2) {
-        out->merge(1, 2);
+        out->merge(-2, -1);
       }
     } else {
       // Merge all dimensions because we're only supporting pointwise
       while (out->nDims() > 1)
-        out->merge(0, 1);
+        out->merge(-2, -1);
     }
   }
 
@@ -239,7 +240,6 @@ ReductionParams reductionHeuristic(
 
   // Evaluate Dimensions of Reduction TensorView
   TORCH_INTERNAL_ASSERT(red_elems > 0 && red_outputs > 0);
-  int red_inputs = red_elems * red_outputs;
 
   // 2. Initial Definition of Block Dimensions
 
@@ -400,15 +400,15 @@ c10::optional<ReductionParams> scheduleReduction(
 
   // Merge all iteration dimensions
   while (red_tv->nDims() > num_reduction_axes + 1) {
-    red_tv->merge(0, 1);
+    red_tv->merge(static_cast<int>(red_tv->nDims() - num_reduction_axes) - 2);
   }
   // Merge all reduction dimensions
   while (red_tv->nDims() > 2) {
-    red_tv->merge(1, 2);
+    red_tv->merge(-2, -1);
   }
 
   EvaluationContext eval_context(
-      std::move(executor_utils::bindInputs(fusion_inputs, fusion)));
+      executor_utils::bindInputs(fusion_inputs, fusion));
 
   // Evaluate Dimensions of Reduction TensorView
   auto red_ids = red_tv->domain()->domain();
