@@ -135,7 +135,8 @@ at::Tensor inferAndAlloc(
     return at::zeros(isizes, tensor_options);
   } else {
     c10::IntArrayRef isizes(sizes);
-    return at::empty(isizes, tensor_options);
+    at::AutoNonVariableTypeMode non_variable_type_mode;
+    return at::native::empty_cuda(isizes, tensor_options);
   }
 }
 
