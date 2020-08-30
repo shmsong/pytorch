@@ -136,7 +136,8 @@ at::Tensor inferAndAlloc(
     return at::zeros(isizes, tensor_options);
   } else {
     c10::IntArrayRef isizes(sizes);
-    return at::empty(isizes, tensor_options);
+    at::AutoNonVariableTypeMode non_variable_type_mode;
+    return at::native::empty_cuda(isizes, tensor_options);
   }
 }
 
@@ -340,7 +341,7 @@ std::vector<at::Tensor> FusionExecutor::runFusion(
   if (outputs.empty() || outputs.size() != fusion_.outputs().size()) {
     alloced_outputs = allocOutputs(evaluation_context);
   }
-  
+
   auto buffers = allocGlobalVals(evaluation_context);
 
   KernelArgumentHolder kernel_arguments;
