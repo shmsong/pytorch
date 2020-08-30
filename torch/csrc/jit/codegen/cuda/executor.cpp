@@ -6,6 +6,7 @@
 
 #include <torch/csrc/jit/codegen/cuda/executor.h>
 
+#include <ATen/core/LegacyTypeDispatch.h>
 #include <ATen/cuda/Exceptions.h>
 #include <c10/core/DeviceGuard.h>
 #include <c10/cuda/CUDAFunctions.h>
@@ -92,7 +93,8 @@ at::Tensor inferAndAlloc(
     return at::zeros(isizes, tensor_options);
   } else {
     c10::IntArrayRef isizes(sizes);
-    return at::empty(isizes, tensor_options);
+    at::AutoNonVariableTypeMode non_variable_type_mode;
+    return at::native::empty_cuda(isizes, tensor_options);
   }
 }
 
