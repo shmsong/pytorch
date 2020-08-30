@@ -6,9 +6,9 @@
 
 #include <torch/csrc/jit/codegen/cuda/executor.h>
 
+#include <ATen/core/LegacyTypeDispatch.h>
 #include <ATen/cuda/CUDAContext.h>
 #include <ATen/cuda/Exceptions.h>
-#include <ATen/core/LegacyTypeDispatch.h>
 #include <c10/core/DeviceGuard.h>
 #include <c10/cuda/CUDAFunctions.h>
 #include <c10/cuda/CUDAStream.h>
@@ -37,7 +37,7 @@ std::string FusionExecutor::getStructuredCode(const std::string& kernel) {
   return code;
 }
 
-void FusionExecutor::compileFusionFromStr(
+void FusionExecutor::debugCompileFusionFromStr(
     Fusion* fusion,
     const std::string& code,
     const std::string& name,
@@ -77,9 +77,15 @@ void FusionExecutor::compileFusion(Fusion* fusion, CompileOptions options) {
   options_ = options;
 
   setUsedTVs();
-
+  TORCH_INTERNAL_ASSERT(
+      options.device.is_cuda(), "Provided device to CUDA fuser is the CPU.");
+  max_device_smem =
+      at::cuda::getDeviceProperties(options.device.index())->sharedMemPerBlock;
   fusion_id_ = ++fusion_id_counter_;
   has_random_ = fusion->hasRNG();
+  has_block_reductions = fusion_.hasBlockReduction();
+  has_grid_reductions = fusion_.hasGridReduction();
+  has_block_broadcasts = fusion_.hasBlockBroadcast();
   lowered_ = GpuLower(&fusion_);
   const auto kernel = lowered_.getKernel(kernelName());
   const auto structured_code = getStructuredCode(kernel);
@@ -89,8 +95,7 @@ void FusionExecutor::compileFusion(Fusion* fusion, CompileOptions options) {
     unsigned static_smem_size =
         computeSharedMemory(see, lowered_.static_allocations());
     TORCH_INTERNAL_ASSERT(
-        static_smem_size <
-            at::cuda::getCurrentDeviceProperties()->sharedMemPerBlock,
+        static_smem_size < max_device_smem,
         "The static shared memory allocation is larger than available memory.");
   }
 
@@ -236,8 +241,7 @@ LaunchParams FusionExecutor::computeLaunchParams(
   // Calculate Dynamic Shared Memory Size
   // Add workspace for reduction and broadcast
   uint64_t reduction_broadcast_workspace = 0;
-  if (fusion_.hasBlockReduction() || fusion_.hasGridReduction() ||
-      lowered_.hasBlockBroadcast()) {
+  if (has_block_reductions || has_grid_reductions || has_block_broadcasts) {
     // Not using nThreads here since it does not handle uninitialized value
     reduction_broadcast_workspace =
         dataTypeSize(fusion_.getMaximumSmemDataType()) * launch_params.bdimx() *
@@ -251,8 +255,7 @@ LaunchParams FusionExecutor::computeLaunchParams(
       computeSharedMemory(see, lowered_.static_allocations());
 
   TORCH_INTERNAL_ASSERT(
-      (dynamic_smem_size + static_smem_size) <
-          at::cuda::getCurrentDeviceProperties()->sharedMemPerBlock,
+      (dynamic_smem_size + static_smem_size) < max_device_smem,
       "The total shared memory allocation is larger than available memory.");
   launch_params.setSmem(dynamic_smem_size);
 
