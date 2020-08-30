@@ -11,6 +11,7 @@
 #include <torch/csrc/jit/codegen/cuda/expr_evaluator.h>
 #include <torch/csrc/jit/codegen/cuda/fusion.h>
 #include <torch/csrc/jit/codegen/cuda/ir_all_nodes.h>
+#include <torch/csrc/jit/codegen/cuda/lower2device.h>
 
 namespace torch {
 namespace jit {
@@ -38,6 +39,7 @@ void safeBind(
     const Val* value,
     Int::ScalarType concrete_value);
 
+// Bind Inputs to Fusion IR
 EvaluationContext bindInputs(
     const at::ArrayRef<IValue>& aten_inputs,
     Fusion* fusion);

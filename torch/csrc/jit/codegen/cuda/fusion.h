@@ -127,8 +127,10 @@ class TORCH_CUDA_API Fusion final {
 
   // Print transformations used in fusion (can be very verbose)
   void printTransforms();
+
   // Lower the fusion and print a kernel
   void printKernel();
+
   // Register the Val with this fusion
   StmtNameType registerVal(Val* val);
 
@@ -174,6 +176,8 @@ class TORCH_CUDA_API Fusion final {
   bool hasReduction();
   bool hasBlockReduction();
   bool hasGridReduction();
+  bool hasBroadcast();
+  DataType getMaximumSmemDataType();
   size_t gridReductionTempBufferSize();
 
   const auto& inputs() const {
