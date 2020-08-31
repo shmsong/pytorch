@@ -76,7 +76,6 @@ void FusionExecutor::compileFusion(Fusion* fusion, CompileOptions options) {
   FusionGuard fg(&fusion_);
   options_ = options;
 
-
   TORCH_INTERNAL_ASSERT(
       options.device.is_cuda(), "Provided device to CUDA fuser is the CPU.");
   max_device_smem =
