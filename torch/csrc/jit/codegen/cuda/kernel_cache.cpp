@@ -269,7 +269,8 @@ std::vector<at::Tensor> FusionExecutorCache::runFusionWithInputs(
       code_to_fe_lookup_[unique_id] = pw_fusion_executor_cache_.get();
     }
   }
-  return code_to_fe_lookup_[unique_id]->runFusion(inputs, LaunchParams(), unique_id);
+  return code_to_fe_lookup_[unique_id]->runFusion(
+      inputs, LaunchParams(), unique_id);
 }
 
 GraphCache::InputsRequirement::InputsRequirement(

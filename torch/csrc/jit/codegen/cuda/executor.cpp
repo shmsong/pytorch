@@ -245,7 +245,8 @@ LaunchParams FusionExecutor::computeLaunchParams(
   return launch_params;
 }
 
-FusionExecutor::GlobalBuffers FusionExecutor::allocGlobalVals(EvaluationContext& ec) {
+FusionExecutor::GlobalBuffers FusionExecutor::allocGlobalVals(
+    EvaluationContext& ec) {
   GlobalBuffers global_buffers;
   for (auto alloc : lowered_.global_allocations()) {
     TORCH_INTERNAL_ASSERT(
