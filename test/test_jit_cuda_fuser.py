@@ -264,27 +264,42 @@ class TestCudaFuser(JitTestCase):
         subgraph = self._getSubgraphInFusion(t_jit.graph_for(x, y, z))
         self.assertGraphContainsExactly(subgraph, 'aten::add', 2, consider_subgraphs=False)
 
-    @unittest.skipIf(True, "Broadcast with different output not supported yet")
     @unittest.skipIf(not RUN_CUDA, "requires CUDA")
     @unittest.skipIf(GRAPH_EXECUTOR != ProfilingMode.PROFILING and GRAPH_EXECUTOR !=
                      ProfilingMode.LEGACY, "Requires fusion optimization pass to be effective")
     def test_broadcasting_multiple_output_shape(self):
-        def t(x: torch.Tensor, y: torch.Tensor, z: torch.Tensor):
-            o = x + 12
-            o1 = o + y
-            o2 = o + z
-            oo = o1.sum() + o2.sum()
-            return oo
+        torch._C._jit_set_bailout_depth(2)
+
+        def t(x: torch.Tensor, y: torch.Tensor, scale: float, z: torch.Tensor):
+            o = torch.mul(x, y)
+            o = torch.mul(o, scale)
+            out1 = torch.mul(o, z)
+            out2 = torch.sum(out1, dim=[2])
+            return out1, out2
+
         t_jit = torch.jit.script(t)
-        x = torch.randn(32, 32, dtype=torch.float, device="cuda")
-        y = torch.randn(2, 32, 32, dtype=torch.float, device="cuda")
-        z = torch.randn(4, 32, 32, dtype=torch.float, device="cuda")
-        jit_o = t_jit(x, y, z)
-        jit_o = t_jit(x, y, z)
-        o = t(x, y, z)
-        self.assertEqual(o, jit_o)
-        # Currently cannot fuse this
-        self.assertGraphContains(t_jit.graph_for(x, y, z), FUSION_GROUP)
+        x = torch.randn(8, 4, 10, 16, dtype=torch.float, device="cuda")
+        y = torch.randn(8, 4, 10, 16, dtype=torch.float, device="cuda")
+        z = torch.randn(8, 4, 10, 16, dtype=torch.float, device="cuda")
+        scale = 0.5
+        jit_o = t_jit(x, y, scale, z)
+        jit_o = t_jit(x, y, scale, z)
+        o = t(x, y, scale, z)
+        for oo, jit_oo in zip(o, jit_o):
+            self.assertEqual(oo.dtype, jit_oo.dtype)
+            self.assertEqual(oo, jit_oo)
+        self.assertGraphContains(t_jit.graph_for(x, y, scale, z), FUSION_GROUP)
+
+        x = x.to(memory_format=torch.channels_last)
+        y = y.to(memory_format=torch.channels_last)
+        z = z.to(memory_format=torch.channels_last)
+        jit_o = t_jit(x, y, scale, z)
+        jit_o = t_jit(x, y, scale, z)
+        o = t(x, y, scale, z)
+        for oo, jit_oo in zip(o, jit_o):
+            self.assertEqual(oo.dtype, jit_oo.dtype)
+            self.assertEqual(oo, jit_oo)
+        self.assertGraphContains(t_jit.graph_for(x, y, scale, z), FUSION_GROUP)
 
     @unittest.skipIf(True, "broadcast on branches can't be resolved yet")
     @unittest.skipIf(not RUN_CUDA, "requires CUDA")
@@ -633,6 +648,35 @@ class TestCudaFuser(JitTestCase):
                 for perm0 in itertools.permutations(range(len(x))):
                     for perm1 in itertools.permutations(range(len(x))):
                         self._reduction_helper(x, axes, torch.float32, "cuda", perm0, perm1)
+
+    @unittest.skipIf(not RUN_CUDA, "requires CUDA")
+    @unittest.skipIf(GRAPH_EXECUTOR != ProfilingMode.PROFILING and GRAPH_EXECUTOR !=
+                     ProfilingMode.LEGACY, "Requires fusion optimization pass to be effective")
+    @skipIfRocm
+    def test_reduction_multiple_output(self):
+
+        def t(t0: torch.Tensor, t1: torch.Tensor, scale: float, t2: torch.Tensor):
+          o = torch.mul(t0, t1)
+          o = torch.mul(o, scale)
+          out1 = torch.mul(o, t2)
+          out2 = torch.sum(out1, dim=[2])
+          return out1, out2
+
+        size = [8, 8, 10, 16]
+        my_type = torch.float
+        my_format = torch.contiguous_format
+        x = torch.randn(8, 8, 10, 16, dtype=my_type, device="cuda").to(memory_format=my_format)
+        y = torch.rand_like(x).to(memory_format=my_format)
+        z = torch.rand_like(x).to(memory_format=my_format)
+
+        t_jit = torch.jit.script(t)
+        jit_o = t_jit(x, y, 0.5, z)
+        jit_o = t_jit(x, y, 0.5, z)
+        o = t(x, y, 0.5, z)
+        for oo, jit_oo in zip(o, jit_o):
+            self.assertEqual(oo.dtype, jit_oo.dtype)
+            self.assertEqual(oo, jit_oo)
+        self.assertGraphContains(t_jit.graph_for(x, y, 0.5, z), FUSION_GROUP)
 
     @unittest.skipIf(not RUN_CUDA, "requires CUDA")
     @unittest.skipIf(GRAPH_EXECUTOR != ProfilingMode.PROFILING and GRAPH_EXECUTOR !=
