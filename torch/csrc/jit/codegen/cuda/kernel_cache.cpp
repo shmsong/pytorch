@@ -377,9 +377,12 @@ bool GraphCache::InputsRequirement::complyWith(
   return true;
 }
 
-void GraphCache::InputsRequirement::extractPermutation(TensorTypePtr acc_type, const std::vector<size_t>& reduction_axes) {
+void GraphCache::InputsRequirement::extractPermutation(
+    const TensorTypePtr& acc_type,
+    const std::vector<size_t>& reduction_axes) {
   input_permutation_ = getPermutationPerSortedStride(acc_type);
-  reduction_output_permutation_ = inversePermutation(input_permutation_, reduction_axes);
+  reduction_output_permutation_ =
+      inversePermutation(input_permutation_, reduction_axes);
   pw_output_permutation_ = inversePermutation(input_permutation_, {});
   TORCH_CHECK(
       acc_type->device().has_value(), "requires fixed device for all inputs");
@@ -553,11 +556,15 @@ std::vector<at::Tensor> GraphCache::runGraphWithInputs(
       if (output.dim() == input_stack.pw_output_permutation_.size()) {
         permuted_outputs.emplace_back(
             output.permute(input_stack.pw_output_permutation_));
-      } else if (output.dim() == input_stack.reduction_output_permutation_.size()) {
+      } else if (
+          output.dim() == input_stack.reduction_output_permutation_.size()) {
         permuted_outputs.emplace_back(
             output.permute(input_stack.reduction_output_permutation_));
       } else {
-        TORCH_INTERNAL_ASSERT(false, "Something went wrong with integration permutation, can't find a consistent permutation for output in fusion", *graph_);
+        TORCH_INTERNAL_ASSERT(
+            false,
+            "Something went wrong with integration permutation, can't find a consistent permutation for output in fusion",
+            *graph_);
       }
     }
     return permuted_outputs;

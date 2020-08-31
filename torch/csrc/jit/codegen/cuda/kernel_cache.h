@@ -156,7 +156,9 @@ class GraphCache {
 
     // extract permutation for input output tensor from accumulcated tensor type
     // pointer on all inputs;
-    void extractPermutation(TensorTypePtr acc_type, const std::vector<size_t>& reduction_axes);
+    void extractPermutation(
+        const TensorTypePtr& acc_type,
+        const std::vector<size_t>& reduction_axes);
   };
 
   // construct FusionExecutorCache per InputsRequirement.
