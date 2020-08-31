@@ -186,6 +186,7 @@ void IRPrinter::handle(const TensorView* tv) {
 void IRPrinter::handle(const IterDomain* id) {
   os << id->getIterType();
   os << id->getParallelType();
+  os << id->name();
   os << "{";
   if (!id->start()->isZeroInt()) {
     print_inline(id->start());
@@ -363,6 +364,7 @@ void IRPrinter::handle(const kir::NamedScalar* i) {
 void IRPrinter::handle(const kir::IterDomain* id) {
   os << id->getIterType();
   os << id->getParallelType();
+  os << id->name();
   os << "{";
   if (!id->start()->isZeroInt()) {
     print_inline(id->start());
