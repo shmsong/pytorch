@@ -269,13 +269,13 @@ class TestCudaFuser(JitTestCase):
     @unittest.skipIf(GRAPH_EXECUTOR != ProfilingMode.PROFILING and GRAPH_EXECUTOR !=
                      ProfilingMode.LEGACY, "Requires fusion optimization pass to be effective")
     def test_broadcasting_multiple_output_shape(self):
-
         def t(x: torch.Tensor, y: torch.Tensor, z: torch.Tensor):
             o = x + 12
             o1 = o + y
             o2 = o + z
             oo = o1.sum() + o2.sum()
             return oo
+        t_jit = torch.jit.script(t)
         x = torch.randn(32, 32, dtype=torch.float, device="cuda")
         y = torch.randn(2, 32, 32, dtype=torch.float, device="cuda")
         z = torch.randn(4, 32, 32, dtype=torch.float, device="cuda")
