@@ -24,7 +24,7 @@ class BuffersExtractor : OptOutDispatch {
   BuffersExtractor(
       const std::vector<Expr*>& exprs,
       ThreadPredicateMap& _thread_predicates)
-      : thread_predicates_(_thread_predicates), has_block_broadcast_(false) {
+      : thread_predicates_(_thread_predicates) {
     for (auto expr : exprs) {
       handle(expr);
     }
@@ -46,13 +46,8 @@ class BuffersExtractor : OptOutDispatch {
     return static_allocations_;
   }
 
-  bool hasBlockBroadcast() {
-    return has_block_broadcast_;
-  }
-
  private:
   ThreadPredicateMap& thread_predicates_;
-  bool has_block_broadcast_;
   std::vector<kir::Allocate*> global_allocations_;
   std::vector<kir::Allocate*> sync_allocations_;
   std::vector<kir::Allocate*> dynamic_allocations_;
@@ -76,16 +71,6 @@ class BuffersExtractor : OptOutDispatch {
     for (auto expr : ite->elseBody().exprs()) {
       OptOutDispatch::handle(expr);
     }
-  }
-
-  void handle(kir::BroadcastOp* bop) final {
-    const ir_utils::ParallelTypeBitmap domains =
-        ir_utils::getParallelBroadcastDomains(bop->out(), thread_predicates_);
-    const bool thread_x = domains.get(ParallelType::TIDx);
-    const bool thread_y = domains.get(ParallelType::TIDy);
-    const bool thread_z = domains.get(ParallelType::TIDz);
-    const bool block_broadcast_needed = thread_x || thread_y || thread_z;
-    has_block_broadcast_ |= block_broadcast_needed;
   }
 
   void handle(kir::GridReduction* gr) final {
