@@ -11,7 +11,7 @@ from . import elementwise    # noqa: F401
 from . import matmul         # noqa: F401
 # from . import normalization  # noqa: F401
 # from . import pooling        # noqa: F401
-# from . import reduction      # noqa: F401
+from . import reduction      # noqa: F401
 # from . import softmax        # noqa: F401
 from . import rnn_eltwise    # noqa: F401
 from . import swish          # noqa: F401
@@ -44,6 +44,12 @@ Works only with Python3.\n A few examples:
         type=str,
         default="fwd,both",
         help="a comma separated list of running modes",
+    )
+    parser.add_argument(
+        "--dtype",
+        type=str,
+        default="float32",
+        help="a comma separated list of Data Types: {float32[default], float16}",
     )
     parser.add_argument(
         "--engine",
@@ -79,13 +85,23 @@ Works only with Python3.\n A few examples:
         "--cuda_fuser",
         type=str,
         default="te",
-        help="The Cuda fuser backend to use: one of {te, old, none}",
+        help="The Cuda fuser backend to use: one of {te, nvf, old, none}",
     )
     parser.add_argument(
         "--output",
         type=str,
         default="stdout",
         help="The output format of the benchmark run {stdout[default], json}",
+    )
+    parser.add_argument(
+        "--print-ir",
+        action='store_true',
+        help="Print the IR graph of the Fusion.",
+    )
+    parser.add_argument(
+        "--print-kernel",
+        action='store_true',
+        help="Print generated kernel(s).",
     )
 
     args = parser.parse_args()
@@ -100,7 +116,11 @@ Works only with Python3.\n A few examples:
         torch._C._jit_set_profiling_executor(False)
         torch._C._jit_set_texpr_fuser_enabled(False)
         torch._C._jit_override_can_fuse_on_gpu(True)
-
+    elif args.cuda_fuser == "nvf":
+        import torch
+        torch._C._jit_set_profiling_executor(True)
+        torch._C._jit_set_nvfuser_enabled(True)
+        torch._C._jit_set_profiling_mode(True)
 
     def set_global_threads(num_threads):
         os.environ["OMP_NUM_THREADS"] = str(num_threads)
@@ -132,13 +152,20 @@ Works only with Python3.\n A few examples:
 
     modes = args.mode.split(",")
 
+    datatypes = args.dtype.split(",")
+    for index, dtype in enumerate(datatypes):
+        import torch
+        datatypes[index] = getattr(torch, dtype)
+        if not datatypes[index] :
+            raise AttributeError("DataType: {} is not valid!".format(dtype))
+
     tensor_engine.set_engine_mode(args.engine)
 
     def run_default_configs(bench_cls, allow_skip=True):
-        for mode, device, config in itertools.product(
-            modes, devices, bench_cls.default_configs()
+        for mode, device, dtype, config in itertools.product(
+            modes, devices, datatypes, bench_cls.default_configs()
         ):
-            bench = bench_cls(mode, device, *config)
+            bench = bench_cls(mode, device, dtype, *config)
             bench.output_type = args.output
             bench.jit_mode = args.jit_mode
             if not bench.is_supported():

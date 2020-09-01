@@ -2,16 +2,16 @@ from . import benchmark
 
 
 class ReduceBench(benchmark.Benchmark):
-    def __init__(self, mode, device, case, M, N, K):
-        super().__init__(mode, device)
+    def __init__(self, mode, device, dtype, case, M, N, K):
+        super().__init__(mode, device, dtype)
         self.case = case
         self.M = M
         self.N = N
         self.K = K
 
-        self.data = self.rand(
-            [M, N, K], device=device, requires_grad=self.requires_grad
-        )
+        self.inputs = [self.randn(
+            [M, N, K], device=device, dtype=dtype, requires_grad=self.requires_grad
+        )]
         if case == "row":
             self.dims = [1, 2]
         elif case == "mid":
@@ -21,8 +21,9 @@ class ReduceBench(benchmark.Benchmark):
         else:
             raise ValueError("invalid case: %s" % case)
 
-    def forward(self):
-        y = self.sum(self.data, self.dims)
+    def forward(self, inputs):
+        x = self.add(inputs, 0.001)
+        y = self.sum(x, self.dims)
         return y
 
     def config(self):
@@ -47,7 +48,7 @@ class ReduceBench(benchmark.Benchmark):
             sol_count = (1) + (1)
             algorithmic_count = 1 + 1
 
-        buffer_size = self.M * self.N * self.K * 4
+        buffer_size = self.M * self.N * self.K
         return {
             "sol": buffer_size * sol_count,
             "algorithmic": buffer_size * algorithmic_count,
@@ -55,8 +56,8 @@ class ReduceBench(benchmark.Benchmark):
 
 
 class ReduceRowBench(ReduceBench):
-    def __init__(self, mode, device, M, N, K):
-        super(ReduceRowBench, self).__init__(mode, device, "row", M, N, K)
+    def __init__(self, mode, device, dtype, M, N, K):
+        super(ReduceRowBench, self).__init__(mode, device, dtype, "row", M, N, K)
 
     @staticmethod
     def module():
@@ -64,8 +65,8 @@ class ReduceRowBench(ReduceBench):
 
 
 class ReduceMidBench(ReduceBench):
-    def __init__(self, mode, device, M, N, K):
-        super(ReduceMidBench, self).__init__(mode, device, "mid", M, N, K)
+    def __init__(self, mode, device, dtype, M, N, K):
+        super(ReduceMidBench, self).__init__(mode, device, dtype, "mid", M, N, K)
 
     @staticmethod
     def module():
@@ -73,8 +74,8 @@ class ReduceMidBench(ReduceBench):
 
 
 class ReduceColBench(ReduceBench):
-    def __init__(self, mode, device, M, N, K):
-        super(ReduceColBench, self).__init__(mode, device, "col", M, N, K)
+    def __init__(self, mode, device, dtype, M, N, K):
+        super(ReduceColBench, self).__init__(mode, device, dtype, "col", M, N, K)
 
     @staticmethod
     def module():
