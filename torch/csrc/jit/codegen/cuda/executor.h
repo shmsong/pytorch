@@ -70,7 +70,7 @@ class TORCH_CUDA_API FusionExecutor : public NonCopyable {
       StatefulExpressionEvaluator& see);
 
   uint64_t computeSharedMemory(
-      EvaluationContext& ec,
+      StatefulExpressionEvaluator& see,
       const std::vector<kir::Allocate*>& buffers,
       bool align_padding = false,
       uint64_t total = 0);

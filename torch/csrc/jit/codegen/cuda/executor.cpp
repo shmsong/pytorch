@@ -72,6 +72,7 @@ void FusionExecutor::compileFusion(Fusion* fusion, CompileOptions options) {
         "Output types from fusions that are not tensors are not supported at this point.");
   }
 
+  // Clone the fusion so we can store it
   fusion_ = *fusion;
   FusionGuard fg(&fusion_);
   options_ = options;
@@ -91,9 +92,9 @@ void FusionExecutor::compileFusion(Fusion* fusion, CompileOptions options) {
   const auto structured_code = getStructuredCode(kernel);
 
   if (lowered_.static_allocations().size() > 0) {
-    EvaluationContext evaluation_context(&fusion_);
+    StatefulExpressionEvaluator static_evaluator(&fusion_);
     unsigned static_smem_size =
-        computeSharedMemory(evaluation_context, lowered_.static_allocations());
+        computeSharedMemory(static_evaluator, lowered_.static_allocations());
     TORCH_INTERNAL_ASSERT(
         static_smem_size < max_device_smem,
         "The static shared memory allocation is larger than available memory.");
@@ -115,7 +116,7 @@ at::Tensor inferAndAlloc(
     bool zero_init = false) {
   std::vector<int64_t> sizes;
   for (auto id : TensorDomain::noReductions(tv->getRootDomain())) {
-    auto infered_val = see.inferValue(id->rawExtent());
+    auto inferred_val = see.inferValue(id->rawExtent());
     TORCH_INTERNAL_ASSERT(
         inferred_val.has_value(),
         "Could not launch kernel as program could not infer ",
@@ -141,19 +142,19 @@ at::Tensor inferAndAlloc(
 } // namespace
 
 uint64_t FusionExecutor::computeSharedMemory(
-    EvaluationContext& ec,
+    StatefulExpressionEvaluator& see,
     const std::vector<kir::Allocate*>& buffers,
     bool align_padding,
     uint64_t total) {
   for (auto smem_alloc : buffers) {
-    auto inferred_size = ExpressionEvaluator::evaluate(smem_alloc->size(), &ec);
-    if (inferred_size.has_value()) {
+    auto inferred_val = see.inferValue(smem_alloc->size());
+    if (inferred_val.has_value()) {
       const uint64_t data_size = dataTypeSize(smem_alloc->buffer_type());
       // Add padding to align dynamic shared memory
       if (align_padding) {
         total = ceilDiv(total, data_size) * data_size;
       }
-      total += inferred_size.value() * data_size;
+      total += inferred_val.value() * data_size;
     } else {
       TORCH_INTERNAL_ASSERT(
           false,
@@ -206,8 +207,8 @@ LaunchParams FusionExecutor::computeLaunchParams(
       if (launch_constraints.hasDim(p_type)) {
         auto parallel_ids = entry.second;
         for (auto parallel_id : parallel_ids) {
-          auto infered_val = see.inferValue(parallel_id->rawExtent());
-          if (infered_val.has_value()) {
+          auto inferred_val = see.inferValue(parallel_id->rawExtent());
+          if (inferred_val.has_value()) {
             // This value could have been infered, make sure it was set right.
             TORCH_CHECK(
                 inferred_val.value() == launch_constraints.getDim(p_type) ||
@@ -222,10 +223,6 @@ LaunchParams FusionExecutor::computeLaunchParams(
             // Bind the launch constraint into our evaluation context
             see.safeBind(
                 parallel_id->rawExtent(),
-                launch_constraints.getDim(entry.first));
-            executor_utils::safeBind(
-                ec,
-                lowered_.getLowerValue(parallel_id->rawExtent()),
                 launch_constraints.getDim(entry.first));
             launch_params.bind(launch_constraints.getDim(p_type), p_type);
           }
@@ -260,10 +257,10 @@ LaunchParams FusionExecutor::computeLaunchParams(
   }
 
   uint64_t dynamic_smem_size = computeSharedMemory(
-      ec, lowered_.dynamic_allocations(), true, reduction_broadcast_workspace);
+      see, lowered_.dynamic_allocations(), true, reduction_broadcast_workspace);
 
   uint64_t static_smem_size =
-      computeSharedMemory(ec, lowered_.static_allocations());
+      computeSharedMemory(see, lowered_.static_allocations());
 
   TORCH_INTERNAL_ASSERT(
       (dynamic_smem_size + static_smem_size) < max_device_smem,
