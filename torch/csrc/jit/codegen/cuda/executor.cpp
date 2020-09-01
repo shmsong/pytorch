@@ -333,6 +333,9 @@ std::vector<at::Tensor> FusionExecutor::runFusion(
     }
     rand_offset = executor_entry->rand_offset;
   } else {
+    // code path to take when either:
+    //   1. no opt_code is provided or;
+    //   2. `executor_entry` is not initialized
     executor_utils::validateKernelInputs(&fusion_, inputs, options_.device);
 
     EvaluationContext evaluation_context =
@@ -364,8 +367,10 @@ std::vector<at::Tensor> FusionExecutor::runFusion(
            1);
     }
 
-    // record the the short-cut executor entry for the given input set;
+    // This is the entry when we have provided `opt_code` but the entry has not
+    // been initialized yet.
     if (executor_entry) {
+      // record the the short-cut executor entry for the given input set;
       executor_entry->launch_params = launch_params;
       for (const auto& output : alloced_outputs) {
         executor_entry->output_sizes.push_back(output.sizes().vec());

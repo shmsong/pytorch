@@ -573,6 +573,12 @@ std::vector<at::Tensor> GraphCache::runGraphWithInputs(
       }
     }
     if (!fusion_executor_cache) {
+      // This is the ugly bit, each level of cache has their own entry. At this
+      // point, we are creating an instance of FusionExecutorCache as well as a
+      // cache entry for GraphCache;
+      // But we are not creating any cache entry for nested structures. We only
+      // create cache entry below when we later call
+      // `fusion_executor_cache->runFusionWithInputs`
       fusion_executor_cache = appendFusionExecutorCache(input_stack);
       // record short cut to designated fusion executor
       code_to_index_lookup_[unique_id] = fe_cache_.size() - 1;
