@@ -37,7 +37,7 @@ std::string FusionExecutor::getStructuredCode(const std::string& kernel) {
   return code;
 }
 
-void FusionExecutor::compileFusionFromStr(
+void FusionExecutor::debugCompileFusionFromStr(
     Fusion* fusion,
     const std::string& code,
     const std::string& name,
