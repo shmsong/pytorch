@@ -19,14 +19,25 @@ namespace cuda {
 // to the instance of `InputsIdLookup`.
 class InputsIdLookup {
  public:
+  InputsIdLookup() : max_cache_size_(10) {};
+
+  struct IdLookupReturn {
+    size_t id = 0;
+    size_t evict_id = 0;
+    bool eviction = false;
+  };
+
   // encode each unique input sets to an unique id;
-  size_t getCode(const at::ArrayRef<IValue>& inputs);
+  IdLookupReturn lookupId(const at::ArrayRef<IValue>& inputs);
 
  private:
+  size_t max_cache_size_;
   size_t current_id_ = 1;
 
+  std::list<std::string> used_entry_;
+
   // TODO: change this to a trie for efficiency;
-  std::unordered_map<std::string, size_t> encoding_lookup_;
+  std::unordered_map<std::string, std::pair<size_t, std::list<std::string>::iterator>> encoding_lookup_;
 };
 
 // [ Note -- 2 level cache implementation ]
@@ -82,6 +93,14 @@ class FusionExecutorCache {
   std::vector<at::Tensor> runFusionWithInputs(
       const at::ArrayRef<IValue>& inputs,
       size_t unique_id);
+
+  // evict cached short cut entry in `code_to_fe_lookup_`;
+  inline void evictCache(size_t cache_id) {
+    auto iter = code_to_fe_lookup_.find(cache_id);
+    TORCH_INTERNAL_ASSERT(iter != code_to_fe_lookup_.end(), "evict cache failed to find an entry");
+    (iter->second)->evictCache(cache_id);
+    code_to_fe_lookup_.erase(iter);
+  };
 
  private:
   // device_ where compiled binaries are loaded on & inputs are expected to
