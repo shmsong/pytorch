@@ -1,4 +1,3 @@
-
 #include <torch/csrc/jit/codegen/cuda/expr_evaluator.h>
 #include <torch/csrc/jit/codegen/cuda/fusion.h>
 #include <torch/csrc/jit/codegen/cuda/ir_all_nodes.h>
@@ -356,8 +355,8 @@ void StatefulExpressionEvaluator::handle(kir::UnaryOp* uop) {
 }
 
 void StatefulExpressionEvaluator::handle(kir::BinaryOp* bop) {
-  const auto lhs = getValue(bop->lhs());
-  const auto rhs = getValue(bop->rhs());
+  const auto lhs = maybeHandle(bop->lhs());
+  const auto rhs = maybeHandle(bop->rhs());
   if (lhs.has_value() && rhs.has_value()) {
     switch (bop->getBinaryOpType()) {
       case BinaryOpType::Add:
