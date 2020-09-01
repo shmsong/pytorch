@@ -308,21 +308,25 @@ std::vector<at::Tensor> FusionExecutor::runFusion(
   uint64_t rand_offset = 0;
 
   if (executor_entry && executor_entry->init) {
-    // take the short-cut for launch if we see a recorded input set again;
-    launch_params = executor_entry->launch_params;
-    for (size_t i = 0; i < executor_entry->output_sizes.size(); i++) {
-      auto tensor_options = at::TensorOptions()
-                                .dtype(executor_entry->output_types[i])
-                                .device(options_.device);
-      alloced_outputs.push_back(
-          at::empty(executor_entry->output_sizes[i], tensor_options));
-    }
-    for (size_t i = 0; i < executor_entry->empty_buffer_sizes.size(); i++) {
-      auto tensor_options = at::TensorOptions()
-                                .dtype(executor_entry->empty_buffer_types[i])
-                                .device(options_.device);
-      global_buffers.empty_buffers.push_back(
-          at::empty(executor_entry->empty_buffer_sizes[i], tensor_options));
+    {
+      // context manager to disable auto grad for `empty_cuda` calls later;
+      at::AutoNonVariableTypeMode non_variable_type_mode;
+      // take the short-cut for launch if we see a recorded input set again;
+      launch_params = executor_entry->launch_params;
+      for (size_t i = 0; i < executor_entry->output_sizes.size(); i++) {
+        auto tensor_options = at::TensorOptions()
+                                  .dtype(executor_entry->output_types[i])
+                                  .device(options_.device);
+        alloced_outputs.push_back(
+            at::native::empty_cuda(executor_entry->output_sizes[i], tensor_options));
+      }
+      for (size_t i = 0; i < executor_entry->empty_buffer_sizes.size(); i++) {
+        auto tensor_options = at::TensorOptions()
+                                  .dtype(executor_entry->empty_buffer_types[i])
+                                  .device(options_.device);
+        global_buffers.empty_buffers.push_back(
+            at::native::empty_cuda(executor_entry->empty_buffer_sizes[i], tensor_options));
+      }
     }
     for (size_t i = 0; i < executor_entry->zero_buffer_sizes.size(); i++) {
       auto tensor_options = at::TensorOptions()
