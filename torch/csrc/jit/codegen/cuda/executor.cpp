@@ -317,15 +317,15 @@ std::vector<at::Tensor> FusionExecutor::runFusion(
         auto tensor_options = at::TensorOptions()
                                   .dtype(executor_entry->output_types[i])
                                   .device(options_.device);
-        alloced_outputs.push_back(
-            at::native::empty_cuda(executor_entry->output_sizes[i], tensor_options));
+        alloced_outputs.push_back(at::native::empty_cuda(
+            executor_entry->output_sizes[i], tensor_options));
       }
       for (size_t i = 0; i < executor_entry->empty_buffer_sizes.size(); i++) {
         auto tensor_options = at::TensorOptions()
                                   .dtype(executor_entry->empty_buffer_types[i])
                                   .device(options_.device);
-        global_buffers.empty_buffers.push_back(
-            at::native::empty_cuda(executor_entry->empty_buffer_sizes[i], tensor_options));
+        global_buffers.empty_buffers.push_back(at::native::empty_cuda(
+            executor_entry->empty_buffer_sizes[i], tensor_options));
       }
     }
     for (size_t i = 0; i < executor_entry->zero_buffer_sizes.size(); i++) {
