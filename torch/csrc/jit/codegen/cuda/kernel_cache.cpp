@@ -583,7 +583,9 @@ std::vector<at::Tensor> GraphCache::runGraphWithInputs(
   const size_t unique_id = id_lookup_ret.id;
 
   if (id_lookup_ret.eviction) {
-    code_to_index_lookup_.erase(id_lookup_ret.evict_id);
+    auto index_lookup_iter = code_to_index_lookup_.find(id_lookup_ret.evict_id);
+    fe_cache_[index_lookup_iter->second]->evictCache(index_lookup_iter->first);
+    code_to_index_lookup_.erase(index_lookup_iter);
   }
 
   FusionExecutorCache* fusion_executor_cache = nullptr;
