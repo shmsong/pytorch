@@ -80,7 +80,7 @@ void FusionExecutor::compileFusion(Fusion* fusion, CompileOptions options) {
       options.device.is_cuda(), "Provided device to CUDA fuser is the CPU.");
   max_device_smem =
       at::cuda::getDeviceProperties(options.device.index())->sharedMemPerBlock;
-  
+
   setUsedTVs();
   fusion_id_ = ++fusion_id_counter_;
   has_random_ = fusion->hasRNG();
