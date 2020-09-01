@@ -165,7 +165,10 @@ class TORCH_CUDA_API Fusion final {
   std::unordered_set<Expr*> unordered_uses(Val* val) const;
 
   // Return the Expr that produces val
-  Expr* origin(const Val* val) const;
+  Expr* origin(Val* val) const;
+
+  // Return the Expr that produces val
+  const Expr* origin(const Val* val) const;
 
   // Indicate to kernel to set itself up to generate random numbers
   bool hasRNG();
