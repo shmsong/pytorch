@@ -1,5 +1,6 @@
 
 #include <torch/csrc/jit/codegen/cuda/executor_kernel_arg.h>
+#include <torch/csrc/jit/codegen/cuda/instrumentation.h>
 #include <torch/csrc/jit/codegen/cuda/ir_all_nodes.h>
 #include <torch/csrc/jit/codegen/cuda/iter_visitor.h>
 #include <torch/csrc/jit/codegen/cuda/kernel_ir.h>
@@ -63,6 +64,8 @@ void FusionExecutor::debugCompileFusionFromStr(
 }
 
 void FusionExecutor::compileFusion(Fusion* fusion, CompileOptions options) {
+  FUSER_PERF_SCOPE("compileFusion");
+
   TORCH_INTERNAL_ASSERT(
       !fusion->outputs().empty(), "No output found for this kernel, aborting.");
 
@@ -113,6 +116,8 @@ at::Tensor inferAndAlloc(
     EvaluationContext& ec,
     const CompileOptions& options,
     bool zero_init = false) {
+  FUSER_PERF_SCOPE("inferAndAlloc");
+
   std::vector<int64_t> sizes;
   for (auto id : TensorDomain::noReductions(tv->getRootDomain())) {
     auto inferred_val = ExpressionEvaluator::evaluate(id->rawExtent(), &ec);
@@ -145,6 +150,7 @@ uint64_t FusionExecutor::computeSharedMemory(
     const std::vector<kir::Allocate*>& buffers,
     bool align_padding,
     uint64_t total) {
+  FUSER_PERF_SCOPE("computeSharedMemory");
   for (auto smem_alloc : buffers) {
     auto inferred_size = ExpressionEvaluator::evaluate(smem_alloc->size(), &ec);
     if (inferred_size.has_value()) {
@@ -170,6 +176,8 @@ LaunchParams FusionExecutor::computeLaunchParams(
     const at::ArrayRef<IValue>& aten_inputs,
     const LaunchParams& launch_constraints,
     EvaluationContext& ec) {
+  FUSER_PERF_SCOPE("computeLaunchParams");
+
   LaunchParams launch_params;
 
   // Grab all values that are actually used in the fusion
@@ -276,6 +284,8 @@ LaunchParams FusionExecutor::computeLaunchParams(
 }
 
 std::vector<at::Tensor> FusionExecutor::allocGlobalVals(EvaluationContext& ec) {
+  FUSER_PERF_SCOPE("allocGlobalVals");
+
   std::vector<at::Tensor> global_buffers;
   for (auto alloc : lowered_.global_allocations()) {
     TORCH_INTERNAL_ASSERT(
@@ -300,6 +310,7 @@ std::vector<at::Tensor> FusionExecutor::allocGlobalVals(EvaluationContext& ec) {
 }
 
 std::vector<at::Tensor> FusionExecutor::allocOutputs(EvaluationContext& ec) {
+  FUSER_PERF_SCOPE("allocOutputs");
   std::vector<at::Tensor> outputs;
   for (auto output : fusion_.outputs()) {
     TORCH_INTERNAL_ASSERT(
@@ -315,6 +326,7 @@ std::vector<at::Tensor> FusionExecutor::runFusion(
     const at::ArrayRef<IValue>& inputs,
     const std::vector<at::Tensor>& outputs,
     const LaunchParams& launch_constraints) {
+  FUSER_PERF_SCOPE("runFusion");
   TORCH_INTERNAL_ASSERT(
       fusion_id_ > 0, "Cannot run fusion, it was not compiled.");
 
@@ -353,19 +365,22 @@ std::vector<at::Tensor> FusionExecutor::runFusion(
     kernel_arguments.appendPhiloxRNGSeed(rand_offset);
   }
 
-  AT_CUDA_DRIVER_CHECK(at::globalContext().getNVRTC().cuLaunchKernel(
-      compiled_kernel_.function,
-      launch_params.gdimx(),
-      launch_params.gdimy(),
-      launch_params.gdimz(),
-      launch_params.bdimx(),
-      launch_params.bdimy(),
-      launch_params.bdimz(),
-      launch_params.smem(),
-      stream,
-      kernel_arguments.getBuffer(),
-      nullptr));
-  AT_CUDA_CHECK(cudaStreamSynchronize(stream));
+  {
+    FUSER_PERF_SCOPE("cuLaunchKernel");
+    AT_CUDA_DRIVER_CHECK(at::globalContext().getNVRTC().cuLaunchKernel(
+        compiled_kernel_.function,
+        launch_params.gdimx(),
+        launch_params.gdimy(),
+        launch_params.gdimz(),
+        launch_params.bdimx(),
+        launch_params.bdimy(),
+        launch_params.bdimz(),
+        launch_params.smem(),
+        stream,
+        kernel_arguments.getBuffer(),
+        nullptr));
+    AT_CUDA_CHECK(cudaStreamSynchronize(stream));
+  }
 
   return alloced_outputs;
 }

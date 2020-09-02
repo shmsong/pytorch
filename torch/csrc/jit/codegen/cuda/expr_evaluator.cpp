@@ -1,6 +1,7 @@
 
 #include <torch/csrc/jit/codegen/cuda/expr_evaluator.h>
 #include <torch/csrc/jit/codegen/cuda/fusion.h>
+#include <torch/csrc/jit/codegen/cuda/instrumentation.h>
 #include <torch/csrc/jit/codegen/cuda/ir_all_nodes.h>
 #include <torch/csrc/jit/codegen/cuda/ir_iostream.h>
 
@@ -61,6 +62,7 @@ void EvaluationContext::print() const {
 c10::optional<Int::ScalarType> ExpressionEvaluator::evaluate(
     Val* val,
     const EvaluationContext* context) {
+  FUSER_PERF_SCOPE("Evaluate Expression");
   TORCH_CHECK(context != nullptr);
   ExpressionEvaluator evaluator(context);
   evaluator.traverseFrom(context->fusion(), {val}, false);

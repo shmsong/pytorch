@@ -1,4 +1,6 @@
+
 #include <torch/csrc/jit/codegen/cuda/kernel_cache.h>
+#include <torch/csrc/jit/codegen/cuda/instrumentation.h>
 #include <torch/csrc/jit/codegen/cuda/parser.h>
 #include <torch/csrc/jit/codegen/cuda/scheduler.h>
 #include <torch/csrc/jit/runtime/graph_executor.h>
@@ -69,6 +71,8 @@ void debugPrint(const TensorTypePtr& type) {
 }
 
 at::DimVector graphReductionAxes(const std::shared_ptr<Graph>& graph) {
+  FUSER_PERF_SCOPE("graphReductionAxes");
+
   at::DimVector reduction_axes;
   for (const auto& n : graph->nodes()) {
     if (isReductionNode(n)) {
@@ -97,6 +101,8 @@ at::DimVector graphReductionAxes(const std::shared_ptr<Graph>& graph) {
 }
 
 at::DimVector getPermutationPerSortedStride(const TensorTypePtr& type) {
+  FUSER_PERF_SCOPE("getPermutationPerSortedStride");
+
   // `permute_seq` is the returned permutation to achieve sorted stride;
   at::DimVector permute_seq;
 
@@ -189,6 +195,7 @@ FusionExecutorCache::FusionExecutorCache(
     std::unique_ptr<Fusion>&& fusion,
     at::Device device)
     : device_(device), fusion_(std::move(fusion)) {
+  FUSER_PERF_SCOPE("FusionExecutorCache::FusionExecutorCache");
   // avoid putting `has_reduction_` in the initializer list
   has_reduction_ = fusion_->hasReduction();
 }
@@ -196,6 +203,8 @@ FusionExecutorCache::FusionExecutorCache(
 // TODO: dummy cache
 std::vector<at::Tensor> FusionExecutorCache::runFusionWithInputs(
     const at::ArrayRef<IValue>& inputs) {
+  FUSER_PERF_SCOPE("runFusionWithInputs");
+
   // caching strategy is different for pw-fusion and reduction-fusion.
   if (has_reduction_) {
     // copy the fusion, since each FusionExecutor needs to manipulate the fusion
@@ -241,6 +250,8 @@ std::vector<at::Tensor> FusionExecutorCache::runFusionWithInputs(
 GraphCache::InputsRequirement::InputsRequirement(
     const std::shared_ptr<Graph>& graph,
     const std::vector<size_t>& reduction_axes) {
+  FUSER_PERF_SCOPE("InputsRequirement::InputsRequirement");
+
   // run over inputs to extract common types;
   TensorTypePtr acc_type = TensorType::get();
   for (const auto& input : graph->inputs()) {
@@ -269,6 +280,8 @@ GraphCache::InputsRequirement::InputsRequirement(
 GraphCache::InputsRequirement::InputsRequirement(
     const at::ArrayRef<IValue>& inputs,
     const std::vector<size_t>& reduction_axes) {
+  FUSER_PERF_SCOPE("InputsRequirement::InputsRequirement");
+
   // run over inputs to extract common types;
   TensorTypePtr acc_type = TensorType::get();
   for (const auto& input : inputs) {
@@ -317,6 +330,8 @@ bool GraphCache::InputsRequirement::requiresPermutation() {
 // TODO: tests!
 bool GraphCache::InputsRequirement::complyWith(
     const InputsRequirement& expect) {
+  FUSER_PERF_SCOPE("complyWith");
+
   if (device_ != expect.device_ ||
       input_permutation_ != expect.input_permutation_ ||
       output_permutation_ != expect.output_permutation_ ||
@@ -386,6 +401,8 @@ bool GraphCache::InputsRequirement::complyWith(
 
 FusionExecutorCache* GraphCache::createFusionExecutorCache(
     const InputsRequirement& input_stack) {
+  FUSER_PERF_SCOPE("createFusionExecutorCache");
+
   input_stacks_.emplace_back(input_stack);
   std::shared_ptr<Graph> parsing_graph = graph_->copy();
   // assign inputs on parsing_graph to accommodate legacy executor, where input
@@ -499,6 +516,8 @@ FusionExecutorCache* GraphCache::createFusionExecutorCache(
 
 GraphCache::GraphCache(std::shared_ptr<Graph> graph)
     : graph_(std::move(graph)) {
+  FUSER_PERF_SCOPE("GraphCache::GraphCache");
+
   // [ NOTE - reduction in graph ]
   //
   // reduction complicates our permutation in integration, it addes two things:
@@ -521,6 +540,8 @@ GraphCache::GraphCache(std::shared_ptr<Graph> graph)
 
 std::vector<at::Tensor> GraphCache::runGraphWithInputs(
     const at::ArrayRef<IValue>& inputs) {
+  FUSER_PERF_SCOPE("runGraphWithInputs");
+
   InputsRequirement input_stack(inputs, toVector(reduction_axes_));
   FusionExecutorCache* fusion_executor_cache = nullptr;
 
