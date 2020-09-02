@@ -209,7 +209,7 @@ LaunchParams FusionExecutor::computeLaunchParams(
         for (auto parallel_id : parallel_ids) {
           auto inferred_val = see.inferValue(parallel_id->rawExtent());
           if (inferred_val.has_value()) {
-            // This value could have been infered, make sure it was set right.
+            // This value could have been inferred, make sure it was set right.
             TORCH_CHECK(
                 inferred_val.value() == launch_constraints.getDim(p_type) ||
                     launch_constraints.getRawVal(p_type) == -1,
