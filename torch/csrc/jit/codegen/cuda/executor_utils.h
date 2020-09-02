@@ -32,20 +32,9 @@ void validateKernelOutputs(
     const std::vector<at::Tensor>& outputs,
     c10::Device device);
 
-// Check if a value is already bound, if so validate we're trying to bind to the
-// same value
-void safeBind(
-    EvaluationContext& ec,
-    const Val* value,
-    Int::ScalarType concrete_value);
-
-// Bind Inputs to Fusion IR
-EvaluationContext bindInputs(
+StatefulExpressionEvaluator statefulBindInputs(
     const at::ArrayRef<IValue>& aten_inputs,
     Fusion* fusion);
-
-TORCH_CUDA_API StatefulExpressionEvaluator
-statefulBindInputs(const at::ArrayRef<IValue>& aten_inputs, Fusion* fusion);
 
 struct NvrtcFunction {
   CUmodule module = CUmodule();
