@@ -52,6 +52,12 @@ Works only with Python3.\n A few examples:
         help="a comma separated list of Data Types: {float32[default], float16}",
     )
     parser.add_argument(
+        "--input-iter",
+        type=str,
+        default=None,
+        help="a comma separated list of of Tensor dimensions that includes a start, stop, and increment that can be constant or a power of 2 {start:stop:inc,start:stop:pow2}",
+    )
+    parser.add_argument(
         "--engine",
         type=str,
         default="pt",
@@ -177,6 +183,46 @@ Works only with Python3.\n A few examples:
                     )
             bench.run(args)
 
+    def run_with_input_iter(bench_cls, input_iter, allow_skip=True):
+        tensor_dim_specs = input_iter.split(',')
+        tensor_dim_specs = [ dim.split(':') for dim in tensor_dim_specs ]
+
+        configs = []
+        for dim in tensor_dim_specs :
+            assert len(dim) == 3, "There should be three dimensions for: start, stop, inc!"
+            dim_list = []
+            if dim[2] == 'pow2' :
+                curr = int(dim[0])
+                while curr <= int(dim[1]) :
+                    dim_list.append(curr)
+                    curr <<= 1
+            elif dim[2] == 'pow2+1' :
+                curr = int(dim[0])
+                while curr <= int(dim[1]) :
+                    dim_list.append(curr)
+                    curr -= 1
+                    curr <<= 1
+                    curr += 1
+            else :
+                dim_list = list(range(int(dim[0]), int(dim[1]) + int(dim[2]), int(dim[2])))
+            configs.append(dim_list)
+        configs = itertools.product(*configs)
+
+        for mode, device, dtype, config in itertools.product(
+            modes, devices, datatypes, list(configs)
+        ):
+            bench = bench_cls(mode, device, dtype, *config)
+            bench.output_type = args.output
+            bench.jit_mode = args.jit_mode
+            if not bench.is_supported():
+                if allow_skip:
+                    continue
+                else:
+                    raise ValueError(
+                        "attempted to run an unsupported benchmark: %s" % (bench.desc())
+                    )
+            bench.run(args)
+
     benchmark_classes = benchmark.benchmark_classes
     if not args.benchmark_names:
         # by default, run all the benchmarks
@@ -189,7 +235,10 @@ Works only with Python3.\n A few examples:
             for bench_cls in benchmark_classes:
                 if name in bench_cls.module():
                     match_class_name = True
-                    run_default_configs(bench_cls, allow_skip=True)
+                    if not args.input_iter is None :
+                        run_with_input_iter(bench_cls, args.input_iter, allow_skip=True)
+                    else :
+                        run_default_configs(bench_cls, allow_skip=True)
 
             if match_class_name:
                 continue

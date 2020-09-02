@@ -168,8 +168,8 @@ class Benchmark(object):
                     )
                 if callable(getattr(self, "reference", None)):
                     self.check()
-                else:
-                    print("Warning: no reference result for ", self.module())
+                #else:
+                    #print("Warning: no reference result for ", self.module())
             elif i == 1:
                 # The fusion graph is visible after the first iter is executed
                 if self.jit_mode == "trace" and use_fuser and self.print_ir :

@@ -81,7 +81,71 @@ class ReduceColBench(ReduceBench):
     def module():
         return "reduce_col"
 
+class Reduce2DBench(benchmark.Benchmark):
+    def __init__(self, mode, device, dtype, red_dim, dim0, dim1):
+        super().__init__(mode, device, dtype)
+        self.red_dim = red_dim
+        self.dim0 = dim0
+        self.dim1 = dim1
+
+        self.inputs = [self.randn(
+            [dim0, dim1], device=device, dtype=dtype, requires_grad=self.requires_grad
+        )]
+
+        if red_dim != 0 and red_dim != 1 :
+            raise ValueError("invalid reduction dimension: {}".format(red_dim))
+
+    def forward(self, inputs):
+        x = self.add(inputs, 0.001)
+        y = self.sum(x, [self.red_dim])
+        return y
+
+    def config(self):
+        return [self.dim0, self.dim1]
+
+    @staticmethod
+    def default_configs():
+        return [
+            # [512, 512, 512],
+            [640, 524288],
+        ]
+
+    @staticmethod
+    def module():
+        return "reduce2d"
+
+    def memory_workload(self):
+        assert self.mode == "fwd", "Only the forward operation is modeled!"
+
+        buffer_size = self.dim0 * self.dim1
+        if self.red_dim == 0 :
+            buffer_size += self.dim1
+        else :
+            buffer_size += self.dim0
+        return {
+            "sol": buffer_size,
+            "algorithmic": buffer_size,
+        }
+
+class Reduce2DInnerBench(Reduce2DBench):
+    def __init__(self, mode, device, dtype, dim0, dim1):
+        super(Reduce2DInnerBench, self).__init__(mode, device, dtype, 1, dim0, dim1)
+
+    @staticmethod
+    def module():
+        return "reduce2d_inner"
+
+
+class Reduce2DOuterBench(Reduce2DBench):
+    def __init__(self, mode, device, dtype, dim0, dim1):
+        super(Reduce2DOuterBench, self).__init__(mode, device, dtype, 0, dim0, dim1)
+
+    @staticmethod
+    def module():
+        return "reduce2d_outer"
 
 benchmark.register_benchmark_class(ReduceRowBench)
 benchmark.register_benchmark_class(ReduceMidBench)
 benchmark.register_benchmark_class(ReduceColBench)
+benchmark.register_benchmark_class(Reduce2DInnerBench)
+benchmark.register_benchmark_class(Reduce2DOuterBench)
