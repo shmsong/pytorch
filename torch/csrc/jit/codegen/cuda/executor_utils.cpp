@@ -243,6 +243,8 @@ EvaluationContext bindInputs(
     const at::ArrayRef<IValue>& aten_inputs,
     Fusion* fusion,
     GpuLower* lowered) {
+  FUSER_PERF_SCOPE("bindInputs");
+  
   TORCH_INTERNAL_ASSERT(
       fusion->inputs().size() == aten_inputs.size(),
       "Something went wrong configuring launch. Inputs no longer match.");
