@@ -49,12 +49,6 @@ class BuffersExtractor : OptOutDispatch {
   }
 
  private:
-  ThreadPredicateMap& thread_predicates_;
-  bool has_block_broadcast_;
-  std::vector<kir::Allocate*> global_allocations_;
-  std::vector<kir::Allocate*> dynamic_allocations_;
-  std::vector<kir::Allocate*> static_allocations_;
-
   void handle(Expr* expr) final {
     OptOutDispatch::handle(expr);
   }
@@ -106,7 +100,6 @@ class BuffersExtractor : OptOutDispatch {
   ThreadPredicateMap& thread_predicates_;
   bool has_block_broadcast_;
   std::vector<kir::Allocate*> global_allocations_;
-  std::vector<kir::Allocate*> sync_allocations_;
   std::vector<kir::Allocate*> dynamic_allocations_;
   std::vector<kir::Allocate*> static_allocations_;
 };
