@@ -12,7 +12,7 @@ Trace::Trace() {
   if (trace_filename != nullptr) {
     log_file_ = fopen(trace_filename, "w");
     assert(log_file_ != nullptr);
-    fprintf(log_file_, "[\n");
+    fprintf(log_file_, "{\n\"traceEvents\": [\n");
     start_timestamp_ = Clock::now();
     logEvent('I', "TRACE_START");
   }
@@ -21,7 +21,7 @@ Trace::Trace() {
 Trace::~Trace() {
   if (log_file_ != nullptr) {
     logEvent('I', "TRACE_END", ' ');
-    fprintf(log_file_, "]\n");
+    fprintf(log_file_, "],\n\"displayTimeUnit\": \"ms\"\n}\n");
     fclose(log_file_);
   }
 }
@@ -33,7 +33,7 @@ void Trace::logEvent(char ph, const char* name, char sep) {
   const unsigned int tid = 0;
   fprintf(
       log_file_,
-      "{ \"name\": \"%s\", \"ph\": \"%c\", \"pid\": \"%u\", \"tid\": \"%u\", \"ts\": \"%.0f\" }%c\n",
+      "{ \"name\": \"%s\", \"ph\": \"%c\", \"pid\": %u, \"tid\": %u, \"ts\": %.0f }%c\n",
       name,
       ph,
       pid,

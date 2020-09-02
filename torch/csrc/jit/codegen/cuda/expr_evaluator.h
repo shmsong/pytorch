@@ -6,6 +6,7 @@
 #include <torch/csrc/jit/codegen/cuda/iter_visitor.h>
 
 #include <c10/util/Optional.h>
+#include <c10/util/flat_hash_map.h>
 
 #include <unordered_map>
 
@@ -74,7 +75,12 @@ class TORCH_CUDA_API ExpressionEvaluator : private IterVisitor {
 
  private:
   const EvaluationContext* context_ = nullptr;
+  
+#if 1
   std::unordered_map<const Statement*, Int::ScalarType> values_;
+#else
+  ska::flat_hash_map<const Statement*, Int::ScalarType> values_;
+#endif
 };
 
 } // namespace fuser
