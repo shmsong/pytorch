@@ -11,7 +11,8 @@ namespace fuser {
 
 void StatefulExpressionEvaluator::safeBind(
     Val* value,
-    Int::ScalarType concrete_value) {
+    Int::ScalarType concrete_value,
+    GpuLower* lower) {
   auto already_concrete_val = getValue(value);
 
   if (already_concrete_val.has_value()) {
@@ -29,6 +30,28 @@ void StatefulExpressionEvaluator::safeBind(
         "Can only bind to symbolic values to the fusion that do not have an origin expr.");
 
     bindings_[value] = concrete_value;
+  }
+
+  if (lower != nullptr) {
+    auto lowered_val = lower->getLowerValue(value);
+    already_concrete_val = getValue(lowered_val);
+
+    if (already_concrete_val.has_value()) {
+      TORCH_INTERNAL_ASSERT(
+          concrete_value == already_concrete_val.value(),
+          "Tried to bind ",
+          lowered_val,
+          " to ",
+          " concrete value, but it's already set to ",
+          already_concrete_val.value());
+    } else {
+      TORCH_INTERNAL_ASSERT(
+          lowered_val->getOrigin() == nullptr,
+          "Tried to bind to a value that is computed in the fusion IR. ",
+          "Can only bind to symbolic values to the fusion that do not have an origin expr.");
+
+      bindings_[lowered_val] = concrete_value;
+    }
   }
 }
 

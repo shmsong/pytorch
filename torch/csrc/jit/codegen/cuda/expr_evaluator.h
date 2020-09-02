@@ -4,6 +4,7 @@
 #include <torch/csrc/WindowsTorchApiMacro.h>
 #include <torch/csrc/jit/codegen/cuda/ir_interface_nodes.h>
 #include <torch/csrc/jit/codegen/cuda/iter_visitor.h>
+#include <torch/csrc/jit/codegen/cuda/lower2device.h>
 
 #include <c10/util/Optional.h>
 
@@ -21,7 +22,10 @@ class TORCH_CUDA_API StatefulExpressionEvaluator : private OptOutDispatch {
     return fusion_;
   }
 
-  void safeBind(Val* value, Int::ScalarType concrete_value);
+  void safeBind(
+      Val* value,
+      Int::ScalarType concrete_value,
+      GpuLower* lower = nullptr);
 
   // Returns value if found in mapping, otherwise returns c10::nullopt
   c10::optional<Int::ScalarType> getValue(Val* value);

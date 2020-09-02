@@ -180,7 +180,8 @@ void validateKernelOutputs(
 
 StatefulExpressionEvaluator statefulBindInputs(
     const at::ArrayRef<IValue>& aten_inputs,
-    Fusion* fusion) {
+    Fusion* fusion,
+    GpuLower* lower) {
   TORCH_INTERNAL_ASSERT(
       fusion->inputs().size() == aten_inputs.size(),
       "Something went wrong configuring launch. Inputs no longer match.");
@@ -205,14 +206,15 @@ StatefulExpressionEvaluator statefulBindInputs(
           "Something went wrong configuring launch. Inputs no longer match.");
 
       for (size_t dim = 0; dim < root_dom.size(); dim++) {
-        evaluator.safeBind(root_dom[dim]->extent(), aten_tensor.sizes()[dim]);
+        evaluator.safeBind(
+            root_dom[dim]->extent(), aten_tensor.sizes()[dim], lower);
       }
     } else if (
         fusion->inputs()[i]->getValType().value() == ValType::Scalar &&
         fusion->inputs()[i]->getDataType().value() == DataType::Int) {
       TORCH_INTERNAL_ASSERT(
           aten_inputs[i].type()->kind() == c10::TypeKind::IntType);
-      evaluator.safeBind(fusion->inputs()[i], aten_inputs[i].toInt());
+      evaluator.safeBind(fusion->inputs()[i], aten_inputs[i].toInt(), lower);
     }
   }
   return evaluator;

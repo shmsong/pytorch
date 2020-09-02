@@ -223,7 +223,8 @@ LaunchParams FusionExecutor::computeLaunchParams(
             // Bind the launch constraint into our evaluation context
             see.safeBind(
                 parallel_id->rawExtent(),
-                launch_constraints.getDim(entry.first));
+                launch_constraints.getDim(entry.first),
+                &lowered_);
             launch_params.bind(launch_constraints.getDim(p_type), p_type);
           }
         }
@@ -326,7 +327,7 @@ std::vector<at::Tensor> FusionExecutor::runFusion(
   auto stream = at::cuda::getCurrentCUDAStream();
 
   StatefulExpressionEvaluator evaluator =
-      executor_utils::statefulBindInputs(inputs, &fusion_);
+      executor_utils::statefulBindInputs(inputs, &fusion_, &lowered_);
 
   LaunchParams launch_params =
       computeLaunchParams(inputs, launch_constraints, evaluator);

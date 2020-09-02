@@ -34,7 +34,8 @@ void validateKernelOutputs(
 
 StatefulExpressionEvaluator statefulBindInputs(
     const at::ArrayRef<IValue>& aten_inputs,
-    Fusion* fusion);
+    Fusion* fusion,
+    GpuLower* lower = nullptr);
 
 struct NvrtcFunction {
   CUmodule module = CUmodule();

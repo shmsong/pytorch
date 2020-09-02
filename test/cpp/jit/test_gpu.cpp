@@ -5772,8 +5772,6 @@ void testGPU_FusionSmemBlockGemmCache() {
 }
 
 void testGPU_FusionSmemDynamicReductionSymbolic() {
-  // Disabling test due to https://github.com/csarofeen/pytorch/issues/356
-#if 0
   Fusion fusion;
   FusionGuard fg(&fusion);
 
@@ -5819,12 +5817,9 @@ void testGPU_FusionSmemDynamicReductionSymbolic() {
       aten_output.allclose(outputs[0], 1e-5, 1e-5),
       "Error of: ",
       aten_output.sub(outputs[0]).abs().max());
-#endif
 }
 
 void testGPU_FusionSmemDynamicReductionSymbolicArg() {
-  // Disabling test due to https://github.com/csarofeen/pytorch/issues/356
-#if 0
   Fusion fusion;
   FusionGuard fg(&fusion);
 
@@ -5880,12 +5875,9 @@ void testGPU_FusionSmemDynamicReductionSymbolicArg() {
       aten_output.allclose(outputs[0], 1e-5, 1e-5),
       "Error of: ",
       aten_output.sub(outputs[0]).abs().max());
-#endif
 }
 
 void testGPU_FusionSmemDynamicPwiseMulSymbolicArg() {
-  // Disabling test due to https://github.com/csarofeen/pytorch/issues/356
-#if 0
   Fusion fusion;
   FusionGuard fg(&fusion);
 
@@ -5940,7 +5932,6 @@ void testGPU_FusionSmemDynamicPwiseMulSymbolicArg() {
       aten_output.allclose(outputs[0], 1e-5, 1e-5),
       "Error of: ",
       aten_output.sub(outputs[0]).abs().max());
-#endif
 }
 
 void testGPU_FusionConstCheck() {
