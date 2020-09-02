@@ -6602,7 +6602,7 @@ void testGPU_FusionLSTMCell() {
   TORCH_CHECK(at_cy.allclose(outputs[0], 1e-4, 1e-7));
   TORCH_CHECK(at_hy.allclose(outputs[1], 1e-4, 1e-7));
 #else
-  constexpr int kRunsCount = 10;
+  constexpr int kRunsCount = 16;
   std::vector<double> timings(kRunsCount);
   for (int run = 0; run < kRunsCount; ++run) {
     cudaEvent_t start, stop;
@@ -6632,14 +6632,14 @@ void testGPU_FusionLSTMCell() {
   double perf_min = timings[0];
   double perf_max = timings[0];
 
-  printf("\n\n");
+  printf("\n");
   for (double t : timings) {
-    printf("%.3f  ", t * 1000);
+    printf("%.3f\n", t * 1000);
     perf_total += t;
     perf_min = std::min(perf_min, t);
     perf_max = std::max(perf_max, t);
   }
-  printf("\n\n");
+  printf("\n");
 
   const double perf_average = perf_total / kRunsCount;
 
@@ -6650,7 +6650,7 @@ void testGPU_FusionLSTMCell() {
   }
   double perf_stddev = sqrt(perf_dev / (kRunsCount > 1 ? kRunsCount - 1 : 1));
 
-  printf("\nAggregated results:\n");
+  printf("Aggregated results:\n");
   printf("  .average  = %.3f us\n", perf_average * 1000);
   printf("  .min      = %.3f us\n", perf_min * 1000);
   printf("  .max      = %.3f us\n", perf_max * 1000);
