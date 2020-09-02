@@ -5,6 +5,7 @@
 #include <torch/csrc/jit/codegen/cuda/ir_interface_nodes.h>
 #include <torch/csrc/jit/codegen/cuda/iter_visitor.h>
 #include <torch/csrc/jit/codegen/cuda/lower2device.h>
+#include <torch/csrc/jit/codegen/cuda/dispatch.h>
 
 #include <c10/util/Optional.h>
 #include <c10/util/flat_hash_map.h>
@@ -45,12 +46,12 @@ class TORCH_CUDA_API EvaluationContext {
 // Evaluates expressions in a Fusion IR, using the passed in
 // context (EvaluationContext) to query for concrete_values. The
 // evaluation context may override concrete values in the IR as well.
-class TORCH_CUDA_API ExpressionEvaluator : private IterVisitor {
+class TORCH_CUDA_API ExpressionEvaluator : private OptInConstDispatch {
  public:
   // Returns the result of the specified expression, or nullopt if
   // the result cannot be evaluated
   static c10::optional<Int::ScalarType> evaluate(
-      Val* val,
+      Statement* val,
       const EvaluationContext* context);
 
  private:
@@ -61,23 +62,20 @@ class TORCH_CUDA_API ExpressionEvaluator : private IterVisitor {
 
   c10::optional<Int::ScalarType> value(const Statement* stmt) const;
 
-  using IterVisitor::handle;
-
-  void handle(NamedScalar*) override;
-  void handle(Int*) override;
-  void handle(UnaryOp*) override;
-  void handle(BinaryOp*) override;
+  void handle(const NamedScalar*) override;
+  void handle(const Int*) override;
+  void handle(const UnaryOp*) override;
+  void handle(const BinaryOp*) override;
 
   // TODO(kir): remove this
-  void handle(kir::NamedScalar*) override;
-  void handle(kir::Int*) override;
-  void handle(kir::UnaryOp*) override;
-  void handle(kir::BinaryOp*) override;
+  void handle(const kir::NamedScalar*) override;
+  void handle(const kir::Int*) override;
+  void handle(const kir::UnaryOp*) override;
+  void handle(const kir::BinaryOp*) override;
 
  private:
   const EvaluationContext* context_ = nullptr;
-  
-  std::unordered_map<const Statement*, Int::ScalarType> values_;
+  c10::optional<Int::ScalarType> result_;
 };
 
 //==============================================================================
@@ -193,7 +191,7 @@ class TORCH_CUDA_API StatefulExpressionEvaluator_V2 : private IterVisitor {
 
 //==============================================================================
 
-class TORCH_CUDA_API StatefulExpressionEvaluator_V3 : private IterVisitor {
+class TORCH_CUDA_API StatefulExpressionEvaluator_V3 {
  public:
   explicit StatefulExpressionEvaluator_V3(Fusion* fusion) : context_(fusion) {}
 
