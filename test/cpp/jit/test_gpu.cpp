@@ -6595,10 +6595,68 @@ void testGPU_FusionLSTMCell() {
 
   torch::jit::fuser::cuda::FusionExecutor fe;
   fe.compileFusion(&fusion);
+
+#if 0
   auto outputs = fe.runFusion(c10::ArrayRef<c10::IValue>(inputs));
 
   TORCH_CHECK(at_cy.allclose(outputs[0], 1e-4, 1e-7));
   TORCH_CHECK(at_hy.allclose(outputs[1], 1e-4, 1e-7));
+#else
+  constexpr int kRunsCount = 10;
+  std::vector<double> timings(kRunsCount);
+  for (int run = 0; run < kRunsCount; ++run) {
+    cudaEvent_t start, stop;
+    cudaEventCreate(&start);
+    cudaEventCreate(&stop);
+    constexpr int kIterCount = 1000;
+    IterVisitor iv;
+    std::vector<at::Tensor> outputs;
+    
+    cudaEventRecord(start);
+
+    for (size_t i = 0; i < kIterCount; i++) {
+      outputs = fe.runFusion(c10::ArrayRef<c10::IValue>(inputs));
+    }
+
+    cudaEventRecord(stop);
+    
+    cudaEventSynchronize(start);
+    cudaEventSynchronize(stop);
+
+    float milliseconds = 0;
+    cudaEventElapsedTime(&milliseconds, start, stop);
+    timings[run] = double(milliseconds) / kIterCount;
+  }
+
+  double perf_total = 0;
+  double perf_min = timings[0];
+  double perf_max = timings[0];
+
+  printf("\n\n");
+  for (double t : timings) {
+    printf("%.3f  ", t * 1000);
+    perf_total += t;
+    perf_min = std::min(perf_min, t);
+    perf_max = std::max(perf_max, t);
+  }
+  printf("\n\n");
+
+  const double perf_average = perf_total / kRunsCount;
+
+  double perf_dev = 0;
+  for (double t : timings) {
+    const double delta = (t - perf_average) * 1000;
+    perf_dev += delta * delta;
+  }
+  double perf_stddev = sqrt(perf_dev / (kRunsCount > 1 ? kRunsCount - 1 : 1));
+
+  printf("\nAggregated results:\n");
+  printf("  .average  = %.3f us\n", perf_average * 1000);
+  printf("  .min      = %.3f us\n", perf_min * 1000);
+  printf("  .max      = %.3f us\n", perf_max * 1000);
+  printf("  .stddev   = %.2f\n", perf_stddev);
+  printf("\n");
+#endif
 }
 
 void testGPU_FusionComputeAtMultiBCast() {
