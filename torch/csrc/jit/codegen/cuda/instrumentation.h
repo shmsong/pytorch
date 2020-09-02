@@ -61,8 +61,12 @@ class TraceScope : public NonCopyable {
 #define FUSER_MACRO_CONCAT(a, b) FUSER_MACRO_CONCAT2(a, b)
 #define FUSER_ANONYMOUS(prefix) FUSER_MACRO_CONCAT(prefix, __COUNTER__)
 
+#if 0
 #define FUSER_PERF_SCOPE(name) \
   fuser::TraceScope FUSER_ANONYMOUS(_perf_scope_)(name)
+#else
+#define FUSER_PERF_SCOPE(name)
+#endif
 
 } // namespace fuser
 } // namespace jit

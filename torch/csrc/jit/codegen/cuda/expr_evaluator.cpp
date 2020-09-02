@@ -60,7 +60,7 @@ void EvaluationContext::print() const {
 
 c10::optional<Int::ScalarType> ExpressionEvaluator::evaluate(
     Statement* expr,
-    const EvaluationContext* context) {
+    EvaluationContext* context) {
   FUSER_PERF_SCOPE("Evaluate Expression");
   TORCH_CHECK(context != nullptr);
   ExpressionEvaluator evaluator(context);
@@ -82,6 +82,23 @@ void ExpressionEvaluator::handle(const NamedScalar* i) {
 }
 
 void ExpressionEvaluator::handle(const Int* i) {
+#if 0
+  if (i->value().has_value()) {
+    result_ = i->value();
+  } else {
+    const auto& bound_value = context_->concreteValue(i);
+    if (bound_value.has_value()) {
+      result_ = bound_value;
+    } else if (auto* def = context_->fusion()->origin(i)) {
+      result_ = evaluate(def, context_);
+      #if 0
+      if (result_.has_value()) {
+        context_->bindings_[i] = *result_;
+      }
+      #endif
+    }
+  }
+#else
   if (i->value().has_value()) {
     result_ = i->value();
   } else if (auto* def = context_->fusion()->origin(i)) {
@@ -92,6 +109,7 @@ void ExpressionEvaluator::handle(const Int* i) {
       result_ = bound_value;
     }
   }
+#endif
 }
 
 void ExpressionEvaluator::handle(const kir::NamedScalar* i) {
@@ -99,6 +117,23 @@ void ExpressionEvaluator::handle(const kir::NamedScalar* i) {
 }
 
 void ExpressionEvaluator::handle(const kir::Int* i) {
+#if 0
+  if (i->value().has_value()) {
+    result_ = i->value();
+  } else {
+    const auto& bound_value = context_->concreteValue(i);
+    if (bound_value.has_value()) {
+      result_ = bound_value;
+    } else if (auto* def = context_->fusion()->origin(i)) {
+      result_ = evaluate(def, context_);
+      #if 0
+      if (result_.has_value()) {
+        context_->bindings_[i] = *result_;
+      }
+      #endif
+    }
+  }
+#else
   if (i->value().has_value()) {
     result_ = i->value();
   } else if (auto* def = context_->fusion()->origin(i)) {
@@ -109,6 +144,7 @@ void ExpressionEvaluator::handle(const kir::Int* i) {
       result_ = bound_value;
     }
   }
+#endif
 }
 
 void ExpressionEvaluator::handle(const UnaryOp* uop) {

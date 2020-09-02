@@ -22,6 +22,8 @@ namespace fuser {
 // NOTE: currently it only supports Int values
 //
 class TORCH_CUDA_API EvaluationContext {
+  friend class ExpressionEvaluator;
+
  public:
   explicit EvaluationContext(Fusion* fusion) : fusion_(fusion) {}
 
@@ -52,10 +54,10 @@ class TORCH_CUDA_API ExpressionEvaluator : private OptInConstDispatch {
   // the result cannot be evaluated
   static c10::optional<Int::ScalarType> evaluate(
       Statement* val,
-      const EvaluationContext* context);
+      EvaluationContext* context);
 
  private:
-  explicit ExpressionEvaluator(const EvaluationContext* context)
+  explicit ExpressionEvaluator(EvaluationContext* context)
       : context_(context) {}
 
   ~ExpressionEvaluator() override = default;
@@ -74,7 +76,7 @@ class TORCH_CUDA_API ExpressionEvaluator : private OptInConstDispatch {
   void handle(const kir::BinaryOp*) override;
 
  private:
-  const EvaluationContext* context_ = nullptr;
+  EvaluationContext* context_ = nullptr;
   c10::optional<Int::ScalarType> result_;
 };
 
@@ -110,6 +112,7 @@ class TORCH_CUDA_API StatefulExpressionEvaluator_V1 : private OptOutDispatch {
   using OptOutDispatch::handle;
 
  private:
+  #if 1
   void handle(Expr* expr) override {
     switch (expr->getExprType().value()) {
       case ExprType::UnaryOp:
@@ -132,6 +135,7 @@ class TORCH_CUDA_API StatefulExpressionEvaluator_V1 : private OptOutDispatch {
             " in stateful expression evaluator.");
     }
   }
+  #endif
 
   void handle(UnaryOp*) override;
   void handle(BinaryOp*) override;
