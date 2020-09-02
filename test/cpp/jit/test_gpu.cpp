@@ -6596,7 +6596,7 @@ void testGPU_FusionLSTMCell() {
   torch::jit::fuser::cuda::FusionExecutor fe;
   fe.compileFusion(&fusion);
 
-#if 0
+#if 1
   auto outputs = fe.runFusion(c10::ArrayRef<c10::IValue>(inputs));
 
   TORCH_CHECK(at_cy.allclose(outputs[0], 1e-4, 1e-7));
