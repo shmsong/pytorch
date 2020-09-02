@@ -136,6 +136,7 @@ at::Tensor inferAndAlloc(
     return at::zeros(isizes, tensor_options);
   } else {
     c10::IntArrayRef isizes(sizes);
+    // Non Variable type guard for empty_cuda call
     at::AutoNonVariableTypeMode non_variable_type_mode;
     return at::native::empty_cuda(isizes, tensor_options);
   }
@@ -307,12 +308,12 @@ std::vector<at::Tensor> FusionExecutor::allocOutputs(EvaluationContext& ec) {
 }
 
 void FusionExecutor::setUsedTVs() {
-  used_tvs.clear();
+  used_tvs_.clear();
   auto used_vals = DependencyCheck::getAllValsBetween(
       {fusion_.inputs().begin(), fusion_.inputs().end()}, fusion_.outputs());
   for (auto val : used_vals) {
     if (val->getValType().value() == ValType::TensorView) {
-      used_tvs.push_back(val->as<TensorView>());
+      used_tvs_.push_back(val->as<TensorView>());
     }
   }
 }
@@ -340,6 +341,9 @@ std::vector<at::Tensor> FusionExecutor::runFusion(
   std::vector<at::Tensor> alloced_outputs = outputs;
   if (outputs.empty() || outputs.size() != fusion_.outputs().size()) {
     alloced_outputs = allocOutputs(evaluation_context);
+  } else {
+    executor_utils::validateKernelOutputs(
+        &fusion_, alloced_outputs, options_.device);
   }
 
   auto buffers = allocGlobalVals(evaluation_context);

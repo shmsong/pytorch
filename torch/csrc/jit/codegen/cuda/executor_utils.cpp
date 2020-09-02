@@ -32,7 +32,9 @@ std::string kernelPreamble() {
 
 namespace {
 
-inline bool validateKernelArgTensor(
+// return false if arg's type, number of dimensions, and device, doesn't match
+// param and provided c10:device
+bool validateKernelArgTensor(
     const at::Tensor& arg,
     const Val* param,
     const c10::Device& device,
@@ -88,7 +90,8 @@ inline bool validateKernelArgTensor(
   return match;
 }
 
-inline bool validateKernelArgScalar(
+// Return false if  arg_type doesn't match the type in param
+bool validateKernelArgScalar(
     const c10::TypePtr& arg_type,
     const Val* param,
     std::stringstream& msg) {
@@ -119,7 +122,9 @@ inline bool validateKernelArgScalar(
   return match;
 }
 
-inline bool validateKernelArg(
+// Return false if arg and param don't match up and if arg's device (if a
+// tensor) doesn't match provided device
+bool validateKernelArg(
     const c10::IValue& arg,
     const Val* param,
     const c10::Device& device,
@@ -149,7 +154,7 @@ void validateKernelInputs(
   for (size_t i = 0; i < inputs.size(); ++i) {
     const IValue& arg = inputs[i];
     const Val* param = fusion->inputs()[i];
-    mismatch = validateKernelArg(arg, param, device, msg) && mismatch;
+    mismatch = !validateKernelArg(arg, param, device, msg) || mismatch;
   }
   TORCH_INTERNAL_ASSERT(
       !mismatch, "Found one or more invalid arguments: ", msg.str());
@@ -172,7 +177,7 @@ void validateKernelOutputs(
   for (size_t i = 0; i < outputs.size(); ++i) {
     const at::Tensor& arg = outputs[i];
     const Val* param = fusion->outputs()[i];
-    mismatch = validateKernelArg(arg, param, device, msg) && mismatch;
+    mismatch = !validateKernelArg(arg, param, device, msg) || mismatch;
   }
   TORCH_INTERNAL_ASSERT(
       !mismatch, "Found one or more invalid arguments: ", msg.str());
