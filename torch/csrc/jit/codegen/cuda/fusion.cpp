@@ -240,9 +240,6 @@ void Fusion::addInput(Val* const input) {
           " has a reduction axis, but this does nothing in the fusion.");
     }
     tv->setMemoryType(MemoryType::Global);
-    TORCH_INTERNAL_ASSERT(
-        tv->getMemoryType() == MemoryType::Global,
-        "The input to the fusion must have the global memory type.");
   }
 
   TORCH_INTERNAL_ASSERT(
@@ -267,9 +264,6 @@ void Fusion::addOutput(Val* const output) {
           " cannot be registered as an output as it has a broadcast axis.");
     }
     tv->setMemoryType(MemoryType::Global);
-    TORCH_INTERNAL_ASSERT(
-        tv->getMemoryType() == MemoryType::Global,
-        "The input to the fusion must have the global memory type.");
   }
   outputs_.push_back(output);
 }
