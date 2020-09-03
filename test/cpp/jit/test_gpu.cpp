@@ -6719,7 +6719,7 @@ void testGPU_FusionInputsIdLookup() {
 
   // testing basic function, same encoding for identical inputs
   auto id_0 = inputs_id_lookup.lookupId({t0, t1, 5.0});
-  auto id_0_lookup = inputs_id_lookup.lookupId({t0, t1, 5.0});
+  auto id_0_lookup = inputs_id_lookup.lookupId({t0, t1, 2.5});
   TORCH_CHECK(id_0.id == id_0_lookup.id);
   TORCH_CHECK(inputs_id_lookup.size() == 1);
   TORCH_CHECK(id_0.eviction == false);
