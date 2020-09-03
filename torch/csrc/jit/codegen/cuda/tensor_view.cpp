@@ -24,8 +24,8 @@ DataType aten_opt_type_map(const c10::optional<at::ScalarType>& scalar_type) {
 }
 } // namespace
 
-TensorView::TensorView(TensorDomain* _domain, DataType dtype)
-    : Val(ValType::TensorView, dtype), domain_(_domain) {}
+TensorView::TensorView(TensorDomain* _domain, DataType dtype, MemoryType mtype)
+    : Val(ValType::TensorView, dtype), domain_(_domain), memory_type_(mtype) {}
 
 TensorView::TensorView(const std::shared_ptr<c10::TensorType>& tensor_type)
     : Val(ValType::TensorView,
@@ -105,6 +105,10 @@ bool TensorView::hasBlockReduction() const {
 
 bool TensorView::hasGridReduction() const {
   return domain()->hasGridReduction();
+}
+
+bool TensorView::hasBlockBroadcast() const {
+  return domain()->hasBlockBroadcast();
 }
 
 bool TensorView::hasBroadcast() const {
@@ -553,10 +557,6 @@ void TensorView::setMemoryType(MemoryType mt) {
     TORCH_INTERNAL_ASSERT(
         mt == MemoryType::Global,
         "Tried to set an input or output to the fusion to a non-global memory type.");
-  } else {
-    TORCH_INTERNAL_ASSERT(
-        mt != MemoryType::Global,
-        "Tried to set an intermediate tensor in the fusion to the global memory type.");
   }
 }
 

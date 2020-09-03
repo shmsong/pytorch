@@ -3,6 +3,7 @@
 #include <torch/csrc/jit/codegen/cuda/ir_all_nodes.h>
 #include <torch/csrc/jit/codegen/cuda/ir_cloner.h>
 #include <torch/csrc/jit/codegen/cuda/ir_printer.h>
+#include <torch/csrc/jit/codegen/cuda/iter_visitor.h>
 #include <torch/csrc/jit/codegen/cuda/kernel_ir.h>
 #include <torch/csrc/jit/codegen/cuda/lower2device.h>
 
@@ -23,35 +24,6 @@ FusionGuard::~FusionGuard() {
 
 Fusion* FusionGuard::getCurFusion() {
   return ACTIVE_FUSION;
-}
-
-void ExprSort::handle(Expr* expr) {
-  exprs.push_back(expr);
-}
-
-std::vector<Expr*> ExprSort::getExprs(Fusion* fusion, bool from_outputs_only) {
-  ExprSort es;
-  es.traverse(fusion, from_outputs_only);
-  return es.exprs;
-}
-
-std::vector<Expr*> ExprSort::getExprs(
-    Fusion* fusion,
-    const std::vector<Val*>& from) {
-  ExprSort es;
-  es.traverseFrom(fusion, from, false);
-  return es.exprs;
-}
-
-void InputsOf::handle(Val* v) {
-  if (FusionGuard::getCurFusion()->origin(v) == nullptr)
-    inputs.emplace(v);
-}
-
-std::unordered_set<Val*> InputsOf::output(Fusion* fusion, Val* output_) {
-  InputsOf io;
-  io.traverseFrom(FusionGuard::getCurFusion(), {output_}, false);
-  return io.inputs;
 }
 
 void swap(Fusion& a, Fusion& b) noexcept {
@@ -261,20 +233,21 @@ void Fusion::addInput(Val* const input) {
 
   if (input->getValType().value() == ValType::TensorView) {
     auto tv = input->as<TensorView>();
-    if (tv->hasReduction())
+    if (tv->hasReduction()) {
       TORCH_WARN_ONCE(
           "Registered input ",
           input,
           " has a reduction axis, but this does nothing in the fusion.");
+    }
+    tv->setMemoryType(MemoryType::Global);
   }
 
-  TORCH_CHECK(
+  TORCH_INTERNAL_ASSERT(
       input->getOrigin() == nullptr,
       input,
       " cannot be registered as an input as it is used as an output of an expression (",
       input->getOrigin(),
       ").");
-
   inputs_.push_back(input);
 }
 
@@ -282,13 +255,15 @@ void Fusion::addOutput(Val* const output) {
   assertInFusion(output, "Cannot register output ");
   if (output->getValType().value() == ValType::TensorView) {
     auto tv = output->as<TensorView>();
-    if (TensorDomain::hasBroadcast(tv->getRootDomain()))
+    if (TensorDomain::hasBroadcast(tv->getRootDomain())) {
       // Go to the root as we can merge bcast and
       // non-bcast dims, making a non-bcast dim.
-      TORCH_CHECK( // Should we warn instead?
+      TORCH_INTERNAL_ASSERT( // Should we warn instead?
           false,
           output,
           " cannot be registered as an output as it has a broadcast axis.");
+    }
+    tv->setMemoryType(MemoryType::Global);
   }
   outputs_.push_back(output);
 }
@@ -583,6 +558,19 @@ bool Fusion::hasGridReduction() {
         if (out->as<TensorView>()->hasGridReduction())
           return true;
 
+  return false;
+}
+
+bool Fusion::hasBlockBroadcast() {
+  for (auto expr : exprs(true)) {
+    for (auto out : expr->outputs()) {
+      if (out->getValType() == ValType::TensorView) {
+        if (out->as<TensorView>()->hasBlockBroadcast()) {
+          return true;
+        }
+      }
+    }
+  }
   return false;
 }
 
