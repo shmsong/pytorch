@@ -613,7 +613,8 @@ std::vector<at::Tensor> GraphCache::runGraphWithInputs(
         permuted_outputs.emplace_back(
             output.permute(input_requirement->pw_output_permutation_));
       } else if (
-          output.dim() == input_requirement->reduction_output_permutation_.size()) {
+          output.dim() ==
+          input_requirement->reduction_output_permutation_.size()) {
         permuted_outputs.emplace_back(
             output.permute(input_requirement->reduction_output_permutation_));
       } else {
