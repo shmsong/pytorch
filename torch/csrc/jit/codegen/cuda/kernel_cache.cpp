@@ -182,7 +182,8 @@ at::DimVector inversePermutation(
 
 } // namespace
 
-InputsIdLookup::IdLookupReturn InputsIdLookup::lookupId(const at::ArrayRef<IValue>& inputs) {
+InputsIdLookup::IdLookupReturn InputsIdLookup::lookupId(
+    const at::ArrayRef<IValue>& inputs) {
   IdLookupReturn ret;
   std::stringstream encoded_inputs;
   for (const auto& input : inputs) {
@@ -230,7 +231,8 @@ InputsIdLookup::IdLookupReturn InputsIdLookup::lookupId(const at::ArrayRef<IValu
   }
 
   ret.id = id_iter_pair.first;
-  id_iter_pair.second = used_entry_.insert(used_entry_.begin(), encoded_inputs.str());
+  id_iter_pair.second =
+      used_entry_.insert(used_entry_.begin(), encoded_inputs.str());
   return ret;
 }
 
@@ -585,7 +587,8 @@ std::vector<at::Tensor> GraphCache::runGraphWithInputs(
   // if we went over the cache size for short-cut, we evict entries using LRU;
   if (id_lookup_ret.eviction) {
     auto index_lookup_iter = code_to_index_lookup_.find(id_lookup_ret.evict_id);
-    TORCH_INTERNAL_ASSERT(index_lookup_iter != code_to_index_lookup_.end(),
+    TORCH_INTERNAL_ASSERT(
+        index_lookup_iter != code_to_index_lookup_.end(),
         "evicting cache entry not found in lookup table");
     // evict nested cache in FusionExecutorCache
     fe_cache_[index_lookup_iter->second]->evictCache(index_lookup_iter->first);

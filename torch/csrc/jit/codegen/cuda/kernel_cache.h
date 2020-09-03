@@ -19,7 +19,8 @@ namespace cuda {
 // to the instance of `InputsIdLookup`.
 class InputsIdLookup {
  public:
-  InputsIdLookup(size_t max_cache_size = 10) : max_cache_size_(max_cache_size) {};
+  InputsIdLookup(size_t max_cache_size = 10)
+      : max_cache_size_(max_cache_size){};
 
   struct IdLookupReturn {
     size_t id = 0;
@@ -42,7 +43,10 @@ class InputsIdLookup {
   std::list<std::string> used_entry_;
 
   // TODO: change this to a trie for efficiency;
-  std::unordered_map<std::string, std::pair<size_t, std::list<std::string>::iterator>> encoding_lookup_;
+  std::unordered_map<
+      std::string,
+      std::pair<size_t, std::list<std::string>::iterator>>
+      encoding_lookup_;
 };
 
 // [ Note -- 2 level cache implementation ]
@@ -102,7 +106,9 @@ class FusionExecutorCache {
   // evict cached short cut entry in `code_to_fe_lookup_`;
   inline void evictCache(size_t cache_id) {
     auto iter = code_to_fe_lookup_.find(cache_id);
-    TORCH_INTERNAL_ASSERT(iter != code_to_fe_lookup_.end(), "evict cache failed to find an entry");
+    TORCH_INTERNAL_ASSERT(
+        iter != code_to_fe_lookup_.end(),
+        "evict cache failed to find an entry");
     // evict nested lookup entry in nested FusionExecutor
     (iter->second)->evictCache(cache_id);
     code_to_fe_lookup_.erase(iter);
