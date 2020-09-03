@@ -19,7 +19,7 @@ namespace cuda {
 // to the instance of `InputsIdLookup`.
 class InputsIdLookup {
  public:
-  InputsIdLookup() : max_cache_size_(10) {};
+  InputsIdLookup(size_t max_cache_size = 10) : max_cache_size_(max_cache_size) {};
 
   struct IdLookupReturn {
     size_t id = 0;
@@ -28,7 +28,12 @@ class InputsIdLookup {
   };
 
   // encode each unique input sets to an unique id;
-  IdLookupReturn lookupId(const at::ArrayRef<IValue>& inputs);
+  TORCH_CUDA_API IdLookupReturn lookupId(const at::ArrayRef<IValue>& inputs);
+
+  // debugging API
+  size_t size() const {
+    return encoding_lookup_.size();
+  }
 
  private:
   size_t max_cache_size_;
@@ -98,6 +103,7 @@ class FusionExecutorCache {
   inline void evictCache(size_t cache_id) {
     auto iter = code_to_fe_lookup_.find(cache_id);
     TORCH_INTERNAL_ASSERT(iter != code_to_fe_lookup_.end(), "evict cache failed to find an entry");
+    // evict nested lookup entry in nested FusionExecutor
     (iter->second)->evictCache(cache_id);
     code_to_fe_lookup_.erase(iter);
   };

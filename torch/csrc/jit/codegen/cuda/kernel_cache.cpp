@@ -582,8 +582,12 @@ std::vector<at::Tensor> GraphCache::runGraphWithInputs(
   auto id_lookup_ret = inputs_id_lookup_.lookupId(inputs);
   const size_t unique_id = id_lookup_ret.id;
 
+  // if we went over the cache size for short-cut, we evict entries using LRU;
   if (id_lookup_ret.eviction) {
     auto index_lookup_iter = code_to_index_lookup_.find(id_lookup_ret.evict_id);
+    TORCH_INTERNAL_ASSERT(index_lookup_iter != code_to_index_lookup_.end(),
+        "evicting cache entry not found in lookup table");
+    // evict nested cache in FusionExecutorCache
     fe_cache_[index_lookup_iter->second]->evictCache(index_lookup_iter->first);
     code_to_index_lookup_.erase(index_lookup_iter);
   }
