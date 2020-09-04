@@ -510,7 +510,7 @@ class IrParser {
               // We can only handle output as half and float;
               if (auto opt_ivalue = toIValue(node->input(3))) {
                 auto scalar_type = opt_ivalue->toScalarType();
-                if (scalar_type == at::ScalarType::Float || 
+                if (scalar_type == at::ScalarType::Float ||
                     scalar_type == at::ScalarType::Half) {
                   return true;
                 }

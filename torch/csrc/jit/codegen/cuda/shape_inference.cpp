@@ -151,7 +151,7 @@ class NaiveTypePropagator {
         auto out_type = node->input(0)->type()->cast<TensorType>();
 
         if (!node->input(3)->type()->isSubtypeOf(
-            static_cast<c10::TypePtr>(NoneType::get()))) {
+                static_cast<c10::TypePtr>(NoneType::get()))) {
           if (auto opt_ivalue = toIValue(node->input(3))) {
             out_type = out_type->withScalarType(opt_ivalue->toScalarType());
           }
