@@ -6707,6 +6707,57 @@ void testGPU_FusionComputeAtMultiBCast() {
   ASSERT_ANY_THROW(tv1->computeAt(tv3, -1));
 }
 
+void testGPU_FusionReductionHalfRepro() {
+  Fusion fusion;
+  FusionGuard fg(&fusion);
+
+  // Set up your input tensor views
+  TensorView* tv0 = makeDummyTensor(3, DataType::Half);
+  fusion.addInput(tv0);
+
+  auto tv1 = castOp(DataType::Float, tv0);
+  auto tv2 = add(tv1, new Float(1.0));
+  auto tv3 = sum(tv2, {2});
+  auto tv4 = castOp(DataType::Half, tv3);
+
+  fusion.addOutput(tv4);
+
+  const auto options =
+      at::TensorOptions().dtype(at::kHalf).device(at::kCUDA, 0);
+  at::Tensor input = at::randn({8, 8, 16}, options);
+
+  // Apply reduction heuristic
+  const at::ArrayRef<c10::IValue> inputs({input});
+
+  TORCH_CHECK(
+      cuda::scheduleReduction(&fusion, inputs, tv3),
+      "Reduction schedule was not generated!");
+
+  std::cout << " === fusion math ===" << std::endl;
+  fusion.printMath();
+
+  GpuLower gpulw(&fusion);
+  std::stringstream kernel;
+  gpulw.printKernel(kernel);
+
+  std::cout << " === generated code ===" << std::endl;
+  std::cout << kernel.str() << std::endl;
+
+  /* put this back once it's fixed
+  cuda::FusionExecutor fe;
+  fe.compileFusion(&fusion);
+  // no broadcasting needed, omitting the last optional argument;
+  auto outputs = fe.runFusion(inputs);
+
+  auto aten_output = input.add(1.0).sum({2});
+
+  TORCH_CHECK(
+      aten_output.allclose(outputs[0], 1e-04, 1e-04),
+      "Error of: ",
+      aten_output.sub(outputs[0]).abs().max());
+   */
+}
+
 } // namespace jit
 } // namespace torch
 
