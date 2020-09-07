@@ -1,4 +1,4 @@
-#if defined(USE_CUDA)
+// #if defined(USE_CUDA)
 
 #include <test/cpp/jit/test_base.h>
 
@@ -30,7 +30,6 @@
 namespace torch {
 namespace jit {
 
-using namespace torch::jit::fuser;
 using namespace torch::jit::fuser;
 
 namespace {
@@ -5881,41 +5880,98 @@ void testGPU_FusionSmemDynamicPwiseMulSymbolicArg() {
   Fusion fusion;
   FusionGuard fg(&fusion);
 
-  Int* sym_bsx = new Int();
-  TensorView* tv0 = makeDummyTensor(2); // (M, K)
-  TensorView* tv1 = makeDummyTensor(2); // (K, N)
-  TensorView* tv2 = broadcast(tv0, {false, false, true}); // (M, K, B)
-  TensorView* tv3 = broadcast(tv1, {true, false, false}); // (B, K, N)
-  TensorView* tv4 = mul(tv2, tv3); // M, K, N
+  // Symbolic integers we will use for runtime tiling
+  Int* symbolic_m_tile_dim = new Int();
+  Int* symbolic_split_k_tile_dim = new Int();
+  Int* symbolic_block_k_tile_dim = new Int();
+  // Compile-time integer for tiling
+  int n_smem_tile = 32;
+
+  // Symbolic 2D tensors TV0[M, K], TV1[K, N]
+  TensorView* tv0 = makeDummyTensor(2);
+  TensorView* tv1 = makeDummyTensor(2);
+
+  // Broadcast tv0 to [M, K, *]
+  TensorView* tv2 = broadcast(tv0, {false, false, true});
+  // Broadcast tv1 to [*, K, N]
+  TensorView* tv3 = broadcast(tv1, {true, false, false});
+
+  // Pointwise multiplication resulting in tv3[M, K, N]
+  TensorView* tv4 = mul(tv2, tv3);
+
+  // Sum the K-dim
+  TensorView* tv5 = sum(tv4, {1});
+
+  // Register inputs and outputs
   fusion.addInput(tv0);
   fusion.addInput(tv1);
-  fusion.addInput(sym_bsx);
-  fusion.addOutput(tv4);
-  // Algorithm
+  fusion.addOutput(tv5);
 
+  // Register runtime tile dims as inputs
+  fusion.addInput(symbolic_m_tile_dim);
+  fusion.addInput(symbolic_split_k_tile_dim);
+  fusion.addInput(symbolic_block_k_tile_dim);
+
+  // Make a 3D tile, mix of symbolic and constant, do in reverse order because
+  // dims are inserted
+  tv5->split(2, n_smem_tile);
+  tv5->split(1, symbolic_block_k_tile_dim);
+  tv5->split(1, symbolic_split_k_tile_dim);
+  tv5->split(0, symbolic_m_tile_dim);
+
+  // Reorder so all outer tiles are in the leftmost 3 positions
+  tv5->reorder({{1, 5}, {5, 1}});
+
+  // Factor out the outer reduction IterDomain, then run the inter-cta
+  // reduction, and intra-cta reduction
+  auto tv6 = tv5->rFactor({2});
+
+  // Scope computations
+  tv6->computeAt(tv5, 2);
+
+  tv6->reorder({
+      {2, -2},
+      {3, -1},
+      {4, 2},
+      {5, 3},
+      {6, 4},
+  });
+
+  // Setup compute at schedule
+  tv0->computeAt(tv6, 3);
+  tv1->computeAt(tv6, 3);
+  tv4->computeAt(tv6, -1);
+
+  // Cache smem tiles
   tv2->setMemoryType(MemoryType::Shared);
   tv3->setMemoryType(MemoryType::Shared);
+  tv4->setMemoryType(MemoryType::Local);
+  tv6->setMemoryType(MemoryType::Local);
 
-  constexpr int BSX = 32;
-  tv4->split(2, BSX);
-  tv4->split(1, sym_bsx);
-  tv4->split(0, BSX);
-  // M/BSX, BSX, K/BSX, BSX, N/BSX, BSX
-  tv4->reorder({{0, 0}, {1, 3}, {2, 1}, {3, 4}, {4, 2}, {5, 5}});
-  // M/BSX, K/BSX, N/BSX, MSX, KSX, NSX
+  tv5->axis(0)->parallelize(ParallelType::BIDz);
+  tv5->axis(1)->parallelize(ParallelType::BIDy);
 
-  tv0->computeAt(tv4, 3);
-  tv1->computeAt(tv4, 3);
-  // Schedule
+  std::vector<TensorView*> tv_list = {tv2, tv3, tv4, tv5, tv6};
+  for (auto tv : tv_list) {
+    tv->axis(-2)->parallelize(ParallelType::TIDz);
+    tv->axis(-1)->parallelize(ParallelType::TIDy);
+  }
+  tv2->axis(3)->parallelize(ParallelType::TIDx);
+  tv3->axis(3)->parallelize(ParallelType::TIDx);
+  tv4->axis(3)->parallelize(ParallelType::TIDx);
+  tv6->axis(3)->parallelize(ParallelType::TIDx);
+  tv5->axis(2)->parallelize(ParallelType::TIDx);
 
-  tv4->axis(0)->parallelize(ParallelType::BIDx);
-  tv4->axis(2)->parallelize(ParallelType::BIDy);
-  // Manual Binding
-  tv2->axis(-2)->parallelize(ParallelType::TIDx);
-  tv3->axis(-1)->parallelize(ParallelType::TIDx);
-  // Thread and Block binding
+  tv2->axis(4)->parallelize(ParallelType::BIDx);
+  tv3->axis(4)->parallelize(ParallelType::BIDx);
+  tv4->axis(4)->parallelize(ParallelType::BIDx);
+  tv6->axis(4)->parallelize(ParallelType::BIDx);
+  tv5->axis(3)->parallelize(ParallelType::BIDx);
 
-  constexpr int M = 128, K = 457, N = 1024;
+  fusion.printMath();
+  fusion.printKernel();
+
+  constexpr int M = 3, K = 6, N = 16;
 
   auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
   at::Tensor t0 = at::randn({M, K}, options);
@@ -5924,10 +5980,11 @@ void testGPU_FusionSmemDynamicPwiseMulSymbolicArg() {
   torch::jit::fuser::cuda::FusionExecutor fe;
   fe.compileFusion(&fusion);
   auto outputs = fe.runFusion(
-      {t0, t1, BSX},
-      torch::jit::fuser::cuda::LaunchParams(-1, -1, -1, BSX, -1, -1));
+      {t0, t1, 2, 2, 3},
+      torch::jit::fuser::cuda::LaunchParams(-1, -1, -1, -1, -1, -1));
 
-  at::Tensor aten_output = mul(t0.unsqueeze(2), t1.unsqueeze(0));
+  at::Tensor aten_output = mul(t0.unsqueeze(2), t1.unsqueeze(0)).sum(1);
+
   TORCH_CHECK(
       aten_output.allclose(outputs[0], 1e-5, 1e-5),
       "Error of: ",
@@ -6710,4 +6767,4 @@ void testGPU_FusionComputeAtMultiBCast() {
 } // namespace jit
 } // namespace torch
 
-#endif // #if defined(USE_CUDA)
+// #endif // #if defined(USE_CUDA)

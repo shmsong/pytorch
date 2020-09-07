@@ -701,6 +701,14 @@ void IRPrinter::handle(const kir::ReductionOp* rop) {
     os << "reduction_" << op_type << "_" << d_type;
     os << ", threadIdx, blockDim";
     os << ", static_cast<" << d_type << "*>(shared_mem)";
+    if (rop->pred() == nullptr) {
+      os << ", true";
+    } else {
+      os << ", ";
+      print_inline(rop->pred());
+    }
+    os << ", ";
+    print_inline(rop->init());
     os << ");\n";
   }
 }
@@ -756,6 +764,14 @@ void IRPrinter::handle(const kir::GridReduction* gr) {
   os << ", &T" << work_buffer->name() << "[0]";
   os << ", T" << sync_buffer->name() << "";
   os << ", static_cast<" << d_type << "*>(shared_mem)";
+  if (gr->pred() == nullptr) {
+    os << ", true";
+  } else {
+    os << ", ";
+    print_inline(gr->pred());
+  }
+  os << ", ";
+  print_inline(gr->reduction_op()->init());
   os << ");\n";
 }
 
