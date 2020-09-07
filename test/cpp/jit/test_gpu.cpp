@@ -1,4 +1,4 @@
-// #if defined(USE_CUDA)
+#if defined(USE_CUDA)
 
 #include <test/cpp/jit/test_base.h>
 
@@ -5971,7 +5971,8 @@ void testGPU_FusionSmemDynamicPwiseMulSymbolicArg() {
   fusion.printMath();
   fusion.printKernel();
 
-  constexpr int M = 3, K = 6, N = 16;
+  // Changing N to > 32 (the compile_time tile dim breaks the code still)
+  constexpr int M = 31, K = 65, N = 32;
 
   auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
   at::Tensor t0 = at::randn({M, K}, options);
@@ -5979,8 +5980,9 @@ void testGPU_FusionSmemDynamicPwiseMulSymbolicArg() {
 
   torch::jit::fuser::cuda::FusionExecutor fe;
   fe.compileFusion(&fusion);
+  // A, B, m_tile_dim, split_k, intra_cta_tile
   auto outputs = fe.runFusion(
-      {t0, t1, 2, 2, 3},
+      {t0, t1, 3, 4, 5},
       torch::jit::fuser::cuda::LaunchParams(-1, -1, -1, -1, -1, -1));
 
   at::Tensor aten_output = mul(t0.unsqueeze(2), t1.unsqueeze(0)).sum(1);
@@ -6767,4 +6769,4 @@ void testGPU_FusionComputeAtMultiBCast() {
 } // namespace jit
 } // namespace torch
 
-// #endif // #if defined(USE_CUDA)
+#endif // #if defined(USE_CUDA)
