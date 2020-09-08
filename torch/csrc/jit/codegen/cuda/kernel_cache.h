@@ -63,7 +63,7 @@ TORCH_CUDA_API class InputsIdLookup {
   // conflicts
   size_t current_id_ = 1;
 
-  // entry in the cache, This is used to implement LRU cache, where entries in 
+  // entry in the cache, This is used to implement LRU cache, where entries in
   // the list is ordered by their recent usage (freshly used entry is placed at
   // the beginning)
   std::list<std::string> used_entry_;
