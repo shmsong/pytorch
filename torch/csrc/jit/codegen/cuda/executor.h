@@ -52,7 +52,7 @@ class TORCH_CUDA_API FusionExecutor : public NonCopyable {
     return fusion_id_ != -1;
   };
 
-  inline void evictCache(size_t cache_id) {
+  void evictCache(size_t cache_id) {
     executor_entry_lookup_.erase(cache_id);
   }
 

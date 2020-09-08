@@ -210,28 +210,28 @@ InputsIdLookup::IdLookupReturn InputsIdLookup::lookupId(
   auto& id_iter_pair = encoding_lookup_[encoded_inputs.str()];
 
   // short-cut to leave LRU entry as is;
-  if (id_iter_pair.second == used_entry_.begin()) {
-    ret.id = id_iter_pair.first;
+  if (id_iter_pair.lru_iter == used_entry_.begin()) {
+    ret.id = id_iter_pair.id;
     return ret;
   }
 
-  if (id_iter_pair.first == 0) {
+  if (id_iter_pair.id == 0) {
     // no entry existed for given input set, set id for given entry
-    id_iter_pair.first = current_id_++;
+    id_iter_pair.id = current_id_++;
     if (used_entry_.size() == max_cache_size_) {
       // pop least recently used cache;
       const auto& remove_iter = encoding_lookup_.find(used_entry_.back());
       used_entry_.pop_back();
-      ret.evict_id = remove_iter->second.first;
+      ret.evict_id = remove_iter->second.id;
       ret.eviction = true;
       encoding_lookup_.erase(remove_iter);
     }
   } else {
-    used_entry_.erase(id_iter_pair.second);
+    used_entry_.erase(id_iter_pair.lru_iter);
   }
 
-  ret.id = id_iter_pair.first;
-  id_iter_pair.second =
+  ret.id = id_iter_pair.id;
+  id_iter_pair.lru_iter =
       used_entry_.insert(used_entry_.begin(), encoded_inputs.str());
   return ret;
 }
