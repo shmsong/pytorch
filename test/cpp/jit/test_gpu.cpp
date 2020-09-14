@@ -2083,6 +2083,24 @@ void testGPU_FusionComputeAtNoCommonConsumer() {
   TORCH_CHECK(at::allclose(kernel_tv6, t6));
 }
 
+void testGPU_FusionRootMapping(){
+  Fusion fusion;
+  FusionGuard fg(&fusion);
+
+  TensorView* tv0 = makeDummyTensor(2);
+  fusion.addInput(tv0);
+  TensorView* tv1 = makeDummyTensor(3);
+  fusion.addInput(tv1);
+
+  auto tv2 = broadcast(tv0,{true,false,false});
+  auto tv3 = add(tv2,tv1);
+
+  fusion.addOutput(tv3);
+ 
+  TORCH_CHECK(TensorDomain::ConcretizeDomain(tv2->axis(0))->sameAs(tv3->axis(0));
+  TORCH_CHECK(TensorDomain::ConcretizeDomain(tv2->axis(0))->sameAs(tv1->axis(0));
+}
+
 void testGPU_FusionScalarInputs() {
   Fusion fusion;
   FusionGuard fg(&fusion);
