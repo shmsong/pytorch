@@ -514,6 +514,10 @@ class TORCH_CUDA_API TensorDomain : public Val {
             consumer->getRootDomain().end()));
   }
 
+  // runs concretize domain pass and returns the concretized map of
+  // broadcast domain
+  static const IterDomain* ConcretizeDomain(IterDomain* bcastDom);
+
   // Create a map from producer root IterDomains -> consumer root IterDomains.
   // Only those root producer IDs present in producer_maybe_rfactor_dims_to_map
   // will be attempted to map to their corresponding consumer IDs.
