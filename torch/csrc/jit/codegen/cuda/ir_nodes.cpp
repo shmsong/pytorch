@@ -5,7 +5,7 @@
 #include <torch/csrc/jit/codegen/cuda/kernel_ir.h>
 #include <torch/csrc/jit/codegen/cuda/transform_iter.h>
 #include <torch/csrc/jit/codegen/cuda/transform_rfactor.h>
-
+#include <torch/csrc/jit/codegen/cuda/ir_utils.h>
 #include <torch/csrc/jit/codegen/cuda/ir_iostream.h>
 
 #include <sstream>
@@ -1046,14 +1046,11 @@ class ConcretizeDomain : public BackwardVisitor  {
  }
 
  protected:
- using MapType = std::unordered_map<IterDomain*,IterDomain*>;
- using EqKeyType = std::pair<Val*,Val*>;
- using EqType = std::unordered_set<EqKeyType>;
+ using MapType = std::unordered_map<IterDomain*,IterDomain*>; 
  MapType BcastDomainMap_;
- EqType  EqRelation_;
 
  void buildMap(Fusion* fusion){
-  traverseFrom(fusion->outputs());
+  traverseFrom(fusion, fusion->outputs(), false);
  };
 
  void pointWiseOpMap(Expr* e);
@@ -1068,23 +1065,11 @@ class ConcretizeDomain : public BackwardVisitor  {
   return BcastDomainMap_.at(id);
  }
  
- IterDomain* concretizeTo(IterDomain* id,IterDomain* To){
+ void concretizeTo(IterDomain* id,IterDomain* To){
   TORCH_INTERNAL_ASSERT(id->isBroadcast() && !To->isBroadcast());
-  return !id->isBroadcast() || BcastDomainMap_.count(id);
+  BcastDomainMap_[id]=concretized(To);
  }
 
- void addEquality(IterDomain* a,IterDomain* b){
-   if(a==b) return;
-    EqRelation_.insert({a->start(),b->start()});
-    EqRelation_.insert({a->extent(),b->extent()});
- };
-
- inline bool canProveEqual(const Val* a,const Val* b){
-  return EqRelation_.count({a,b})|| 
-         EqRelation_.count({b,a});
- }
-
- 
  void handle(BinaryOp* bop) override{
    pointWiseOpMap(bop->asExpr());
  }
@@ -1092,8 +1077,7 @@ class ConcretizeDomain : public BackwardVisitor  {
  void handle(TernaryOp* top) override{
   pointWiseOpMap(top->asExpr());
  };
-
-} //class ConcretizeDomain
+}; //class ConcretizeDomain
 
 void ConcretizeDomain::pointWiseOpMap(Expr *e){ 
  TensorView* TVo  = *ir_utils::filterByType<TensorView>(e->outputs()).begin();
@@ -1101,20 +1085,15 @@ void ConcretizeDomain::pointWiseOpMap(Expr *e){
  //won't use this function on a reduction op, so root domain only
  std::vector<IterDomain*> Io = TVo->getRootDomain();
 
- for(auto i* : ir_utils::filterByType<TensorView>(e->inputs())){
+ for(auto* i : ir_utils::filterByType<TensorView>(e->inputs())){
   std::vector<IterDomain*> Ii = i->getRootDomain();
   TORCH_INTERNAL_ASSERT(Ii.size()==Io.size());
 
   for(size_t it=0;it<Ii.size();it++){
    if(!canConcretize(Io[it])) continue;
 
-   if(!canConcretize(Ii[it]) 
+   if(!canConcretize(Ii[it])) 
     concretizeTo(Ii[it],concretized(Io[it]));
-   else(canConcretize(Ii[it] && canConcretize(Io[it])) {
-     auto cIi = concretized(Ii[it]);
-     auto cIo = concretized(Io[it]);
-     if(!cIi->sameAs(cIo)) addEquality(cIi,cIo);
-   }
   }
  }
 } //ConcretizeDomain::pointWiseOpMap
