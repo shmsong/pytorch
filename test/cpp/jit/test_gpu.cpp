@@ -2083,22 +2083,74 @@ void testGPU_FusionComputeAtNoCommonConsumer() {
   TORCH_CHECK(at::allclose(kernel_tv6, t6));
 }
 
-void testGPU_FusionRootMapping(){
+void testGPU_FusionBCastConcretize() {
+  Fusion fusion;
+  FusionGuard fg(&fusion);
+
+  // tv0: [I I]
+  TensorView* tv0 = makeDummyTensor(2);
+
+  // tv1: [I I I]
+  TensorView* tv1 = makeDummyTensor(3);
+
+  fusion.addInput(tv0);
+  fusion.addInput(tv1);
+
+  // tv2*: [B I I]
+  auto tv2_0 = broadcast(tv0, {true, false, false});
+  auto tv2_1 = broadcast(tv0, {true, false, false});
+  auto tv2 = add(tv2_0, tv2_1);
+
+  // tv3: [I I I]
+  auto tv3 = add(tv2, tv1);
+
+  fusion.addOutput(tv3);
+
+#define CHECK_CONCRETIZE(v0, a0, v1, a1) \
+  TORCH_CHECK(IterDomain::concretizeDomain(v0->axis(a0))->sameAs(v1->axis(a1)))
+
+#define CHECK_NOCONCRETIZE(v0, a0, v1, a1) \
+  TORCH_CHECK(!IterDomain::concretizeDomain(v0->axis(a0))->sameAs(v1->axis(a1)))
+  CHECK_CONCRETIZE(tv2, 0, tv1, 0);
+  CHECK_CONCRETIZE(tv2_0, 0, tv1, 0);
+  CHECK_CONCRETIZE(tv2_1, 0, tv1, 0);
+  CHECK_NOCONCRETIZE(tv2_0, 1, tv1, 0);
+  CHECK_NOCONCRETIZE(tv2_0, 0, tv1, 1);
+#undef CHECK_CONCRETIZE
+#undef CHECK_NOCONCRETIZE
+}
+
+void testGPU_FusionProveIdEqual() {
   Fusion fusion;
   FusionGuard fg(&fusion);
 
   TensorView* tv0 = makeDummyTensor(2);
+  TensorView* tv1 = makeDummyTensor(2);
+  TensorView* tv2 = makeDummyTensor(3);
+
   fusion.addInput(tv0);
-  TensorView* tv1 = makeDummyTensor(3);
   fusion.addInput(tv1);
+  auto tv3 = broadcast(tv0, {true, false, false});
+  auto tv4 = broadcast(tv1, {false, true, false});
+  auto tv5 = add(tv3, tv4);
+  fusion.addOutput(tv5);
 
-  auto tv2 = broadcast(tv0,{true,false,false});
-  auto tv3 = add(tv2,tv1);
+#define CHECK_EQUAL(v0, a0, v1, a1) \
+  TORCH_CHECK(IterDomain::proveEqual(v0->axis(a0), v1->axis(a1)))
 
-  fusion.addOutput(tv3);
- 
-  TORCH_CHECK(TensorDomain::ConcretizeDomain(tv2->axis(0))->sameAs(tv3->axis(0));
-  TORCH_CHECK(TensorDomain::ConcretizeDomain(tv2->axis(0))->sameAs(tv1->axis(0));
+#define CHECK_NOEQUAL(v0, a0, v1, a1) \
+  TORCH_CHECK(!IterDomain::proveEqual(v0->axis(a0), v1->axis(a1)))
+
+  CHECK_EQUAL(tv0, 0, tv4, 1);
+  CHECK_EQUAL(tv1, 0, tv4, 0);
+  CHECK_EQUAL(tv1, 1, tv0, 1);
+  CHECK_EQUAL(tv0, 0, tv5, 1);
+  CHECK_EQUAL(tv1, 1, tv5, 2);
+  CHECK_NOEQUAL(tv0, 0, tv1, 0)
+  CHECK_NOEQUAL(tv0, 1, tv1, 0)
+  CHECK_NOEQUAL(tv0, 0, tv1, 1)
+#undef CHECK_EQUAL
+#undef CHECK_NOEQUAL
 }
 
 void testGPU_FusionScalarInputs() {
