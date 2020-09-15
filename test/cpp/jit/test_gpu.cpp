@@ -2087,18 +2087,36 @@ void testGPU_FusionRootMapping(){
   Fusion fusion;
   FusionGuard fg(&fusion);
 
-  TensorView* tv0 = makeDummyTensor(2);
-  fusion.addInput(tv0);
-  TensorView* tv1 = makeDummyTensor(3);
-  fusion.addInput(tv1);
+  TensorView* tv0   = makeDummyTensor(2);
+  TensorView* tv1   = makeDummyTensor(3);
+  TensorView* tv1_1 = makeDummyTensor(3);
 
-  auto tv2 = broadcast(tv0,{true,false,false});
+  fusion.addInput(tv0);
+  fusion.addInput(tv1);
+  fusion.addInput(tv1_1);
+
+
+  auto tv2   = broadcast(tv0,{true,false,false});
+  auto tv2_0 = broadcast(tv0,{true,false,false});
+  auto tv2_1 = broadcast(tv0,{true,false,false});
   auto tv3 = add(tv2,tv1);
+  auto tv4 = add(tv2_0,tv2_1);
+  auto tv5 = add(tv4,tv1);
+  auto tv6 = add(tv5,tv1_1);
 
   fusion.addOutput(tv3);
+  fusion.addOutput(tv5);
  
-  TORCH_CHECK(TensorDomain::ConcretizeDomain(tv2->axis(0))->sameAs(tv3->axis(0));
-  TORCH_CHECK(TensorDomain::ConcretizeDomain(tv2->axis(0))->sameAs(tv1->axis(0));
+  TORCH_CHECK( TensorDomain::ConcretizeDomain(tv2->axis(0))
+                                      ->sameAs(tv3->axis(0)));
+  TORCH_CHECK( TensorDomain::ConcretizeDomain(tv2->axis(0))
+                                      ->sameAs(tv1->axis(0)));
+  TORCH_CHECK(!TensorDomain::ConcretizeDomain(tv2->axis(0))
+                                      ->sameAs(tv1->axis(1)));
+  TORCH_CHECK( TensorDomain::ConcretizeDomain(tv2_0->axis(0))
+                                      ->sameAs(tv1->axis(0)));
+  TORCH_CHECK( TensorDomain::ConcretizeDomain(tv2_1->axis(0))
+                                      ->sameAs(tv1->axis(0)));
 }
 
 void testGPU_FusionScalarInputs() {
