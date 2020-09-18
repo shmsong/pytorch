@@ -1,4 +1,7 @@
+
 #include <torch/csrc/jit/codegen/cuda/kernel_cache.h>
+#include <torch/csrc/jit/codegen/cuda/instrumentation.h>
+#include <torch/csrc/jit/codegen/cuda/ir_utils.h>
 #include <torch/csrc/jit/codegen/cuda/parser.h>
 #include <torch/csrc/jit/codegen/cuda/scheduler.h>
 #include <torch/csrc/jit/runtime/graph_executor.h>
@@ -66,6 +69,8 @@ void debugPrint(const TensorTypePtr& type) {
 }
 
 at::DimVector graphReductionAxes(const std::shared_ptr<Graph>& graph) {
+  FUSER_PERF_SCOPE("graphReductionAxes");
+
   at::DimVector reduction_axes;
   // TODO: let check that we have only single reduction node in the graph.
   for (const auto& n : graph->nodes()) {
@@ -88,6 +93,8 @@ at::DimVector graphReductionAxes(const std::shared_ptr<Graph>& graph) {
 }
 
 at::DimVector getPermutationPerSortedStride(const TensorTypePtr& type) {
+  FUSER_PERF_SCOPE("getPermutationPerSortedStride");
+
   // `permute_seq` is the returned permutation to achieve sorted stride;
   at::DimVector permute_seq;
 
@@ -234,6 +241,7 @@ FusionExecutorCache::FusionExecutorCache(
     std::unique_ptr<Fusion>&& fusion,
     at::Device device)
     : device_(device), fusion_(std::move(fusion)) {
+  FUSER_PERF_SCOPE("FusionExecutorCache::FusionExecutorCache");
   // avoid putting `has_reduction_` in the initializer list
   has_reduction_ = fusion_->hasReduction();
 }
@@ -241,30 +249,105 @@ FusionExecutorCache::FusionExecutorCache(
 std::vector<at::Tensor> FusionExecutorCache::runFusionWithInputs(
     const at::ArrayRef<IValue>& inputs,
     size_t unique_id) {
+  FUSER_PERF_SCOPE("runFusionWithInputs");
   if (code_to_fe_lookup_.count(unique_id) == 0) {
     // enter when we get a new input set. We need to search for compatible
     // entries in cached `FusionExecutor` or compile new one as needed.
 
     // caching strategy is different for pw-fusion and reduction-fusion.
     if (has_reduction_) {
+      // SETUP AND CHECK HEURISTIC ON ORIG FUSION
+
       // copy the fusion, since each FusionExecutor needs to manipulate the
       // fusion in order to generate kernel.
-      Fusion fusion = *fusion_;
-      TensorView* red_tv = nullptr;
-      for (auto expr : fusion.exprs()) {
-        if (expr->getExprType().has_value() &&
-            expr->getExprType().value() == ExprType::ReductionOp) {
-          red_tv = expr->outputs()[0]->as<TensorView>();
-          break;
+      FusionGuard fg(fusion_.get());
+
+      TensorView* reduction_tv = nullptr;
+      // Use dependency check to find the reduction tv as it returns used values
+      // instead of exprs.
+
+      // Heavy weight call
+      auto used_vals = DependencyCheck::getAllValsBetween(
+          {fusion_->inputs().begin(), fusion_->inputs().end()},
+          fusion_->outputs());
+
+      for (auto val : used_vals) {
+        if (val->getValType().value() == ValType::TensorView) {
+          auto tv = val->as<TensorView>();
+          if (tv->hasReduction()) {
+            TORCH_INTERNAL_ASSERT(
+                reduction_tv == nullptr,
+                "Already found a reduction tensorview, cannot handle fusion of multiple reductions.");
+            reduction_tv = tv;
+          }
         }
       }
-      auto reduction_params = scheduleReduction(&fusion, inputs, red_tv);
+
       TORCH_INTERNAL_ASSERT(
-          reduction_params.has_value(),
-          "reduction schedule failed in `scheduleReduction`");
+          reduction_tv != nullptr,
+          "Could not find the reduction tensor view in the fusion.");
+
+      // Heavy weight call
+      auto outputsOfReduction =
+          DependencyCheck::getAllOutputsOf({reduction_tv});
+
+      auto tv_entries = ir_utils::filterByType<TensorView>(outputsOfReduction);
+
+      std::vector<TensorView*> tvOutputsOfReduction(
+          tv_entries.begin(), tv_entries.end());
+
+      auto reduction_params =
+          getReductionHeuristics(fusion_.get(), inputs, reduction_tv);
+      TORCH_INTERNAL_ASSERT(
+          reduction_params, "get reduction heuristics failed");
+
       auto fusion_executor =
           &red_fusion_executor_cache_[reduction_params.value()];
+
       if (!fusion_executor->compiled()) {
+        // HEURISTIC NOT COMPILED, COMPILE A KERNEL
+        Fusion fusion = *fusion_;
+
+        FusionGuard fg(&fusion);
+
+        // Heavy weight call
+        auto used_vals = DependencyCheck::getAllValsBetween(
+            {fusion.inputs().begin(), fusion.inputs().end()}, fusion.outputs());
+
+        TensorView* reduction_tv = nullptr;
+
+        for (auto val : used_vals) {
+          if (val->getValType().value() == ValType::TensorView) {
+            auto tv = val->as<TensorView>();
+            if (tv->hasReduction()) {
+              TORCH_INTERNAL_ASSERT(
+                  reduction_tv == nullptr,
+                  "Already found a reduction tensorview, cannot handle fusion of multiple reductions.");
+              reduction_tv = tv;
+            }
+          }
+        }
+
+        TORCH_INTERNAL_ASSERT(
+            reduction_tv != nullptr,
+            "Could not find the reduction tensor view in the fusion.");
+
+        // Heavy weight call
+        auto outputsOfReduction =
+            DependencyCheck::getAllOutputsOf({reduction_tv});
+
+        auto tv_entries =
+            ir_utils::filterByType<TensorView>(outputsOfReduction);
+
+        std::vector<TensorView*> tvOutputsOfReduction(
+            tv_entries.begin(), tv_entries.end());
+
+        scheduleReduction(
+            &fusion,
+            reduction_params.value(),
+            reduction_tv,
+            tvOutputsOfReduction);
+
         // This means we have not found a previously generated kernel that's
         // compatible with the new reduction params. We need to finish codegen.
         CompileOptions options;
@@ -287,6 +370,7 @@ std::vector<at::Tensor> FusionExecutorCache::runFusionWithInputs(
       code_to_fe_lookup_[unique_id] = pw_fusion_executor_cache_.get();
     }
   }
+
   return code_to_fe_lookup_[unique_id]->runFusion(
       inputs, LaunchParams(), unique_id);
 }
@@ -294,6 +378,8 @@ std::vector<at::Tensor> FusionExecutorCache::runFusionWithInputs(
 GraphCache::InputsRequirement::InputsRequirement(
     const std::shared_ptr<Graph>& graph,
     const std::vector<size_t>& reduction_axes) {
+  FUSER_PERF_SCOPE("InputsRequirement::InputsRequirement");
+
   // run over inputs to extract common types;
   TensorTypePtr acc_type = TensorType::get();
   for (const auto& input : graph->inputs()) {
@@ -318,6 +404,8 @@ GraphCache::InputsRequirement::InputsRequirement(
 GraphCache::InputsRequirement::InputsRequirement(
     const at::ArrayRef<IValue>& inputs,
     const std::vector<size_t>& reduction_axes) {
+  FUSER_PERF_SCOPE("InputsRequirement::InputsRequirement");
+
   // run over inputs to extract common types;
   TensorTypePtr acc_type = TensorType::get();
   for (const auto& input : inputs) {
@@ -368,6 +456,8 @@ bool GraphCache::InputsRequirement::requiresPermutation() {
 // TODO: tests!
 bool GraphCache::InputsRequirement::complyWith(
     const InputsRequirement& expect) {
+  FUSER_PERF_SCOPE("InputsRequirement::complyWith");
+
   if (device_ != expect.device_ ||
       input_permutation_ != expect.input_permutation_ ||
       pw_output_permutation_ != expect.pw_output_permutation_ ||
@@ -450,6 +540,8 @@ void GraphCache::InputsRequirement::extractPermutation(
 
 FusionExecutorCache* GraphCache::appendFusionExecutorCache(
     const InputsRequirement& input_stack) {
+  FUSER_PERF_SCOPE("createFusionExecutorCache");
+
   input_stacks_.emplace_back(input_stack);
   std::shared_ptr<Graph> parsing_graph = graph_->copy();
   // assign inputs on parsing_graph to accommodate legacy executor, where input
@@ -557,6 +649,8 @@ FusionExecutorCache* GraphCache::appendFusionExecutorCache(
 
 GraphCache::GraphCache(std::shared_ptr<Graph> graph)
     : graph_(std::move(graph)) {
+  FUSER_PERF_SCOPE("GraphCache::GraphCache");
+
   // [ NOTE - reduction in graph ]
   //
   // reduction complicates our permutation in integration, it addes two things:
@@ -579,6 +673,7 @@ GraphCache::GraphCache(std::shared_ptr<Graph> graph)
 
 std::vector<at::Tensor> GraphCache::runGraphWithInputs(
     const at::ArrayRef<IValue>& inputs) {
+  FUSER_PERF_SCOPE("runGraphWithInputs");
   // get unique id `unique_id` for given input set `inputs`;
   auto id_lookup_ret = inputs_id_lookup_.lookupId(inputs);
   const size_t unique_id = id_lookup_ret.id;

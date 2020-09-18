@@ -1,7 +1,10 @@
 
 #include <torch/csrc/jit/codegen/cuda/lower2device.h>
 #include <torch/csrc/jit/codegen/cuda/fusion.h>
+#include <torch/csrc/jit/codegen/cuda/instrumentation.h>
+#include <torch/csrc/jit/codegen/cuda/ir_iostream.h>
 #include <torch/csrc/jit/codegen/cuda/lower_index.h>
+#include <torch/csrc/jit/codegen/cuda/lower_insert_syncs.h>
 #include <torch/csrc/jit/codegen/cuda/lower_loops.h>
 #include <torch/csrc/jit/codegen/cuda/lower_thread_predicate.h>
 #include <torch/csrc/jit/codegen/cuda/lower_unroll.h>
@@ -16,6 +19,8 @@ namespace fuser {
 thread_local GpuLower* active_gpu_lower = nullptr;
 
 void GpuLower::replaceSymbolicSizes() {
+  FUSER_PERF_SCOPE("replaceSymbolicSizes");
+
   // Grab inputs and outputs
   // TODO: Only run through inputs for the size map, outputs don't actually set
   // any sizes of the problem.
@@ -71,6 +76,8 @@ void GpuLower::replaceSymbolicSizes() {
 }
 
 void GpuLower::lower() {
+  FUSER_PERF_SCOPE("lower");
+
   TORCH_INTERNAL_ASSERT(fusion_ != nullptr);
   TORCH_INTERNAL_ASSERT(
       active_gpu_lower == nullptr, "Nested lowering passes are not supported");
@@ -94,19 +101,29 @@ void GpuLower::lower() {
   // Compute thread predicates
   ThreadPredicateMap preds(fusion_);
 
-  // Run our passes keeping the lowered expressions and forwarding
-  // them.
+  // Run our passes keeping the lowered expressions and forwarding them
   const auto lowered_exprs =
       LoopNestGenerator::loweredExprs(fusion_, preds, fusion_->exprs(true));
 
   const auto unrolled_loops =
       UnrollPass::runPass(fusion_, lowered_exprs, preds);
 
+  // Insert SyncThreads at end of for-loop to avoid WAR race condition
+  const auto sync_exprs = insertThreadSynchronization(fusion_, unrolled_loops);
+
   const auto indexed_loops =
-      IndexLowering::getIndexedExprs(fusion_, unrolled_loops);
+      IndexLowering::getIndexedExprs(fusion_, sync_exprs);
 
   // We now have the lowered expressions, store the final lowered Kernel IR
-  kernel_ = std::make_unique<Kernel>(indexed_loops);
+  kernel_ = std::make_unique<Kernel>(indexed_loops, preds);
+
+  // Set the kernel inputs & outputs
+  for (auto input : fusion_->inputs()) {
+    kernel_->addInput(kir::lowerValue(input));
+  }
+  for (auto output : fusion_->outputs()) {
+    kernel_->addOutput(kir::lowerValue(output));
+  }
 }
 
 Kernel* GpuLower::kernel() const {

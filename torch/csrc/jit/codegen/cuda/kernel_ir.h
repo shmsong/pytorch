@@ -243,6 +243,7 @@ class TORCH_CUDA_API TensorDomain : public Val {
   bool hasReduction() const;
   bool hasBlockReduction() const;
   bool hasGridReduction() const;
+  bool hasBlockBroadcast() const;
   bool hasBroadcast() const;
   bool hasRFactor() const;
 
@@ -269,6 +270,7 @@ class TORCH_CUDA_API TensorDomain : public Val {
 
   IterDomain* axis(int i) const;
 
+  // TODO(kir): overloading non-static and static methods is not a good idea
   static std::vector<IterDomain*> noReductions(const std::vector<IterDomain*>&);
   static std::vector<IterDomain*> noBroadcasts(const std::vector<IterDomain*>&);
 
@@ -289,7 +291,7 @@ class TORCH_CUDA_API TensorView : public Val {
     return domain_;
   }
 
-  MemoryType getMemoryType() const {
+  MemoryType memoryType() const {
     return memory_type_;
   }
 
@@ -389,7 +391,12 @@ class TORCH_CUDA_API TernaryOp : public Expr {
 
 class TORCH_CUDA_API ReductionOp : public Expr {
  public:
-  ReductionOp(BinaryOpType reduction_op_type, Val* init, Val* out, Val* in);
+  ReductionOp(
+      BinaryOpType reduction_op_type,
+      Val* init,
+      Val* out,
+      Val* in,
+      Bool* pred = nullptr);
 
   Val* out() const {
     return out_;
@@ -401,6 +408,10 @@ class TORCH_CUDA_API ReductionOp : public Expr {
 
   Val* init() const {
     return init_;
+  }
+
+  Bool* pred() const {
+    return pred_;
   }
 
   BinaryOpType getReductionOpType() const {
@@ -418,6 +429,7 @@ class TORCH_CUDA_API ReductionOp : public Expr {
   Val* const init_ = nullptr;
   Val* const out_ = nullptr;
   Val* const in_ = nullptr;
+  Bool* const pred_ = nullptr;
 };
 
 class TORCH_CUDA_API TensorIndex : public Val {
@@ -428,8 +440,6 @@ class TORCH_CUDA_API TensorIndex : public Val {
     return indices_.size();
   }
 
-  // i here is int, as we want to accept negative value and ::size_type can be a
-  // uint.
   Val* index(int i) const;
 
   const std::vector<Val*>& indices() const {
@@ -507,7 +517,15 @@ class TORCH_CUDA_API Allocate : public Expr {
 // Sync represents __syncthreads barrier for block level coordination.
 class TORCH_CUDA_API Sync : public Expr {
  public:
-  Sync();
+  explicit Sync(bool war_sync = false);
+
+  bool isWarHazardSync() const {
+    return war_sync_;
+  }
+
+ private:
+  // TODO: war_sync_ is only used for testing/validation purposes.
+  bool war_sync_ = false;
 };
 
 class TORCH_CUDA_API Scope {
@@ -566,6 +584,9 @@ class TORCH_CUDA_API Scope {
 // in its body are considered inside the scope of the for loop. In the future
 // the implementation should look quite different so that we can do proper
 // dependency annalysis like in Fusion.
+//
+// TODO(kir): this is not a real expression
+//
 class TORCH_CUDA_API ForLoop : public Expr {
  public:
   explicit ForLoop(
@@ -586,7 +607,7 @@ class TORCH_CUDA_API ForLoop : public Expr {
     return body_;
   }
 
-  const Scope& constBody() const {
+  const Scope& body() const {
     return body_;
   }
 
@@ -607,11 +628,14 @@ class TORCH_CUDA_API ForLoop : public Expr {
 // are considered inside the scope of the if statement. In the future the
 // implementation should look quite different so that we can do proper
 // dependency annalysis like in Fusion.
+//
+// TODO(kir): this is not a real expression
+//
 class TORCH_CUDA_API IfThenElse : public Expr {
  public:
   explicit IfThenElse(
       Bool* cond,
-      const std::vector<Expr*>& if_body = {},
+      const std::vector<Expr*>& then_body = {},
       const std::vector<Expr*>& else_body = {},
       Expr* parent_scope = nullptr);
 
@@ -619,19 +643,18 @@ class TORCH_CUDA_API IfThenElse : public Expr {
     return cond_;
   }
 
-  const Scope& constBody() const {
-    return body_;
+  Scope& thenBody() {
+    return then_body_;
   }
-
-  const Scope& constElseBody() const {
-    return else_body_;
-  }
-
-  Scope& body() {
-    return body_;
+  const Scope& thenBody() const {
+    return then_body_;
   }
 
   Scope& elseBody() {
+    return else_body_;
+  }
+
+  const Scope& elseBody() const {
     return else_body_;
   }
 
@@ -647,7 +670,7 @@ class TORCH_CUDA_API IfThenElse : public Expr {
 
  private:
   Bool* const cond_ = nullptr;
-  Scope body_;
+  Scope then_body_;
   Scope else_body_;
   Expr* parent_scope_ = nullptr;
 };
@@ -663,7 +686,8 @@ class TORCH_CUDA_API GridReduction : public Expr {
   GridReduction(
       ReductionOp* reduction_op,
       Allocate* reduction_buffer,
-      Allocate* sync_buffer);
+      Allocate* sync_buffer,
+      Bool* pred = nullptr);
 
   ReductionOp* reduction_op() const {
     return reduction_op_;
@@ -677,6 +701,10 @@ class TORCH_CUDA_API GridReduction : public Expr {
     return sync_buffer_;
   }
 
+  Bool* pred() const {
+    return pred_;
+  }
+
   static std::string getPredicateFlagName(const TensorView* val);
   static std::string getPredicateFlagName(const fuser::TensorView* val);
 
@@ -684,6 +712,7 @@ class TORCH_CUDA_API GridReduction : public Expr {
   ReductionOp* reduction_op_ = nullptr;
   Allocate* reduction_buffer_ = nullptr;
   Allocate* sync_buffer_ = nullptr;
+  Bool* pred_ = nullptr;
 };
 
 // Simple classification helpers

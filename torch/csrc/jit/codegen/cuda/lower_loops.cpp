@@ -61,24 +61,21 @@ Expr* LoopNestGenerator::pushAlloc(TensorView* tv) {
   // Create the allocation node
   const auto lowered_tv = new kir::TensorView(tv);
   const auto alloc =
-      new kir::Allocate(lowered_tv, lowered_tv->getMemoryType(), size);
+      new kir::Allocate(lowered_tv, lowered_tv->memoryType(), size);
 
   // Track Shared Memory Allocation Nodes
-  bool hasDynamicSmemAlloc = false;
   if (tv->getMemoryType() == MemoryType::Shared) {
     if (!size->isConstScalar()) {
-      hasDynamicSmemAlloc = true;
       dynamic_smem_.push_front(alloc);
+      return nullptr;
     }
   }
 
   // Place the allocation
-  if (!hasDynamicSmemAlloc) {
-    if (alloc_loop != nullptr) {
-      alloc_loop->body().insert(0, alloc);
-    } else {
-      lowered_exprs.insert(lowered_exprs.begin(), alloc);
-    }
+  if (alloc_loop != nullptr) {
+    alloc_loop->body().insert(0, alloc);
+  } else {
+    lowered_exprs.insert(lowered_exprs.begin(), alloc);
   }
 
   return alloc;
@@ -105,10 +102,11 @@ void LoopNestGenerator::popFor() {
 }
 
 void LoopNestGenerator::pushBack(Expr* expr) {
-  if (for_loops.size() == 0)
+  if (for_loops.size() == 0) {
     lowered_exprs.push_back(expr);
-  else
+  } else {
     scope_utils::pushBack(for_loops.back(), expr);
+  }
 }
 
 // Update for loop structure based on this TensorView, if there's an allocation
@@ -349,8 +347,9 @@ void LoopNestGenerator::handle(Expr* expr) {
   //  If this is a reduction, initialize the output (open for loops to inner
   //  most, predicate, initialize, place next after allocation if exists, close
   //  to computeAt)
-  if (out->hasReduction())
+  if (out->hasReduction()) {
     initReduction(out, expr->as<ReductionOp>()->init(), alloc_expr);
+  }
 
   //  Place the expression
   pushBack(expr);
