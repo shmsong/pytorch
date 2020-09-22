@@ -1032,76 +1032,261 @@ std::pair<TensorDomain*, TensorDomain*> TensorDomain::rFactor(
 }
 
 namespace{
+
+/** \brief Container class DisjointSet models equivalence relationships
+ *  \details each instance of this class keeps a set of equivalent classes
+ *           DisjointSet::join(a,b) makes the full class of a and b equivalent
+ *           DisjointSet::areEqual(a,b) checks if a and b belong to the same class
+ */
+template<typename T>
+class DisjointSet{
+  protected:
+    //Internal representation of the equivalence class as integers
+    //SetMap implements the "parent" relationship
+    //Weights is used for preliminary perf optimization
+    std::vector<int> SetMap,Weights;    
+
+    //Map the input of type T to its equivalence class
+    std::unordered_map<T,int> EntryMap;
+
+    //Utility for generating new class
+    int count=0;
+
+  public:
+    DisjointSet() = default;
+
+    /** \brief Joins the equivalent class that a and b belong to
+     *         areEqual(a',b') will be true for each a'=a and b'=b 
+    */
+    void join(T a,T b){
+      int i0=fixedPoint(a),i1=fixedPoint(b);
+      int new_parent, new_child;
+
+      //either order here is correct but joining larger class to smaller class
+      //tend to be faster
+      std::tie(new_parent,new_child) = (Weights[i0]<Weights[i1]) ?  std::make_pair(i0,i1):
+                                                                    std::make_pair(i1,i0);
+      Weights[new_parent]+=Weights[new_child];
+      SetMap[new_child]=new_parent;
+    }
+    
+    /** \brief Checks if a and b belong to the same equivalent class */
+    bool areEqual(T a,T b){
+      if(!EntryMap.count(a) || !EntryMap.count(b)) return false;
+      return (fixedPoint(a)==fixedPoint(b));
+    }
+
+  private:
+    // internal fixed point implementation:
+    //  returns the equivalent class that e belongs to
+    //  does adhoc optimization to speed up future access
+    int fixedPoint(int e){
+      TORCH_INTERNAL_ASSERT(SetMap.size()>e);
+      while(SetMap[e]!=e)
+        e = SetMap[e] = SetMap[SetMap[e]];
+      return e;
+    }
+
+    // utility to check the class I belongs to:
+    //  returns the equivalent class that e belongs to
+    //  will create a new class if no match seen
+    int fixedPoint(T I){
+      if(!EntryMap.count(I)) createPoint(I);
+      return fixedPoint(EntryMap[I]); 
+    }
+
+    // utility to create a new equiv class for I
+    void createPoint(T I){
+      EntryMap[I] = count;
+      SetMap.push_back(count++);
+      Weights.push_back(1);
+    }
+  };// class DisjoinSet
+
+/** \brief Concretize broadcast axes, i.e. identifying a non-broadcast IterDomain
+ *         that the broadcast IterDomain can map to. 
+ *  \details This traversal processes root domains only,
+ *           concretization works by inspecting pointwise ops, e.g. :
+ *           T2 [i0,i1] = T1[i0,B0] + T0[i0,i1]
+ *           will concretize axis B0 to i1
+ */
 class ConcretizeDomain : public BackwardVisitor  {
+  public:
+    /** \brief traverses the graph backward from outputs
+     *         to identify all concretizing opportunities
+     */
+    ConcretizeDomain(Fusion* fusion){
+      traverseFrom(fusion,fusion->outputs(), true);
+    }
 
- public:
- ConcretizeDomain(Fusion* fusion){
-   buildMap(fusion);
- }
+    /** \brief API call to run the concretize pass and return the 
+      *        axis that bcastDom concretizes to
+      */    
+    static const IterDomain* getConcreteDomain(IterDomain* bcastDom){
+      ConcretizeDomain CD(bcastDom->fusion());
 
- static const IterDomain* getConcreteDomain(IterDomain* bcastDom){
-  ConcretizeDomain CD(bcastDom->fusion());
-  TORCH_INTERNAL_ASSERT(CD.canConcretize(bcastDom));
-  return CD.concretized(bcastDom);
- }
+      //remove this assertion once we support broadcast on output
+      TORCH_INTERNAL_ASSERT(CD.canConcretize(bcastDom));
+      return CD.concretized(bcastDom);
+    }
 
- protected:
- using MapType = std::unordered_map<IterDomain*,IterDomain*>; 
- MapType BcastDomainMap_;
+    // returns true if either id is not a broadcast or
+    // the traversal has found a concretized axis for id
+    bool canConcretize(IterDomain* id){
+      return !id->isBroadcast() || BcastDomainMap_.count(id);
+    }
 
- void buildMap(Fusion* fusion){
-  traverseFrom(fusion, fusion->outputs(), false);
- };
+    // returns the concretized id recorded from traversal
+    IterDomain* concretized(IterDomain* id){
+      TORCH_INTERNAL_ASSERT(canConcretize(id));
+      if(!id->isBroadcast()) return id;
+      return BcastDomainMap_.at(id);
+    }
 
- void pointWiseOpMap(Expr* e);
+  protected:
+    using MapType = std::unordered_map<IterDomain*,IterDomain*>; 
+    MapType BcastDomainMap_;
 
- inline bool canConcretize(IterDomain* id){
-  return !id->isBroadcast() || BcastDomainMap_.count(id);
- }
+    // utility to inspect a pointwise operator and 
+    // record concretize opportunities
+    void concretizePwOp(Expr* e);
 
- IterDomain* concretized(IterDomain* id){
-  TORCH_INTERNAL_ASSERT(canConcretize(id));
-  if(!id->isBroadcast()) return id;
-  return BcastDomainMap_.at(id);
- }
- 
- void concretizeTo(IterDomain* id,IterDomain* To){
-  TORCH_INTERNAL_ASSERT(id->isBroadcast() && !To->isBroadcast());
-  BcastDomainMap_[id]=concretized(To);
- }
+    // utility to record new concretize opportunity
+    void concretizeTo(IterDomain* id,IterDomain* To){
+      TORCH_INTERNAL_ASSERT(id->isBroadcast() && !To->isBroadcast());
+      BcastDomainMap_[id]=concretized(To);
+    }
 
- void handle(BinaryOp* bop) override{
-   pointWiseOpMap(bop->asExpr());
- }
+    void handle(BinaryOp* bop) override{
+      concretizePwOp(bop->asExpr());
+    }
 
- void handle(TernaryOp* top) override{
-  pointWiseOpMap(top->asExpr());
- };
+    void handle(TernaryOp* top) override{
+      concretizePwOp(top->asExpr());
+    };
 }; //class ConcretizeDomain
 
-void ConcretizeDomain::pointWiseOpMap(Expr *e){ 
- TensorView* TVo  = *ir_utils::filterByType<TensorView>(e->outputs()).begin();
+void ConcretizeDomain::concretizePwOp(Expr *e){ 
+  TensorView* TVo  = *ir_utils::filterByType<TensorView>(e->outputs()).begin();
 
- //won't use this function on a reduction op, so root domain only
- std::vector<IterDomain*> Io = TVo->getRootDomain();
+  //won't use this function on a reduction op, so root domain only
+  std::vector<IterDomain*> Io = TVo->getRootDomain();
 
- for(auto* i : ir_utils::filterByType<TensorView>(e->inputs())){
-  std::vector<IterDomain*> Ii = i->getRootDomain();
-  TORCH_INTERNAL_ASSERT(Ii.size()==Io.size());
+  for(auto* i : ir_utils::filterByType<TensorView>(e->inputs())){
+    std::vector<IterDomain*> Ii = i->getRootDomain();
+    TORCH_INTERNAL_ASSERT(Ii.size()==Io.size());
 
-  for(size_t it=0;it<Ii.size();it++){
-   if(!canConcretize(Io[it])) continue;
+    for(size_t it=0;it<Ii.size();it++){
+      if(!canConcretize(Io[it])) continue;
 
-   if(!canConcretize(Ii[it])) 
-    concretizeTo(Ii[it],concretized(Io[it]));
+      if(!canConcretize(Ii[it])) 
+        concretizeTo(Ii[it],concretized(Io[it]));
+      }
   }
- }
 } //ConcretizeDomain::pointWiseOpMap
+
+/** \brief Models equality provable by the graph
+ *  \details This traversal processes root domains only,
+ *           equalities , e.g. :
+ *           T2 [i0,i1] = T1[i2,i3] + T0[i4,i5]
+ *           will prove that i2 and i4 are equal in the sense that
+ *             i2.start = i4.start, i2.extent = i4.extent
+ *
+ *           Depends on ConcretizeDomain, and equalities involving
+ *           broadcast domains are defined based on the concretized version
+ */
+
+class ProveValEqual : public IterVisitor {
+  public: 
+    ProveValEqual(Fusion* fusion) : CD_(fusion){
+      traverse(fusion,false);
+    }
+
+    /** \brief checks if two scalars are equal
+     *  \details first checks if ScalarCheck has them equal,
+     *           next try to prove them equal from 
+     *           the graph_traversal result
+     */
+    bool areEqual(Val* a, Val* b){
+      if(ScalarCheck::sameAs(a,b)) return true;
+      if(EqSet_.areEqual(a,b)) return true;
+      return false;
+    }
+
+
+    /** \brief checks if two iterdomains are equal
+     *  \details equality defined as equal start and equal extent
+     *           true means a and b are equal
+     *           false only means that they cannot be proven equal based
+     *           on scalar check and graph traversal
+     */
+    bool areEqual(IterDomain* a, IterDomain* b){
+      if(a->sameAs(b)) return true;
+
+      // abort on un-concretized domains, this can appear once we
+      // allow broadcast on fusion output
+      if(!CD_.canConcretize(a) || !CD_.canConcretize(b)) return false;
+
+      auto ac = CD_.concretized(a);
+      auto bc = CD_.concretized(b);
+      return (  areEqual(ac->start(),bc->start()) &&
+                areEqual(ac->rawExtent(),bc->rawExtent()));
+    }
+
+  protected:
+    ConcretizeDomain CD_;
+    DisjointSet<Val*> EqSet_;
+
+    //utility class to record new equality found
+    void proveId(IterDomain* a, IterDomain* b){
+      // assertions ?
+      if(!a->sameAs(b)){
+        EqSet_.join(a->start(),b->start());
+        EqSet_.join(a->rawExtent(),b->rawExtent());
+      }
+    }
+
+    //inspect a pointwise op and record the identified equality
+    void provePwOp(Expr* e){
+      TensorView* TVo  = *ir_utils::filterByType<TensorView>(e->outputs()).begin();
+      std::vector<IterDomain*> Io = TVo->getRootDomain();
+      
+      //record equalities from output to all the inputs
+      //ignores un-concretizable broadcasts
+      for(auto* i : ir_utils::filterByType<TensorView>(e->inputs())){
+        std::vector<IterDomain*> Ii = i->getRootDomain();
+
+        for(size_t it=0;it<Ii.size();it++)
+          if(CD_.canConcretize(Ii[it]) && CD_.canConcretize(Io[it])) 
+            proveId(CD_.concretized(Ii[it]),CD_.concretized(Io[it]));
+      }
+    }
+
+    void handle(BinaryOp* bop) override{
+      provePwOp(bop->asExpr());
+    }
+
+    void handle(TernaryOp* top) override{
+      provePwOp(top->asExpr());
+    }
+}; //class ProveValEqual
+
+
 
 } // namespace
 
-const IterDomain* TensorDomain::ConcretizeDomain(IterDomain* bcastDom){
+// API call to return the concretized axis of a broadcast axis
+const IterDomain* IterDomain::concretizeDomain(IterDomain* bcastDom){
   return ConcretizeDomain::getConcreteDomain(bcastDom);
+}
+
+// API call to check if two IterDomains are equal
+// checks start and extent, contains both scalar check and 
+// graph traversal
+bool IterDomain::proveEqual(IterDomain* a, IterDomain* b){
+  TORCH_INTERNAL_ASSERT(a->fusion()==b->fusion());
+  ProveValEqual PVE(a->fusion());
+  return PVE.areEqual(a,b);
 }
 
 Split::Split(

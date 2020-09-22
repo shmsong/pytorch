@@ -257,6 +257,12 @@ class TORCH_CUDA_API IterDomain : public Val {
   // directly, users should not be able to use this call
   static std::pair<IterDomain*, IterDomain*> split(IterDomain* in, Val* factor);
 
+  // run concretization pass and return the concretized domain of broadcast id
+  static const IterDomain* concretizeDomain(IterDomain* bcastDom);
+
+  // attempt to prove 2 IterDomains are equal in start and rawExtent
+  static bool proveEqual(IterDomain* a, IterDomain* b);
+
   bool isReduction() const {
     return getIterType() == IterType::Reduction;
   }
@@ -513,10 +519,6 @@ class TORCH_CUDA_API TensorDomain : public Val {
             consumer->getRootDomain().begin(),
             consumer->getRootDomain().end()));
   }
-
-  // runs concretize domain pass and returns the concretized map of
-  // broadcast domain
-  static const IterDomain* ConcretizeDomain(IterDomain* bcastDom);
 
   // Create a map from producer root IterDomains -> consumer root IterDomains.
   // Only those root producer IDs present in producer_maybe_rfactor_dims_to_map
