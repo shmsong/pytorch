@@ -1134,7 +1134,7 @@ class ConcretizeDomain : public BackwardVisitor {
   // returns true if either id is not a broadcast or
   // the traversal has found a concretized axis for id
   bool canConcretize(IterDomain* id) {
-    return !id->isBroadcast() || BcastDomainMap_.count(id);
+    return !id->isBroadcast() || bCastDomainMap_.count(id);
   }
 
   // returns the concretized id recorded from traversal
@@ -1142,12 +1142,12 @@ class ConcretizeDomain : public BackwardVisitor {
     TORCH_INTERNAL_ASSERT(canConcretize(id));
     if (!id->isBroadcast())
       return id;
-    return BcastDomainMap_.at(id);
+    return bCastDomainMap_.at(id);
   }
 
  private:
   using MapType = std::unordered_map<IterDomain*, IterDomain*>;
-  MapType BcastDomainMap_;
+  MapType bCastDomainMap_;
 
   // utility to inspect a pointwise operator and
   // record concretize opportunities
@@ -1156,7 +1156,7 @@ class ConcretizeDomain : public BackwardVisitor {
   // utility to record new concretize opportunity
   void concretizeTo(IterDomain* id, IterDomain* To) {
     TORCH_INTERNAL_ASSERT(id->isBroadcast() && !To->isBroadcast());
-    BcastDomainMap_[id] = concretized(To);
+    bCastDomainMap_[id] = concretized(To);
   }
 
   void handle(UnaryOp* uop) override {
