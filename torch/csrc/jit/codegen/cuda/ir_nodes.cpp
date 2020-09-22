@@ -1040,18 +1040,6 @@ namespace {
  */
 template <typename T>
 class DisjointSet {
- protected:
-  // Internal representation of the equivalence class as integers
-  // SetMap implements the "parent" relationship
-  // Weights is used for preliminary perf optimization
-  std::vector<int> SetMap, Weights;
-
-  // Map the input of type T to its equivalence class
-  std::unordered_map<T, int> EntryMap;
-
-  // Utility for generating new class
-  int count = 0;
-
  public:
   DisjointSet() = default;
 
@@ -1064,45 +1052,56 @@ class DisjointSet {
 
     // either order here is correct but joining larger class to smaller class
     // tend to be faster
-    std::tie(new_parent, new_child) = (Weights[i0] < Weights[i1])
+    std::tie(new_parent, new_child) = (weights[i0] < weights[i1])
         ? std::make_pair(i0, i1)
         : std::make_pair(i1, i0);
-    Weights[new_parent] += Weights[new_child];
-    SetMap[new_child] = new_parent;
+    weights[new_parent] += weights[new_child];
+    setMap[new_child] = new_parent;
   }
 
   /** \brief Checks if a and b belong to the same equivalent class */
   bool areEqual(T a, T b) {
-    if (!EntryMap.count(a) || !EntryMap.count(b))
+    if (!entryMap.count(a) || !entryMap.count(b))
       return false;
     return (fixedPoint(a) == fixedPoint(b));
   }
 
  private:
+  // Internal representation of the equivalence class as integers
+  // setMap implements the "parent" relationship
+  // weights is used for preliminary perf optimization
+  std::vector<int> setMap, weights;
+
+  // Map the input of type T to its equivalence class
+  std::unordered_map<T, int> entryMap;
+
+  // Utility for generating new class
+  int count = 0;
+
   // internal fixed point implementation:
   //  returns the equivalent class that e belongs to
   //  does adhoc optimization to speed up future access
   int fixedPoint(int e) {
-    TORCH_INTERNAL_ASSERT(SetMap.size() > e);
-    while (SetMap[e] != e)
-      e = SetMap[e] = SetMap[SetMap[e]];
+    TORCH_INTERNAL_ASSERT(setMap.size() > e);
+    while (setMap[e] != e)
+      e = setMap[e] = setMap[setMap[e]];
     return e;
   }
 
-  // utility to check the class I belongs to:
+  // utility to check the class i belongs to:
   //  returns the equivalent class that e belongs to
   //  will create a new class if no match seen
-  int fixedPoint(T I) {
-    if (!EntryMap.count(I))
-      createPoint(I);
-    return fixedPoint(EntryMap[I]);
+  int fixedPoint(T i) {
+    if (!entryMap.count(i))
+      createPoint(i);
+    return fixedPoint(entryMap[i]);
   }
 
-  // utility to create a new equiv class for I
-  void createPoint(T I) {
-    EntryMap[I] = count;
-    SetMap.push_back(count++);
-    Weights.push_back(1);
+  // utility to create a new equiv class for i
+  void createPoint(T i) {
+    entryMap[i] = count;
+    setMap.push_back(count++);
+    weights.push_back(1);
   }
 }; // class DisjoinSet
 
@@ -1125,11 +1124,11 @@ class ConcretizeDomain : public BackwardVisitor {
    *        axis that bcastDom concretizes to
    */
   static const IterDomain* getConcreteDomain(IterDomain* bcastDom) {
-    ConcretizeDomain CD(bcastDom->fusion());
+    ConcretizeDomain cd(bcastDom->fusion());
 
     // remove this assertion once we support broadcast on output
-    TORCH_INTERNAL_ASSERT(CD.canConcretize(bcastDom));
-    return CD.concretized(bcastDom);
+    TORCH_INTERNAL_ASSERT(cd.canConcretize(bcastDom));
+    return cd.concretized(bcastDom);
   }
 
   // returns true if either id is not a broadcast or
@@ -1146,7 +1145,7 @@ class ConcretizeDomain : public BackwardVisitor {
     return BcastDomainMap_.at(id);
   }
 
- protected:
+ private:
   using MapType = std::unordered_map<IterDomain*, IterDomain*>;
   MapType BcastDomainMap_;
 
@@ -1174,21 +1173,21 @@ class ConcretizeDomain : public BackwardVisitor {
 }; // class ConcretizeDomain
 
 void ConcretizeDomain::concretizePwOp(Expr* e) {
-  TensorView* TVo = *ir_utils::filterByType<TensorView>(e->outputs()).begin();
+  TensorView* tv = *ir_utils::filterByType<TensorView>(e->outputs()).begin();
 
   // won't use this function on a reduction op, so root domain only
-  std::vector<IterDomain*> Io = TVo->getRootDomain();
+  std::vector<IterDomain*> io = tv->getRootDomain();
 
   for (auto* i : ir_utils::filterByType<TensorView>(e->inputs())) {
-    std::vector<IterDomain*> Ii = i->getRootDomain();
-    TORCH_INTERNAL_ASSERT(Ii.size() == Io.size());
+    std::vector<IterDomain*> ii = i->getRootDomain();
+    TORCH_INTERNAL_ASSERT(ii.size() == io.size());
 
-    for (size_t it = 0; it < Ii.size(); it++) {
-      if (!canConcretize(Io[it]))
+    for (size_t it = 0; it < ii.size(); it++) {
+      if (!canConcretize(io[it]))
         continue;
 
-      if (!canConcretize(Ii[it]))
-        concretizeTo(Ii[it], concretized(Io[it]));
+      if (!canConcretize(ii[it]))
+        concretizeTo(ii[it], concretized(io[it]));
     }
   }
 } // ConcretizeDomain::pointWiseOpMap
@@ -1206,7 +1205,7 @@ void ConcretizeDomain::concretizePwOp(Expr* e) {
 
 class ProveValEqual : public IterVisitor {
  public:
-  ProveValEqual(Fusion* fusion) : CD_(fusion) {
+  ProveValEqual(Fusion* fusion) : cd_(fusion) {
     traverse(fusion, false);
   }
 
@@ -1218,7 +1217,7 @@ class ProveValEqual : public IterVisitor {
   bool areEqual(Val* a, Val* b) {
     if (ScalarCheck::sameAs(a, b))
       return true;
-    if (EqSet_.areEqual(a, b))
+    if (eqSet_.areEqual(a, b))
       return true;
     return false;
   }
@@ -1235,42 +1234,42 @@ class ProveValEqual : public IterVisitor {
 
     // abort on un-concretized domains, this can appear once we
     // allow broadcast on fusion output
-    if (!CD_.canConcretize(a) || !CD_.canConcretize(b))
+    if (!cd_.canConcretize(a) || !cd_.canConcretize(b))
       return false;
 
-    auto ac = CD_.concretized(a);
-    auto bc = CD_.concretized(b);
+    auto ac = cd_.concretized(a);
+    auto bc = cd_.concretized(b);
     return (
         areEqual(ac->start(), bc->start()) &&
         areEqual(ac->rawExtent(), bc->rawExtent()));
   }
 
- protected:
-  ConcretizeDomain CD_;
-  DisjointSet<Val*> EqSet_;
+ private:
+  ConcretizeDomain cd_;
+  DisjointSet<Val*> eqSet_;
 
   // utility class to record new equality found
   void proveId(IterDomain* a, IterDomain* b) {
     // assertions ?
     if (!a->sameAs(b)) {
-      EqSet_.join(a->start(), b->start());
-      EqSet_.join(a->rawExtent(), b->rawExtent());
+      eqSet_.join(a->start(), b->start());
+      eqSet_.join(a->rawExtent(), b->rawExtent());
     }
   }
 
   // inspect a pointwise op and record the identified equality
   void provePwOp(Expr* e) {
-    TensorView* TVo = *ir_utils::filterByType<TensorView>(e->outputs()).begin();
-    std::vector<IterDomain*> Io = TVo->getRootDomain();
+    TensorView* tv = *ir_utils::filterByType<TensorView>(e->outputs()).begin();
+    std::vector<IterDomain*> io = tv->getRootDomain();
 
     // record equalities from output to all the inputs
     // ignores un-concretizable broadcasts
     for (auto* i : ir_utils::filterByType<TensorView>(e->inputs())) {
-      std::vector<IterDomain*> Ii = i->getRootDomain();
+      std::vector<IterDomain*> ii = i->getRootDomain();
 
-      for (size_t it = 0; it < Ii.size(); it++)
-        if (CD_.canConcretize(Ii[it]) && CD_.canConcretize(Io[it]))
-          proveId(CD_.concretized(Ii[it]), CD_.concretized(Io[it]));
+      for (size_t it = 0; it < ii.size(); it++)
+        if (cd_.canConcretize(ii[it]) && cd_.canConcretize(io[it]))
+          proveId(cd_.concretized(ii[it]), cd_.concretized(io[it]));
     }
   }
 
@@ -1299,8 +1298,8 @@ const IterDomain* IterDomain::concretizeDomain(IterDomain* bcastDom) {
 // broadcast domains are concretized before comparing
 bool IterDomain::proveEqual(IterDomain* a, IterDomain* b) {
   TORCH_INTERNAL_ASSERT(a->fusion() == b->fusion());
-  ProveValEqual PVE(a->fusion());
-  return PVE.areEqual(a, b);
+  ProveValEqual pve(a->fusion());
+  return pve.areEqual(a, b);
 }
 
 Split::Split(
