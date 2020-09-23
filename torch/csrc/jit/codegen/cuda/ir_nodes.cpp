@@ -1197,19 +1197,19 @@ class ConcretizeDomain : private BackwardVisitor {
   }
 
   void handle(ReductionOp* rop) override {
-    concretizePwOp(rop->asExpr());
+    concretizePwOp(rop);
   }
 
   void handle(UnaryOp* uop) override {
-    concretizePwOp(uop->asExpr());
+    concretizePwOp(uop);
   }
 
   void handle(BinaryOp* bop) override {
-    concretizePwOp(bop->asExpr());
+    concretizePwOp(bop);
   }
 
   void handle(TernaryOp* top) override {
-    concretizePwOp(top->asExpr());
+    concretizePwOp(top);
   };
 
  private:
@@ -1263,10 +1263,12 @@ class ProveValEqual : private IterVisitor {
   //! \returns Boolean representing if they are proven to be
   //!          equal based on scalar check and graph traversal
   bool areEqual(Val* a, Val* b) const {
-    if (ScalarCheck::sameAs(a, b))
+    if (ScalarCheck::sameAs(a, b)) {
       return true;
-    if (eq_set_.areEquivalent(a, b))
+    }
+    if (eq_set_.areEquivalent(a, b)) {
       return true;
+    }
     return false;
   }
 
@@ -1283,8 +1285,9 @@ class ProveValEqual : private IterVisitor {
   //!          equivalent in the sense that they have equal
   //!          start and extent
   bool areEquivalent(IterDomain* a, IterDomain* b) const {
-    if (a->sameAs(b))
+    if (a->sameAs(b)) {
       return true;
+    }
 
     // Abort on un-concretized domains, this can appear once we
     // allow broadcast on fusion output
@@ -1324,19 +1327,19 @@ class ProveValEqual : private IterVisitor {
   }
 
   void handle(ReductionOp* rop) override {
-    provePwOp(rop->asExpr());
+    provePwOp(rop);
   }
 
   void handle(UnaryOp* uop) override {
-    provePwOp(uop->asExpr());
+    provePwOp(uop);
   }
 
   void handle(BinaryOp* bop) override {
-    provePwOp(bop->asExpr());
+    provePwOp(bop);
   }
 
   void handle(TernaryOp* top) override {
-    provePwOp(top->asExpr());
+    provePwOp(top);
   }
 
  private:

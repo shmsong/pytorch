@@ -2084,6 +2084,7 @@ void testGPU_FusionComputeAtNoCommonConsumer() {
 }
 
 namespace {
+
 void checkConcretized(
     TensorView* v0,
     int a0,
@@ -2098,6 +2099,7 @@ void checkConcretized(
         !IterDomain::concretizeDomain(v0->axis(a0))->sameAs(v1->axis(a1)));
   }
 }
+
 } // namespace
 
 void testGPU_FusionBCastConcretizeBasic() {
@@ -2163,6 +2165,7 @@ void testGPU_FusionBCastConcretizeRfactor() {
 }
 
 namespace {
+
 void checkIdProvedEquivalent(
     TensorView* v0,
     int a0,
@@ -2175,6 +2178,7 @@ void checkIdProvedEquivalent(
     TORCH_CHECK(!IterDomain::proveEquivalent(v0->axis(a0), v1->axis(a1)));
   }
 }
+
 } // namespace
 
 void testGPU_FusionProveIdEqBasic() {
