@@ -1054,6 +1054,7 @@ class DisjointSet {
   //!          will create a new equivalent class if b does
   //!          not belong to any
   void join(T a, T b) {
+    // cases where either of the quiv class doesn't exist
     if (!entry_map.count(a) && !entry_map.count(b)) {
       createPoint(a);
       entry_map[b] = fixedPoint(a);
@@ -1062,6 +1063,7 @@ class DisjointSet {
     } else if (!entry_map.count(b)) {
       entry_map[b] = fixedPoint(a);
     } else {
+      // case where both equiv classes exist and need to join
       const int i0 = fixedPoint(a);
       const int i1 = fixedPoint(b);
       int new_parent = 0;
@@ -1094,12 +1096,11 @@ class DisjointSet {
 
  private:
   // Internal fixed point implementation:
-  //  returns the equivalent class that e belongs to
-  //  does adhoc optimization to speed up future access
+  //  Returns the equivalent class that e belongs to
   int fixedPoint(int e) const {
     TORCH_INTERNAL_ASSERT(set_map.size() > e);
     while (set_map[e] != e) {
-      // chasing to fixed point
+      // Chasing to fixed point
       e = set_map[e];
     }
     return e;
@@ -1107,7 +1108,7 @@ class DisjointSet {
 
   //! Utility to check the class i belongs to:
   //!
-  //! will create a new class if no match seen
+  //! Will create a new class if no match seen
   //! \param e element e to find the equiv class for
   //! \returns the equivalent class that e belongs to
   //!
@@ -1132,14 +1133,14 @@ class DisjointSet {
   // Internal representation of the equivalence class as integers
   // set_map implements the "parent" relationship
   std::vector<int> set_map;
-  // weights is used for preliminary perf optimization
+  // Weights is used for preliminary perf optimization
   std::vector<int> weights;
 
   // Map the input of type T to its equivalence class
   std::unordered_map<T, int> entry_map;
 
   // Running counter for generating new index when
-  // creating new equiv classes
+  // Creating new equiv classes
   int next_index_ = 0;
 };
 
