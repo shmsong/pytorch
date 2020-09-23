@@ -1180,8 +1180,9 @@ class ConcretizeDomain : private BackwardVisitor {
   // Returns the concretized id recorded from traversal
   IterDomain* concretized(IterDomain* id) const {
     TORCH_INTERNAL_ASSERT(canConcretize(id));
-    if (!id->isBroadcast())
+    if (!id->isBroadcast()) {
       return id;
+    }
     return bcast_domain_map_.at(id);
   }
 
@@ -1291,8 +1292,9 @@ class ProveValEqual : private IterVisitor {
 
     // Abort on un-concretized domains, this can appear once we
     // allow broadcast on fusion output
-    if (!cd_.canConcretize(a) || !cd_.canConcretize(b))
+    if (!cd_.canConcretize(a) || !cd_.canConcretize(b)) {
       return false;
+    }
 
     auto ac = cd_.concretized(a);
     auto bc = cd_.concretized(b);
