@@ -1054,17 +1054,26 @@ class DisjointSet {
   //!          will create a new equivalent class if b does
   //!          not belong to any
   void join(T a, T b) {
-    const int i0 = fixedPoint(a);
-    const int i1 = fixedPoint(b);
-    int new_parent, new_child;
+    if (!entry_map.count(a) && !entry_map.count(b)) {
+      createPoint(a);
+      entry_map[b] = fixedPoint(a);
+    } else if (!entry_map.count(a)) {
+      entry_map[a] = fixedPoint(b);
+    } else if (!entry_map.count(b)) {
+      entry_map[b] = fixedPoint(a);
+    } else {
+      const int i0 = fixedPoint(a);
+      const int i1 = fixedPoint(b);
+      int new_parent, new_child;
 
-    // either order here is correct but joining larger class to smaller class
-    // tend to be faster
-    std::tie(new_parent, new_child) = (weights[i0] < weights[i1])
-        ? std::make_pair(i0, i1)
-        : std::make_pair(i1, i0);
-    weights[new_parent] += weights[new_child];
-    set_map[new_child] = new_parent;
+      // either order here is correct but joining larger class to smaller class
+      // tend to be faster
+      std::tie(new_parent, new_child) = (weights[i0] < weights[i1])
+          ? std::make_pair(i0, i1)
+          : std::make_pair(i1, i0);
+      weights[new_parent] += weights[new_child];
+      set_map[new_child] = new_parent;
+    }
   }
 
   //! Checks if a and b belong to the same equivalent class
@@ -1075,7 +1084,7 @@ class DisjointSet {
   //!          recorded to be in the same equivalent class
   //!          will return false if any of a or b doesn't
   //!          have an equivalent class recorded
-  bool areEqual(T a, T b) {
+  bool areEqual(T a, T b) const {
     if (!entry_map.count(a) || !entry_map.count(b))
       return false;
     return fixedPoint(a) == fixedPoint(b);
@@ -1097,11 +1106,9 @@ class DisjointSet {
   // internal fixed point implementation:
   //  returns the equivalent class that e belongs to
   //  does adhoc optimization to speed up future access
-  int fixedPoint(int e) {
+  int fixedPoint(int e) const {
     TORCH_INTERNAL_ASSERT(set_map.size() > e);
     while (set_map[e] != e) {
-      // optimization step
-      set_map[e] = set_map[set_map[e]];
       // chasing to fixed point
       e = set_map[e];
     }
@@ -1114,12 +1121,12 @@ class DisjointSet {
   //! \param i element i to find the equiv class for
   //! \returns the equivalent class that e belongs to
   //!
-  int fixedPoint(T i) {
+  int fixedPoint(T i) const {
     // handles case when i doesn't have an equivalence class
-    if (!entry_map.count(i))
-      createPoint(i);
+    TORCH_INTERNAL_ASSERT(entry_map.count(i));
+
     // use fixed point as a representation for the equiv class
-    return fixedPoint(entry_map[i]);
+    return fixedPoint(entry_map.at(i));
   }
 
   //! utility to create a new equiv class for i
@@ -1161,12 +1168,12 @@ class ConcretizeDomain : public BackwardVisitor {
 
   // returns true if either id is not a broadcast or
   // the traversal has found a concretized axis for id
-  bool canConcretize(IterDomain* id) {
+  bool canConcretize(IterDomain* id) const {
     return !id->isBroadcast() || bcast_domain_map_.count(id);
   }
 
   // returns the concretized id recorded from traversal
-  IterDomain* concretized(IterDomain* id) {
+  IterDomain* concretized(IterDomain* id) const {
     TORCH_INTERNAL_ASSERT(canConcretize(id));
     if (!id->isBroadcast())
       return id;
@@ -1250,7 +1257,7 @@ class ProveValEqual : public IterVisitor {
   //! \param b another value from the same fusion
   //! \returns boolean representing if they are proven to be
   //!          equal based on scalar check and graph traversal
-  bool areEqual(Val* a, Val* b) {
+  bool areEqual(Val* a, Val* b) const {
     if (ScalarCheck::sameAs(a, b))
       return true;
     if (eq_set_.areEqual(a, b))
@@ -1270,7 +1277,7 @@ class ProveValEqual : public IterVisitor {
   //! \returns boolean representing if they are proven to be
   //!          equivalent in the sense that they have equal
   //!          start and extent
-  bool areEqual(IterDomain* a, IterDomain* b) {
+  bool areEqual(IterDomain* a, IterDomain* b) const {
     if (a->sameAs(b))
       return true;
 
@@ -1288,7 +1295,7 @@ class ProveValEqual : public IterVisitor {
 
  private:
   ConcretizeDomain cd_;
-  DisjointSet<Val*> eq_set_;
+  DisjointSet<const Val*> eq_set_;
 
   // utility class to record new equality found
   void proveId(IterDomain* a, IterDomain* b) {
