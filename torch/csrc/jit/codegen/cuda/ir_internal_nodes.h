@@ -258,7 +258,7 @@ class TORCH_CUDA_API IterDomain : public Val {
   static std::pair<IterDomain*, IterDomain*> split(IterDomain* in, Val* factor);
 
   // run concretization pass and return the concretized domain of broadcast id
-  static const IterDomain* concretizeDomain(IterDomain* bcastDom);
+  static const IterDomain* concretizeDomain(IterDomain* bcast_dom);
 
   // attempt to prove 2 IterDomains are equal in start and rawExtent
   static bool proveEqual(IterDomain* a, IterDomain* b);
