@@ -2083,6 +2083,7 @@ void testGPU_FusionComputeAtNoCommonConsumer() {
   TORCH_CHECK(at::allclose(kernel_tv6, t6));
 }
 
+namespace {
 void checkConcretized(
     TensorView* v0,
     int a0,
@@ -2097,6 +2098,7 @@ void checkConcretized(
         !IterDomain::concretizeDomain(v0->axis(a0))->sameAs(v1->axis(a1)));
   }
 }
+} // namespace
 
 void testGPU_FusionBCastConcretizeBasic() {
   Fusion fusion;
@@ -2160,6 +2162,7 @@ void testGPU_FusionBCastConcretizeRfactor() {
   checkConcretized(tv3, 0, tv5, 0, true);
 }
 
+namespace {
 void checkIdProvedEquivalent(
     TensorView* v0,
     int a0,
@@ -2172,6 +2175,7 @@ void checkIdProvedEquivalent(
     TORCH_CHECK(!IterDomain::proveEquivalent(v0->axis(a0), v1->axis(a1)));
   }
 }
+} // namespace
 
 void testGPU_FusionProveIdEqBasic() {
   Fusion fusion;

@@ -1085,25 +1085,11 @@ class DisjointSet {
   //!          recorded to be in the same equivalent class
   //!          will return false if any of a or b doesn't
   //!          have an equivalent class recorded
-  bool areEqual(T a, T b) const {
+  bool areEquivalent(T a, T b) const {
     if (!entry_map.count(a) || !entry_map.count(b))
       return false;
     return fixedPoint(a) == fixedPoint(b);
   }
-
- private:
-  // Internal representation of the equivalence class as integers
-  // set_map implements the "parent" relationship
-  std::vector<int> set_map;
-  // weights is used for preliminary perf optimization
-  std::vector<int> weights;
-
-  // Map the input of type T to its equivalence class
-  std::unordered_map<T, int> entry_map;
-
-  // Running counter for generating new index when
-  // creating new equiv classes
-  int next_index_ = 0;
 
  private:
   // Internal fixed point implementation:
@@ -1121,15 +1107,15 @@ class DisjointSet {
   //! Utility to check the class i belongs to:
   //!
   //! will create a new class if no match seen
-  //! \param i element i to find the equiv class for
+  //! \param e element e to find the equiv class for
   //! \returns the equivalent class that e belongs to
   //!
-  int fixedPoint(T i) const {
+  int fixedPoint(T e) const {
     // Handles case when i doesn't have an equivalence class
-    TORCH_INTERNAL_ASSERT(entry_map.count(i));
+    TORCH_INTERNAL_ASSERT(entry_map.count(e));
 
     // Use fixed point as a representation for the equiv class
-    return fixedPoint(entry_map.at(i));
+    return fixedPoint(entry_map.at(e));
   }
 
   //! Utility to create a new equiv class for i
@@ -1140,6 +1126,20 @@ class DisjointSet {
     set_map.push_back(next_index_++);
     weights.push_back(1);
   }
+
+ private:
+  // Internal representation of the equivalence class as integers
+  // set_map implements the "parent" relationship
+  std::vector<int> set_map;
+  // weights is used for preliminary perf optimization
+  std::vector<int> weights;
+
+  // Map the input of type T to its equivalence class
+  std::unordered_map<T, int> entry_map;
+
+  // Running counter for generating new index when
+  // creating new equiv classes
+  int next_index_ = 0;
 };
 
 //! Concretize broadcast axes, i.e. identifying a non-broadcast
@@ -1184,10 +1184,6 @@ class ConcretizeDomain : private BackwardVisitor {
   }
 
  private:
-  using MapType = std::unordered_map<IterDomain*, IterDomain*>;
-  MapType bcast_domain_map_;
-
- private:
   // Utility to inspect a pointwise operator and
   // record concretize opportunities
   void concretizePwOp(Expr* e);
@@ -1213,6 +1209,10 @@ class ConcretizeDomain : private BackwardVisitor {
   void handle(TernaryOp* top) override {
     concretizePwOp(top->asExpr());
   };
+
+ private:
+  using MapType = std::unordered_map<IterDomain*, IterDomain*>;
+  MapType bcast_domain_map_;
 };
 
 void ConcretizeDomain::concretizePwOp(Expr* e) {
@@ -1235,7 +1235,7 @@ void ConcretizeDomain::concretizePwOp(Expr* e) {
   }
 }
 
-//! Models equality provable by the graph
+//! Models equivalence provable by the graph
 //!
 //! This traversal processes root domains only,
 //! equalities , e.g. :
@@ -1263,7 +1263,7 @@ class ProveValEqual : private IterVisitor {
   bool areEqual(Val* a, Val* b) const {
     if (ScalarCheck::sameAs(a, b))
       return true;
-    if (eq_set_.areEqual(a, b))
+    if (eq_set_.areEquivalent(a, b))
       return true;
     return false;
   }
@@ -1294,10 +1294,6 @@ class ProveValEqual : private IterVisitor {
     return areEqual(ac->start(), bc->start()) &&
         areEqual(ac->rawExtent(), bc->rawExtent());
   }
-
- private:
-  ConcretizeDomain cd_;
-  DisjointSet<const Val*> eq_set_;
 
  private:
   // Utility class to record new equality found
@@ -1340,6 +1336,10 @@ class ProveValEqual : private IterVisitor {
   void handle(TernaryOp* top) override {
     provePwOp(top->asExpr());
   }
+
+ private:
+  ConcretizeDomain cd_;
+  DisjointSet<const Val*> eq_set_;
 };
 
 } // namespace
