@@ -257,10 +257,10 @@ class TORCH_CUDA_API IterDomain : public Val {
   // directly, users should not be able to use this call
   static std::pair<IterDomain*, IterDomain*> split(IterDomain* in, Val* factor);
 
-  // run concretization pass and return the concretized domain of broadcast id
+  // Run concretization pass and return the concretized domain of broadcast id
   static const IterDomain* concretizeDomain(IterDomain* bcast_dom);
 
-  // attempt to prove 2 IterDomains are equal in start and rawExtent
+  // Attempt to prove 2 IterDomains are equal in start and rawExtent
   static bool proveEqual(IterDomain* a, IterDomain* b);
 
   bool isReduction() const {

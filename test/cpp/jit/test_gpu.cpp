@@ -2083,157 +2083,149 @@ void testGPU_FusionComputeAtNoCommonConsumer() {
   TORCH_CHECK(at::allclose(kernel_tv6, t6));
 }
 
-void testGPU_FusionBCastConcretize() {
-#define CHECK_CONCRETIZE(v0, a0, v1, a1) \
-  TORCH_CHECK(IterDomain::concretizeDomain(v0->axis(a0))->sameAs(v1->axis(a1)))
-
-#define CHECK_NOCONCRETIZE(v0, a0, v1, a1) \
-  TORCH_CHECK(!IterDomain::concretizeDomain(v0->axis(a0))->sameAs(v1->axis(a1)))
-
-  /*
-    Test 0 : base test
-  */
-  {
-    Fusion fusion;
-    FusionGuard fg(&fusion);
-
-    // tv0: [I I]
-    TensorView* tv0 = makeDummyTensor(2);
-
-    // tv1: [I I I]
-    TensorView* tv1 = makeDummyTensor(3);
-
-    fusion.addInput(tv0);
-    fusion.addInput(tv1);
-
-    // tv2*: [B I I]
-    auto tv2_0 = broadcast(tv0, {true, false, false});
-    auto tv2_1 = broadcast(tv0, {true, false, false});
-    auto tv2 = add(tv2_0, tv2_1);
-
-    // tv3: [I I I]
-    auto tv3 = add(tv2, tv1);
-
-    fusion.addOutput(tv3);
-
-    CHECK_CONCRETIZE(tv2, 0, tv1, 0);
-    CHECK_CONCRETIZE(tv2_0, 0, tv1, 0);
-    CHECK_CONCRETIZE(tv2_1, 0, tv1, 0);
-    CHECK_NOCONCRETIZE(tv2_0, 1, tv1, 0);
-    CHECK_NOCONCRETIZE(tv2_0, 0, tv1, 1);
+void checkConcretized(
+    TensorView* v0,
+    int a0,
+    TensorView* v1,
+    int a1,
+    bool should_concretize) {
+  if (should_concretize) {
+    TORCH_CHECK(
+        IterDomain::concretizeDomain(v0->axis(a0))->sameAs(v1->axis(a1)));
+  } else {
+    TORCH_CHECK(
+        !IterDomain::concretizeDomain(v0->axis(a0))->sameAs(v1->axis(a1)));
   }
-
-  /*
-    Test 1 : propagate through reduction and rfactor
-  */
-
-  {
-    Fusion fusion;
-    FusionGuard fg(&fusion);
-
-    // both tv0 and tv1 = [I, I]
-    TensorView* tv0 = makeDummyTensor(2);
-    TensorView* tv1 = makeDummyTensor(2);
-
-    //[B,I,I]
-    auto tv2 = broadcast(tv1, {true, false, false});
-
-    //[B,I,R]
-    auto tv3 = sum(tv2, {2});
-
-    auto tv5 = add(tv3, tv1);
-
-    fusion.addInput(tv0);
-    fusion.addInput(tv1);
-    fusion.addOutput(tv5);
-
-    // scheduling:
-    //[B,I,R0,R1=128], root = [B,I,R]
-    tv3->split(2, 128);
-
-    // root=[B,I,Irf], rfactor=[B,I,Irf,Rrf]
-    auto tv4 = tv3->rFactor({3});
-
-    CHECK_CONCRETIZE(tv2, 0, tv5, 0);
-    CHECK_CONCRETIZE(tv4, 0, tv5, 0);
-    CHECK_CONCRETIZE(tv3, 0, tv5, 0);
-  }
-
-#undef CHECK_CONCRETIZE
-#undef CHECK_NOCONCRETIZE
 }
 
-void testGPU_FusionProveIdEqual() {
-#define CHECK_EQUAL(v0, a0, v1, a1) \
-  TORCH_CHECK(IterDomain::proveEqual(v0->axis(a0), v1->axis(a1)))
+void testGPU_FusionBCastConcretizeBasic() {
+  Fusion fusion;
+  FusionGuard fg(&fusion);
 
-#define CHECK_NOEQUAL(v0, a0, v1, a1) \
-  TORCH_CHECK(!IterDomain::proveEqual(v0->axis(a0), v1->axis(a1)))
+  // tv0: [I I]
+  TensorView* tv0 = makeDummyTensor(2);
 
-  /*
-    Test 0 : propagate through reduction and rfactor
-  */
-  {
-    Fusion fusion;
-    FusionGuard fg(&fusion);
+  // tv1: [I I I]
+  TensorView* tv1 = makeDummyTensor(3);
 
-    TensorView* tv0 = makeDummyTensor(2);
-    TensorView* tv1 = makeDummyTensor(2);
-    TensorView* tv2 = makeDummyTensor(3);
+  fusion.addInput(tv0);
+  fusion.addInput(tv1);
 
-    fusion.addInput(tv0);
-    fusion.addInput(tv1);
-    auto tv3 = broadcast(tv0, {true, false, false});
-    auto tv4 = broadcast(tv1, {false, true, false});
-    auto tv5 = add(tv3, tv4);
-    fusion.addOutput(tv5);
+  // tv2*: [B I I]
+  auto tv2_0 = broadcast(tv0, {true, false, false});
+  auto tv2_1 = broadcast(tv0, {true, false, false});
+  auto tv2 = add(tv2_0, tv2_1);
 
-    CHECK_EQUAL(tv0, 0, tv4, 1);
-    CHECK_EQUAL(tv1, 0, tv4, 0);
-    CHECK_EQUAL(tv1, 1, tv0, 1);
-    CHECK_EQUAL(tv0, 0, tv5, 1);
-    CHECK_EQUAL(tv1, 1, tv5, 2);
-    CHECK_NOEQUAL(tv0, 0, tv1, 0)
-    CHECK_NOEQUAL(tv0, 1, tv1, 0)
-    CHECK_NOEQUAL(tv0, 0, tv1, 1)
+  // tv3: [I I I]
+  auto tv3 = add(tv2, tv1);
+
+  fusion.addOutput(tv3);
+
+  checkConcretized(tv2, 0, tv1, 0, true);
+  checkConcretized(tv2_0, 0, tv1, 0, true);
+  checkConcretized(tv2_1, 0, tv1, 0, true);
+  checkConcretized(tv2_0, 1, tv1, 0, false);
+  checkConcretized(tv2_0, 0, tv1, 1, false);
+}
+
+void testGPU_FusionBCastConcretizeRfactor() {
+  Fusion fusion;
+  FusionGuard fg(&fusion);
+
+  // both tv0 and tv1 = [I, I]
+  TensorView* tv0 = makeDummyTensor(2);
+  TensorView* tv1 = makeDummyTensor(2);
+
+  //[B,I,I]
+  auto tv2 = broadcast(tv1, {true, false, false});
+
+  //[B,I,R]
+  auto tv3 = sum(tv2, {2});
+
+  auto tv5 = add(tv3, tv1);
+
+  fusion.addInput(tv0);
+  fusion.addInput(tv1);
+  fusion.addOutput(tv5);
+
+  // scheduling:
+  //[B,I,R0,R1=128], root = [B,I,R]
+  tv3->split(2, 128);
+
+  // root=[B,I,Irf], rfactor=[B,I,Irf,Rrf]
+  auto tv4 = tv3->rFactor({3});
+
+  checkConcretized(tv2, 0, tv5, 0, true);
+  checkConcretized(tv4, 0, tv5, 0, true);
+  checkConcretized(tv3, 0, tv5, 0, true);
+}
+
+void checkIdProvedEqual(
+    TensorView* v0,
+    int a0,
+    TensorView* v1,
+    int a1,
+    bool should_prove) {
+  if (should_prove) {
+    TORCH_CHECK(IterDomain::proveEqual(v0->axis(a0), v1->axis(a1)));
+  } else {
+    TORCH_CHECK(!IterDomain::proveEqual(v0->axis(a0), v1->axis(a1)));
   }
+}
 
-  /*
-    Test 1 : propagate through reduction and rfactor
-  */
+void testGPU_FusionProveIdEqBasic() {
+  Fusion fusion;
+  FusionGuard fg(&fusion);
 
-  {
-    Fusion fusion;
-    FusionGuard fg(&fusion);
+  TensorView* tv0 = makeDummyTensor(2);
+  TensorView* tv1 = makeDummyTensor(2);
+  TensorView* tv2 = makeDummyTensor(3);
 
-    // [I,I]
-    TensorView* tv0 = makeDummyTensor(2);
-    // [I,I,I]
-    TensorView* tv1 = makeDummyTensor(3);
+  fusion.addInput(tv0);
+  fusion.addInput(tv1);
+  auto tv3 = broadcast(tv0, {true, false, false});
+  auto tv4 = broadcast(tv1, {false, true, false});
+  auto tv5 = add(tv3, tv4);
+  fusion.addOutput(tv5);
 
-    //[I,I,R]
-    auto tv2 = sum(tv1, {2});
+  checkIdProvedEqual(tv0, 0, tv4, 1, true);
+  checkIdProvedEqual(tv1, 0, tv4, 0, true);
+  checkIdProvedEqual(tv1, 1, tv0, 1, true);
+  checkIdProvedEqual(tv0, 0, tv5, 1, true);
+  checkIdProvedEqual(tv1, 1, tv5, 2, true);
+  checkIdProvedEqual(tv0, 0, tv1, 0, false);
+  checkIdProvedEqual(tv0, 1, tv1, 0, false);
+  checkIdProvedEqual(tv0, 0, tv1, 1, false);
+}
 
-    auto tv5 = add(tv2, tv0);
+void testGPU_FusionProveIdEqRfactor() {
+  Fusion fusion;
+  FusionGuard fg(&fusion);
 
-    fusion.addInput(tv0);
-    fusion.addInput(tv1);
-    fusion.addOutput(tv5);
+  // [I,I]
+  TensorView* tv0 = makeDummyTensor(2);
+  // [I,I,I]
+  TensorView* tv1 = makeDummyTensor(3);
 
-    // scheduling:
-    //[B,I,R0,R1=128], root = [B,I,R]
-    tv2->split(2, 128);
+  //[I,I,R]
+  auto tv2 = sum(tv1, {2});
 
-    // root=[B,I,Irf], rfactor=[B,I,Irf,Rrf]
-    auto tv3 = tv2->rFactor({3});
+  auto tv5 = add(tv2, tv0);
 
-    CHECK_EQUAL(tv1, 0, tv0, 0);
-    CHECK_EQUAL(tv2, 0, tv0, 0);
-    CHECK_EQUAL(tv3, 0, tv0, 0);
-  }
+  fusion.addInput(tv0);
+  fusion.addInput(tv1);
+  fusion.addOutput(tv5);
 
-#undef CHECK_EQUAL
-#undef CHECK_NOEQUAL
+  // scheduling:
+  //[B,I,R0,R1=128], root = [B,I,R]
+  tv2->split(2, 128);
+
+  // root=[B,I,Irf], rfactor=[B,I,Irf,Rrf]
+  auto tv3 = tv2->rFactor({3});
+
+  checkIdProvedEqual(tv1, 0, tv0, 0, true);
+  checkIdProvedEqual(tv2, 0, tv0, 0, true);
+  checkIdProvedEqual(tv3, 0, tv0, 0, true);
 }
 
 void testGPU_FusionScalarInputs() {
