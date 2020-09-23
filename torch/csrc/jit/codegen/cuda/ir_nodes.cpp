@@ -1064,7 +1064,8 @@ class DisjointSet {
     } else {
       const int i0 = fixedPoint(a);
       const int i1 = fixedPoint(b);
-      int new_parent, new_child;
+      int new_parent = 0;
+      int new_child = 0;
 
       // Either order here is correct but joining larger class to smaller class
       // tend to be faster
@@ -1279,7 +1280,7 @@ class ProveValEqual : private IterVisitor {
   //! \returns Boolean representing if they are proven to be
   //!          equivalent in the sense that they have equal
   //!          start and extent
-  bool areEqual(IterDomain* a, IterDomain* b) const {
+  bool areEquivalent(IterDomain* a, IterDomain* b) const {
     if (a->sameAs(b))
       return true;
 
@@ -1351,10 +1352,10 @@ const IterDomain* IterDomain::concretizeDomain(IterDomain* bcast_dom) {
 // API call to check if two IterDomains are equal
 // checks start and extent, contains both scalar check and graph traversal
 // broadcast domains are concretized before comparing
-bool IterDomain::proveEqual(IterDomain* a, IterDomain* b) {
+bool IterDomain::proveEquivalent(IterDomain* a, IterDomain* b) {
   TORCH_INTERNAL_ASSERT(a->fusion() == b->fusion());
   ProveValEqual pve(a->fusion());
-  return pve.areEqual(a, b);
+  return pve.areEquivalent(a, b);
 }
 
 Split::Split(

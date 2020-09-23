@@ -261,7 +261,7 @@ class TORCH_CUDA_API IterDomain : public Val {
   static const IterDomain* concretizeDomain(IterDomain* bcast_dom);
 
   // Attempt to prove 2 IterDomains are equal in start and rawExtent
-  static bool proveEqual(IterDomain* a, IterDomain* b);
+  static bool proveEquivalent(IterDomain* a, IterDomain* b);
 
   bool isReduction() const {
     return getIterType() == IterType::Reduction;

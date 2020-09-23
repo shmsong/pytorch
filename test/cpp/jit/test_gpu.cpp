@@ -2160,16 +2160,16 @@ void testGPU_FusionBCastConcretizeRfactor() {
   checkConcretized(tv3, 0, tv5, 0, true);
 }
 
-void checkIdProvedEqual(
+void checkIdProvedEquivalent(
     TensorView* v0,
     int a0,
     TensorView* v1,
     int a1,
     bool should_prove) {
   if (should_prove) {
-    TORCH_CHECK(IterDomain::proveEqual(v0->axis(a0), v1->axis(a1)));
+    TORCH_CHECK(IterDomain::proveEquivalent(v0->axis(a0), v1->axis(a1)));
   } else {
-    TORCH_CHECK(!IterDomain::proveEqual(v0->axis(a0), v1->axis(a1)));
+    TORCH_CHECK(!IterDomain::proveEquivalent(v0->axis(a0), v1->axis(a1)));
   }
 }
 
@@ -2188,14 +2188,14 @@ void testGPU_FusionProveIdEqBasic() {
   auto tv5 = add(tv3, tv4);
   fusion.addOutput(tv5);
 
-  checkIdProvedEqual(tv0, 0, tv4, 1, true);
-  checkIdProvedEqual(tv1, 0, tv4, 0, true);
-  checkIdProvedEqual(tv1, 1, tv0, 1, true);
-  checkIdProvedEqual(tv0, 0, tv5, 1, true);
-  checkIdProvedEqual(tv1, 1, tv5, 2, true);
-  checkIdProvedEqual(tv0, 0, tv1, 0, false);
-  checkIdProvedEqual(tv0, 1, tv1, 0, false);
-  checkIdProvedEqual(tv0, 0, tv1, 1, false);
+  checkIdProvedEquivalent(tv0, 0, tv4, 1, true);
+  checkIdProvedEquivalent(tv1, 0, tv4, 0, true);
+  checkIdProvedEquivalent(tv1, 1, tv0, 1, true);
+  checkIdProvedEquivalent(tv0, 0, tv5, 1, true);
+  checkIdProvedEquivalent(tv1, 1, tv5, 2, true);
+  checkIdProvedEquivalent(tv0, 0, tv1, 0, false);
+  checkIdProvedEquivalent(tv0, 1, tv1, 0, false);
+  checkIdProvedEquivalent(tv0, 0, tv1, 1, false);
 }
 
 void testGPU_FusionProveIdEqRfactor() {
@@ -2223,9 +2223,9 @@ void testGPU_FusionProveIdEqRfactor() {
   // root=[B,I,Irf], rfactor=[B,I,Irf,Rrf]
   auto tv3 = tv2->rFactor({3});
 
-  checkIdProvedEqual(tv1, 0, tv0, 0, true);
-  checkIdProvedEqual(tv2, 0, tv0, 0, true);
-  checkIdProvedEqual(tv3, 0, tv0, 0, true);
+  checkIdProvedEquivalent(tv1, 0, tv0, 0, true);
+  checkIdProvedEquivalent(tv2, 0, tv0, 0, true);
+  checkIdProvedEquivalent(tv3, 0, tv0, 0, true);
 }
 
 void testGPU_FusionScalarInputs() {
