@@ -1086,8 +1086,9 @@ class DisjointSet {
   //!          will return false if any of a or b doesn't
   //!          have an equivalent class recorded
   bool areEquivalent(T a, T b) const {
-    if (!entry_map.count(a) || !entry_map.count(b))
+    if (!entry_map.count(a) || !entry_map.count(b)) {
       return false;
+    }
     return fixedPoint(a) == fixedPoint(b);
   }
 
