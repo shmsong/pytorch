@@ -1100,8 +1100,9 @@ class DisjointSet {
   // Map the input of type T to its equivalence class
   std::unordered_map<T, int> entry_map;
 
-  // Utility for generating new class
-  int count = 0;
+  // Running counter for generating new index when
+  // creating new equiv classes
+  int next_index_ = 0;
 
   // internal fixed point implementation:
   //  returns the equivalent class that e belongs to
@@ -1133,8 +1134,8 @@ class DisjointSet {
   //
   //! \param i element i to create the equiv class for
   void createPoint(T i) {
-    entry_map[i] = count;
-    set_map.push_back(count++);
+    entry_map[i] = next_index_;
+    set_map.push_back(next_index_++);
     weights.push_back(1);
   }
 };
