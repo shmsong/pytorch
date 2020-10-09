@@ -5124,22 +5124,24 @@ TEST(NVFuserTest, FusionReductionKeepDimScheduler_CUDA) {
   FusionGuard fg(&fusion);
 
   // Set up your input tensor views
-  TensorView* tv0 = makeConcreteTensor({bid_x,tid_x});
+  TensorView* tv0 = makeConcreteTensor({bid_x, tid_x});
   fusion.addInput(tv0);
 
   /* original test case */
-  //TensorView* tv1 =
-  //    reductionOp(BinaryOpType::Add, {red_dim}, new Float(0), tv0, /*keepdim=*/true);
+  // TensorView* tv1 =
+  //    reductionOp(BinaryOpType::Add, {red_dim}, new Float(0), tv0,
+  //    /*keepdim=*/true);
 
-  //TensorView* red_tv = fusion.origin(tv1)->inputs()[0]->as<TensorView>();
-  
-  //fusion.addOutput(red_tv); //whole test passes with this
+  // TensorView* red_tv = fusion.origin(tv1)->inputs()[0]->as<TensorView>();
+
+  // fusion.addOutput(red_tv); //whole test passes with this
 
   // ---------------------------------------------------
-  
+
   /* equivalent test case */
-  TensorView* red_tv=reductionOp(BinaryOpType::Add, {red_dim}, new Float(0), tv0);
-  TensorView* tv1 = broadcast(red_tv,{false,true});
+  TensorView* red_tv =
+      reductionOp(BinaryOpType::Add, {red_dim}, new Float(0), tv0);
+  TensorView* tv1 = broadcast(red_tv, {false, true});
 
   fusion.addOutput(tv1);
 
@@ -5150,22 +5152,22 @@ TEST(NVFuserTest, FusionReductionKeepDimScheduler_CUDA) {
   // Apply reduction heuristic
   auto reduction_params = getReductionHeuristics(&fusion, {input}, red_tv);
   TORCH_CHECK(reduction_params, "Reduction schedule was not generated!");
-  scheduleReduction(&fusion, reduction_params.value(), red_tv, {});
-    fusion.printMath();
-    fusion.printKernel();
+  scheduleReduction(&fusion, reduction_params.value(), red_tv, {tv1});
+
+  fusion.printMath();
+  fusion.printKernel();
 
   FusionExecutor fe;
   fe.compileFusion(&fusion);
-    
+
   auto outputs = fe.runFusion({input}, reduction_params.value().lparams);
-  auto aten_output = input.sum({red_dim});
+  auto aten_output = input.sum({red_dim}, true);
 
   TORCH_CHECK(
-      aten_output.allclose(outputs[0].squeeze(), 1e-04, 1e-04),
+      aten_output.allclose(outputs[0], 1e-04, 1e-04),
       "Error of: ",
-      aten_output.sub(outputs[0].squeeze()).abs().max());
+      aten_output.sub(outputs[0]).abs().max());
 }
-
 
 TEST(NVFuserTest, FusionReductionScheduler_CUDA) {
   constexpr int bid_x = 80;
