@@ -444,7 +444,8 @@ TensorView* reductionOp(
     BinaryOpType reduction_op_type,
     const std::vector<int>& axes,
     Val* init,
-    TensorView* tv) {
+    TensorView* tv,
+    c10::optional<bool> keep_dim /*=c10::nullopt*/) {
   TORCH_CHECK(
       init->isConstScalar(),
       "Cannot create a reduction operation where the initial value is not a const scalar.");
@@ -477,10 +478,22 @@ TensorView* reductionOp(
   if (init->getDataType().value() != tv->getDataType().value())
     init = castOp(tv->getDataType().value(), init);
   new ReductionOp(reduction_op_type, init, out, tv);
+
+  if (keep_dim.has_value() && keep_dim.value()) {
+    std::vector<bool> is_broadcast(tv->nDims(), false);
+    for (int axis : axes) {
+      is_broadcast[axis] = true;
+    }
+
+    out = broadcast(out, is_broadcast);
+  }
   return out;
 }
 
-TensorView* sum(TensorView* v1, const std::vector<int>& axes) {
+TensorView* sum(
+    TensorView* v1,
+    const std::vector<int>& axes,
+    c10::optional<bool> keep_dim) {
   Val* init;
   switch (v1->getDataType().value()) {
     case (DataType::Float):
@@ -496,7 +509,7 @@ TensorView* sum(TensorView* v1, const std::vector<int>& axes) {
           v1->getDataType().value());
   }
 
-  return reductionOp(BinaryOpType::Add, axes, init, v1);
+  return reductionOp(BinaryOpType::Add, axes, init, v1, keep_dim);
 }
 
 TensorView* broadcast(

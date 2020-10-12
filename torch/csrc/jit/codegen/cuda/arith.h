@@ -43,7 +43,8 @@ TORCH_CUDA_API TensorView* reductionOp(
     BinaryOpType reduction_op_type,
     const std::vector<int>& axes,
     Val* init,
-    TensorView* v1);
+    TensorView* v1,
+    c10::optional<bool> keep_dim = c10::nullopt);
 
 // UNARY OPERATIONS
 TORCH_CUDA_API Val* neg(Val* v);
@@ -107,7 +108,8 @@ TORCH_CUDA_API TensorView* andOp(TensorView* v1, TensorView* v2);
 // REDUCTION OPERATIONS
 TORCH_CUDA_API TensorView* sum(
     TensorView* v1,
-    const std::vector<int>& reduction_axes);
+    const std::vector<int>& reduction_axes,
+    c10::optional<bool> keep_dim = c10::nullopt);
 
 // COMPOUND OPERATIONS
 // add_alpha
