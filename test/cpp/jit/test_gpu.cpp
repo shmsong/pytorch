@@ -5134,15 +5134,13 @@ TEST(NVFuserTest, FusionReductionKeepDimScheduler_CUDA) {
   FusionGuard fg(&fusion);
 
   // Set up your input tensor views
-  TensorView* tv0 = makeConcreteTensor({bid_x,tid_x});
+  TensorView* tv0 = makeConcreteTensor({bid_x, tid_x});
   fusion.addInput(tv0);
 
-  
-  TensorView* tv1 =
-      reductionOp(BinaryOpType::Add, {red_dim}, new Float(0), tv0, /*keepdim=*/true);
+  TensorView* tv1 = reductionOp(
+      BinaryOpType::Add, {red_dim}, new Float(0), tv0, /*keepdim=*/true);
 
   TensorView* red_tv = fusion.origin(tv1)->inputs()[0]->as<TensorView>();
-
 
   fusion.addOutput(tv1);
 
@@ -5154,10 +5152,10 @@ TEST(NVFuserTest, FusionReductionKeepDimScheduler_CUDA) {
   auto reduction_params = getReductionHeuristics(&fusion, {input}, red_tv);
   TORCH_CHECK(reduction_params, "Reduction schedule was not generated!");
   scheduleReduction(&fusion, reduction_params.value(), red_tv, {tv1});
-  
+
   FusionExecutor fe;
   fe.compileFusion(&fusion);
-    
+
   auto outputs = fe.runFusion({input}, reduction_params.value().lparams);
   auto aten_output = input.sum({red_dim});
 
@@ -5166,7 +5164,6 @@ TEST(NVFuserTest, FusionReductionKeepDimScheduler_CUDA) {
       "Error of: ",
       aten_output.sub(outputs[0].squeeze()).abs().max());
 }
-
 
 TEST(NVFuserTest, FusionReductionScheduler_CUDA) {
   constexpr int bid_x = 80;

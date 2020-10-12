@@ -44,7 +44,7 @@ TORCH_CUDA_API TensorView* reductionOp(
     const std::vector<int>& axes,
     Val* init,
     TensorView* v1,
-    c10::optional<bool> keepdim=c10::nullopt);
+    c10::optional<bool> keepdim = c10::nullopt);
 
 // UNARY OPERATIONS
 TORCH_CUDA_API Val* neg(Val* v);
