@@ -5115,6 +5115,34 @@ TEST(NVFuserTest, FusionBCastAfterReduce_CUDA) {
   TORCH_CHECK(t5.allclose(outputs[0], 1e-5, 1e-5));
 }
 
+TEST(NVFuserTest, FusionSimpleBroadcast_CUDA) {
+  Fusion fusion;
+  FusionGuard fg(&fusion);
+
+  TensorView* tv0 = makeConcreteTensor({2, 3});
+  fusion.addInput(tv0);
+
+  TensorView* tv1 = broadcast(tv0, {true, false, true, false, true});
+
+  fusion.addOutput(tv1);
+
+  const auto options =
+      at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
+
+  at::Tensor input = at::randn({2, 3}, options);
+
+  FusionExecutor fe;
+  fe.compileFusion(&fusion);
+
+  auto outputs = fe.runFusion({input});
+  auto aten_output = input;
+
+  TORCH_CHECK(
+      aten_output.allclose(outputs[0].squeeze(), 1e-04, 1e-04),
+      "Error of: ",
+      aten_output.sub(outputs[0].squeeze()).abs().max());
+}
+
 TEST(NVFuserTest, FusionReductionKeepDimBasic_CUDA) {
   Fusion fusion;
   FusionGuard fg(&fusion);
@@ -5136,12 +5164,6 @@ TEST(NVFuserTest, FusionReductionKeepDimBasic_CUDA) {
 
   auto outputs = fe.runFusion({input});
   auto aten_output = input.sum({0, 2, 4});
-
-  fusion.printKernel();
-  fusion.printMath();
-
-  std::cout << outputs[0].squeeze() << std::endl;
-  std::cout << aten_output << std::endl;
 
   TORCH_CHECK(
       aten_output.allclose(outputs[0].squeeze(), 1e-04, 1e-04),
