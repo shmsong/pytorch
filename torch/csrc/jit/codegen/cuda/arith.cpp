@@ -480,7 +480,8 @@ TensorView* reductionOp(
   new ReductionOp(reduction_op_type, init, out, tv);
 
   if (keep_dim.has_value() && keep_dim.value()) {
-    std::vector<bool> is_broadcast(tv->nDims(), false);
+    auto tv_root = TensorDomain::noReductions(tv->getRootDomain());
+    std::vector<bool> is_broadcast(tv_root.size(), false);
     for (int axis : axes) {
       is_broadcast[axis] = true;
     }
@@ -744,6 +745,65 @@ Val* clamp(Val* in, Val* min_val, Val* max_val) {
 TensorView* clamp(TensorView* in, Val* min_val, Val* max_val) {
   return clamp(in->as<Val>(), min_val, max_val)->as<TensorView>();
 }
+
+// sum_to operator
+
+inline bool shouldReduceSumTo(const int shape, const Val* root_id_extent){
+  return shape==1 && !root_id_extent->isOneInt();
+}
+
+inline bool shouldReduceSumTo(const Val* shape, const Val* root_id_extent){
+  return shape->isOneInt() && !root_id_extent->isOneInt();
+}
+
+//Name of sum_to is different from NV fuser naming, 
+// this is to align with the operator name 
+template<typename T>
+TensorView* sum_to_impl(
+    TensorView* v1,
+    const std::vector<T>& shape){
+
+      TensorView* v2 = v1;
+
+      const auto& v1_root = TensorDomain::noReductions(v1->getRootDomain());
+
+      const int64_t leading_dims = v1_root.size() - shape.size();
+
+      //Reduce left most dims without keep_dim
+      if(leading_dims){
+        std::vector<int> outer_red_dims(leading_dims);
+        std::iota(outer_red_dims.begin(),outer_red_dims.end(),0);
+        v2 = sum(v1,outer_red_dims);
+      }
+      
+      std::vector<int> inner_red_dims;
+      //Reduce rest of the dims with keep_dim
+      for(int i=leading_dims;i<v1_root.size();i++){
+        if(shouldReduceSumTo(shape[i-leading_dims],v1_root[i]->rawExtent())){
+          inner_red_dims.push_back(i-leading_dims);
+        }
+      }
+
+      if(!inner_red_dims.empty()){
+        v2 = sum(v2,inner_red_dims,/*keep_dim=*/true);
+      }
+
+      return v2;
+    }
+
+TensorView* sum_to(
+    TensorView* v1,
+    const std::vector<Val*>& shape){
+      return sum_to_impl(v1,shape);
+
+    }
+
+TensorView* sum_to(
+    TensorView* v1,
+    const std::vector<int>& shape){
+      return sum_to_impl(v1,shape);
+    }
+
 
 } // namespace cuda
 } // namespace fuser

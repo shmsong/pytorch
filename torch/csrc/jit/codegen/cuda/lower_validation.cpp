@@ -4,6 +4,7 @@
 #include <torch/csrc/jit/codegen/cuda/lower_utils.h>
 #include <torch/csrc/jit/codegen/cuda/transform_replay.h>
 #include <torch/csrc/jit/codegen/cuda/type.h>
+#include <torch/csrc/jit/codegen/cuda/ir_utils.h>
 
 namespace torch {
 namespace jit {
@@ -65,6 +66,15 @@ void validateIr(Fusion* fusion) {
                 "Cannot generate a kernel where a root broadcast dimension is input to both IterDomains outside and within the computeAt point.");
           }
         }
+      }
+    }
+  }
+
+  // Convert all output broadcast iterdomains to strided
+  for(auto tv: ir_utils::filterByType<TensorView>(fusion->outputs())){
+    for(auto id: tv->getMaybeRFactorDomain()){
+      if(id->isBroadcast()){
+        id->toStridedBroadcast();
       }
     }
   }

@@ -1053,15 +1053,6 @@ kir::TensorIndex* Index::getGlobalConsumerIndex(
     } else if (ind->isZeroInt()) {
       stride_i++;
     } else {
-      while (stride_i < root_dom.size() && root_dom[stride_i]->isBroadcast()) {
-        stride_i++;
-      }
-
-      TORCH_INTERNAL_ASSERT(
-          stride_i < root_dom.size(),
-          "GlobalConsumerIndex: invalid loop nest for",
-          consumer_tv);
-
       std::stringstream ss;
       ss << "T" << consumer_tv->name() << ".stride[" << stride_i++ << "]";
       strided_inds.push_back(ir_builder.mulExpr(

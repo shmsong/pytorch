@@ -186,6 +186,22 @@ TORCH_CUDA_API TensorView* threshold(TensorView* in, Val* thresh, Val* value);
 TORCH_CUDA_API Val* clamp(Val* in, Val* min_val, Val* max_val);
 TORCH_CUDA_API TensorView* clamp(TensorView* in, Val* min_val, Val* max_val);
 
+// Internal operator for supporting backward graphs
+// 
+// example:
+//   v1 = T1 [I0(10),I1(20),I2(30),I3(40)]
+//   v2 = sum_to(v1,{30,1}) ------> v2 = T2[I2,R3 (keep_dim)]
+//      
+//
+TORCH_CUDA_API TensorView* sum_to(
+    TensorView* v1,
+    const std::vector<int>& shape);
+
+TORCH_CUDA_API TensorView* sum_to(
+    TensorView* v1,
+    const std::vector<Val*>& shape);
+
+
 } // namespace cuda
 } // namespace fuser
 } // namespace jit
