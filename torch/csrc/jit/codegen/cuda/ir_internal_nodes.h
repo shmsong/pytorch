@@ -320,11 +320,11 @@ class TORCH_CUDA_API IterDomain : public Val {
   }
 
   // Convert to strided broadcast, used for supporting broadcast on output
-  void toStridedBroadcast(){
+  void toStridedBroadcast() {
     TORCH_INTERNAL_ASSERT(
-          isBroadcast(),
-          "toStridedBroadCast: converting an non-broadcast iterdomain",
-          this);
+        isBroadcast(),
+        "toStridedBroadCast: converting an non-broadcast iterdomain",
+        this);
     iter_type_ = IterType::BroadcastWithStride;
   }
 

@@ -5254,11 +5254,11 @@ TEST(NVFuserTest, FusionSumToBasic_CUDA) {
   Fusion fusion;
   FusionGuard fg(&fusion);
 
-  std::vector<int> tensor_shape {2,3,4,5,6};
-  std::vector<int> sum_to_shape {1,5,6};
+  std::vector<int> tensor_shape{2, 3, 4, 5, 6};
+  std::vector<int> sum_to_shape{1, 5, 6};
 
-  c10::IntArrayRef tensor_shape_ref  {2,3,4,5,6};
-  c10::IntArrayRef sum_to_shape_ref {1,5,6};
+  c10::IntArrayRef tensor_shape_ref{2, 3, 4, 5, 6};
+  c10::IntArrayRef sum_to_shape_ref{1, 5, 6};
 
   TensorView* tv0 = makeConcreteTensor(tensor_shape);
   fusion.addInput(tv0);
@@ -5274,10 +5274,10 @@ TEST(NVFuserTest, FusionSumToBasic_CUDA) {
   fe.compileFusion(&fusion);
 
   auto outputs = fe.runFusion({input});
-  auto aten_output = at::sum_to(input,sum_to_shape_ref);
-  
+  auto aten_output = at::sum_to(input, sum_to_shape_ref);
+
   TORCH_CHECK(
-      outputs[0].dim()==sum_to_shape.size(),
+      outputs[0].dim() == sum_to_shape.size(),
       "sum_to not keeping the final dimension");
 
   TORCH_CHECK(
@@ -5290,19 +5290,22 @@ TEST(NVFuserTest, FusionSumToSymbolic_CUDA) {
   Fusion fusion;
   FusionGuard fg(&fusion);
 
-  std::vector<int> tensor_shape {2,3,4,5,6};
-  std::vector<int> sum_to_shape {1,5,6};
+  std::vector<int> tensor_shape{2, 3, 4, 5, 6};
+  std::vector<int> sum_to_shape{1, 5, 6};
 
-  c10::IntArrayRef tensor_shape_ref  {2,3,4,5,6};
-  c10::IntArrayRef sum_to_shape_ref {1,5,6};
+  c10::IntArrayRef tensor_shape_ref{2, 3, 4, 5, 6};
+  c10::IntArrayRef sum_to_shape_ref{1, 5, 6};
 
   std::vector<Val*> sum_to_symb;
-  std::transform(sum_to_shape.begin(),sum_to_shape.end(),std::back_inserter(sum_to_symb),
-                  [](int s)->Val* {return new Int(s);});
+  std::transform(
+      sum_to_shape.begin(),
+      sum_to_shape.end(),
+      std::back_inserter(sum_to_symb),
+      [](int s) -> Val* { return new Int(s); });
 
   TensorView* tv0 = makeConcreteTensor(tensor_shape);
   fusion.addInput(tv0);
-  
+
   TensorView* tv1 = sum_to(tv0, sum_to_symb);
   fusion.addOutput(tv1);
 
@@ -5315,10 +5318,10 @@ TEST(NVFuserTest, FusionSumToSymbolic_CUDA) {
   fe.compileFusion(&fusion);
 
   auto outputs = fe.runFusion({input});
-  auto aten_output = at::sum_to(input,sum_to_shape_ref);
-  
+  auto aten_output = at::sum_to(input, sum_to_shape_ref);
+
   TORCH_CHECK(
-      outputs[0].dim()==sum_to_shape.size(),
+      outputs[0].dim() == sum_to_shape.size(),
       "sum_to not keeping the final dimension");
 
   TORCH_CHECK(
@@ -5326,7 +5329,6 @@ TEST(NVFuserTest, FusionSumToSymbolic_CUDA) {
       "Error of: ",
       aten_output.sub(outputs[0]).abs().max());
 }
-
 
 TEST(NVFuserTest, FusionReductionScheduler_CUDA) {
   constexpr int bid_x = 80;
