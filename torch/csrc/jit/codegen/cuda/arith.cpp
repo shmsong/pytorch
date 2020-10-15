@@ -754,11 +754,11 @@ TensorView* sum_to(TensorView* v1, const std::vector<Int*>& shape) {
   const auto& v1_root = TensorDomain::noReductions(v1->getRootDomain());
 
   TORCH_CHECK(
-      shape.size() <= v1_root.size(),
+      v1_root.size() >= shape.size(),
       "sum_to: Error trying to reduce",
       v1,
       "into a shape of size",
-      v1_root.size());
+      shape.size());
 
   // If no reduction is needed sum_to returns the input tv
   TensorView* v2 = v1;

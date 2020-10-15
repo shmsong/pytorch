@@ -5135,12 +5135,12 @@ TEST(NVFuserTest, FusionOutputBroadcast_CUDA) {
   fe.compileFusion(&fusion);
 
   auto outputs = fe.runFusion({input});
-  auto aten_output = input;
+  auto aten_output = input.unsqueeze(2).unsqueeze(1).unsqueeze(0);
 
   TORCH_CHECK(
-      aten_output.allclose(outputs[0].squeeze(), 1e-04, 1e-04),
+      aten_output.allclose(outputs[0], 1e-04, 1e-04),
       "Error of: ",
-      aten_output.sub(outputs[0].squeeze()).abs().max());
+      aten_output.sub(outputs[0]).abs().max());
 }
 
 TEST(NVFuserTest, FusionReductionKeepDimBasic_CUDA) {
