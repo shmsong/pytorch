@@ -44,7 +44,7 @@ TORCH_CUDA_API TensorView* reductionOp(
     const std::vector<int>& axes,
     Val* init,
     TensorView* v1,
-    c10::optional<bool> keep_dim = c10::nullopt);
+    bool keep_dim = false);
 
 // UNARY OPERATIONS
 TORCH_CUDA_API Val* neg(Val* v);
@@ -109,7 +109,7 @@ TORCH_CUDA_API TensorView* andOp(TensorView* v1, TensorView* v2);
 TORCH_CUDA_API TensorView* sum(
     TensorView* v1,
     const std::vector<int>& reduction_axes,
-    c10::optional<bool> keep_dim = c10::nullopt);
+    bool keep_dim = false);
 
 // COMPOUND OPERATIONS
 // add_alpha
@@ -192,7 +192,8 @@ TORCH_CUDA_API TensorView* clamp(TensorView* in, Val* min_val, Val* max_val);
 //   v1 = T1 [I0(10),I1(20),I2(30),I3(40)]
 //   v2 = sum_to(v1,{30,1}) ------> v2 = T2[I2,R3 (keep_dim)]
 //
-//
+//  This operator will return v1* directly if sizes of v1 root domain
+//  is already the same as shape.
 TORCH_CUDA_API TensorView* sum_to(
     TensorView* v1,
     const std::vector<Int*>& shape);

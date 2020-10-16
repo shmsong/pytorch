@@ -445,7 +445,7 @@ TensorView* reductionOp(
     const std::vector<int>& axes,
     Val* init,
     TensorView* tv,
-    c10::optional<bool> keep_dim /*=c10::nullopt*/) {
+    bool keep_dim /*=false*/) {
   TORCH_CHECK(
       init->isConstScalar(),
       "Cannot create a reduction operation where the initial value is not a const scalar.");
@@ -479,7 +479,7 @@ TensorView* reductionOp(
     init = castOp(tv->getDataType().value(), init);
   new ReductionOp(reduction_op_type, init, out, tv);
 
-  if (keep_dim.has_value() && keep_dim.value()) {
+  if (keep_dim) {
     auto tv_root = TensorDomain::noReductions(tv->getRootDomain());
     std::vector<bool> is_broadcast(tv_root.size(), false);
     for (int axis : axes) {
@@ -494,7 +494,7 @@ TensorView* reductionOp(
 TensorView* sum(
     TensorView* v1,
     const std::vector<int>& axes,
-    c10::optional<bool> keep_dim) {
+    bool keep_dim /*=false*/) {
   Val* init;
   switch (v1->getDataType().value()) {
     case (DataType::Float):

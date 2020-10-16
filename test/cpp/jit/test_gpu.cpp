@@ -5255,6 +5255,53 @@ TEST(NVFuserTest, FusionSumTo_CUDA) {
       aten_output.sub(outputs[0]).abs().max());
 }
 
+TEST(NVFuserTest, FusionSumToNoop_CUDA) {
+  Fusion fusion;
+  FusionGuard fg(&fusion);
+
+  std::vector<int> tensor_shape{4, 5, 6};
+  std::vector<int> sum_to_shape{4, 5, 6};
+
+  c10::IntArrayRef tensor_shape_ref{4, 5, 6};
+  c10::IntArrayRef sum_to_shape_ref{4, 5, 6};
+
+  std::vector<Int*> sum_to_symb;
+  std::transform(
+      sum_to_shape.begin(),
+      sum_to_shape.end(),
+      std::back_inserter(sum_to_symb),
+      [](int s) -> Int* { return new Int(s); });
+
+  TensorView* tv0 = makeConcreteTensor(tensor_shape);
+  fusion.addInput(tv0);
+
+  TensorView* tv1 = sum_to(tv0, sum_to_symb);
+
+  // Dummy operator to avoid tv0 both input and output
+  TensorView* tv2 = add(tv1, new Float(0));
+  fusion.addOutput(tv2);
+
+  const auto options =
+      at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
+
+  at::Tensor input = at::randn(tensor_shape_ref, options);
+
+  FusionExecutor fe;
+  fe.compileFusion(&fusion);
+
+  auto outputs = fe.runFusion({input});
+  auto aten_output = at::sum_to(input, sum_to_shape_ref);
+
+  TORCH_CHECK(
+      outputs[0].dim() == sum_to_shape.size(),
+      "sum_to not keeping the final dimension");
+
+  TORCH_CHECK(
+      aten_output.allclose(outputs[0], 1e-04, 1e-04),
+      "Error of: ",
+      aten_output.sub(outputs[0]).abs().max());
+}
+
 TEST(NVFuserTest, FusionReductionScheduler_CUDA) {
   constexpr int bid_x = 80;
   constexpr int tid_x = 4096;
