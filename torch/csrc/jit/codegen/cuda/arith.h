@@ -186,14 +186,18 @@ TORCH_CUDA_API TensorView* threshold(TensorView* in, Val* thresh, Val* value);
 TORCH_CUDA_API Val* clamp(Val* in, Val* min_val, Val* max_val);
 TORCH_CUDA_API TensorView* clamp(TensorView* in, Val* min_val, Val* max_val);
 
-// Internal operator for supporting backward graphs
-//
-// example:
-//   v1 = T1 [I0(10),I1(20),I2(30),I3(40)]
-//   v2 = sum_to(v1,{30,1}) ------> v2 = T2[I2,R3 (keep_dim)]
-//
-//  This operator will return v1* directly if sizes of v1 root domain
-//  is already the same as shape.
+//! Internal operator for supporting backward graphs
+//!
+//! example:
+//!   v1 = T1 [I0(10),I1(20),I2(30),I3(40)]
+//!   v2 = sum_to(v1,{30,1}) ------> v2 = T2[I2,R3 (keep_dim)]
+//!
+//!  This operator will return v1* directly if sizes of v1 root domain
+//!  is already the same as shape.
+//!
+//!  Name of sum_to is different from NV fuser naming,
+//!  this is to align with the operator name of at::sum_to.
+
 TORCH_CUDA_API TensorView* sum_to(
     TensorView* v1,
     const std::vector<Int*>& shape);

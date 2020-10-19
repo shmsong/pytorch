@@ -748,22 +748,20 @@ TensorView* clamp(TensorView* in, Val* min_val, Val* max_val) {
 
 // sum_to operator
 
-// Name of sum_to is different from NV fuser naming,
-// this is to align with the operator name
-TensorView* sum_to(TensorView* v1, const std::vector<Int*>& shape) {
-  const auto& v1_root = TensorDomain::noReductions(v1->getRootDomain());
+TensorView* sum_to(TensorView* in, const std::vector<Int*>& shape) {
+  const auto& root = TensorDomain::noReductions(in->getRootDomain());
 
   TORCH_CHECK(
-      v1_root.size() >= shape.size(),
+      root.size() >= shape.size(),
       "sum_to: Error trying to reduce",
-      v1,
+      in,
       "into a shape of size",
       shape.size());
 
   // If no reduction is needed sum_to returns the input tv
-  TensorView* v2 = v1;
+  TensorView* out = in;
 
-  const int64_t leading_dims = v1_root.size() - shape.size();
+  const int64_t leading_dims = root.size() - shape.size();
 
   // Generate reduction axes for leading dims
   std::vector<int> reduce_dims(leading_dims);
@@ -774,9 +772,9 @@ TensorView* sum_to(TensorView* v1, const std::vector<Int*>& shape) {
   bool reduction_within_shape = false;
 
   // Reduce rest of the dims with keep_dim
-  for (int i = leading_dims; i < v1_root.size(); i++) {
+  for (int i = leading_dims; i < root.size(); i++) {
     if (shape[i - leading_dims]->isOneInt() &&
-        !v1_root[i]->rawExtent()->isOneInt()) {
+        !root[i]->rawExtent()->isOneInt()) {
       inner_red_dims[i - leading_dims] = true;
       reduce_dims.push_back(i);
       reduction_within_shape = true;
@@ -785,15 +783,15 @@ TensorView* sum_to(TensorView* v1, const std::vector<Int*>& shape) {
 
   // Reduction step
   if (!reduce_dims.empty()) {
-    v2 = sum(v1, reduce_dims);
+    out = sum(in, reduce_dims);
   }
 
   // Broadcast back reduced dims within shape
   if (reduction_within_shape) {
-    v2 = broadcast(v2, inner_red_dims);
+    out = broadcast(out, inner_red_dims);
   }
 
-  return v2;
+  return out;
 }
 
 } // namespace cuda
