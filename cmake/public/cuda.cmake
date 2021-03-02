@@ -64,32 +64,32 @@ if(CUDA_FOUND)
     "  return 0;\n"
     "}\n"
     )
-  try_run(run_result compile_result ${PROJECT_RANDOM_BINARY_DIR} ${file}
-    CMAKE_FLAGS "-DINCLUDE_DIRECTORIES=${CUDA_INCLUDE_DIRS}"
-    LINK_LIBRARIES ${CUDA_LIBRARIES}
-    RUN_OUTPUT_VARIABLE cuda_version_from_header
-    COMPILE_OUTPUT_VARIABLE output_var
-    )
-  if(NOT compile_result)
-    message(FATAL_ERROR "Caffe2: Couldn't determine version from header: " ${output_var})
-  endif()
-  message(STATUS "Caffe2: Header version is: " ${cuda_version_from_header})
-  if(NOT cuda_version_from_header STREQUAL ${CUDA_VERSION_STRING})
-    # Force CUDA to be processed for again next time
-    # TODO: I'm not sure if this counts as an implementation detail of
-    # FindCUDA
-    set(${cuda_version_from_findcuda} ${CUDA_VERSION_STRING})
-    unset(CUDA_TOOLKIT_ROOT_DIR_INTERNAL CACHE)
-    # Not strictly necessary, but for good luck.
-    unset(CUDA_VERSION CACHE)
-    # Error out
-    message(FATAL_ERROR "FindCUDA says CUDA version is ${cuda_version_from_findcuda} (usually determined by nvcc), "
-      "but the CUDA headers say the version is ${cuda_version_from_header}.  This often occurs "
-      "when you set both CUDA_HOME and CUDA_NVCC_EXECUTABLE to "
-      "non-standard locations, without also setting PATH to point to the correct nvcc.  "
-      "Perhaps, try re-running this command again with PATH=${CUDA_TOOLKIT_ROOT_DIR}/bin:$PATH.  "
-      "See above log messages for more diagnostics, and see https://github.com/pytorch/pytorch/issues/8092 for more details.")
-  endif()
+  #try_run(run_result compile_result ${PROJECT_RANDOM_BINARY_DIR} ${file}
+  #  CMAKE_FLAGS "-DINCLUDE_DIRECTORIES=${CUDA_INCLUDE_DIRS}"
+  #  LINK_LIBRARIES ${CUDA_LIBRARIES}
+  #  RUN_OUTPUT_VARIABLE cuda_version_from_header
+  #  COMPILE_OUTPUT_VARIABLE output_var
+  #  )
+  #if(NOT compile_result)
+  #  message(FATAL_ERROR "Caffe2: Couldn't determine version from header: " ${output_var})
+  #endif()
+  #message(STATUS "Caffe2: Header version is: " ${cuda_version_from_header})
+  #if(NOT cuda_version_from_header STREQUAL ${CUDA_VERSION_STRING})
+  #  # Force CUDA to be processed for again next time
+  #  # TODO: I'm not sure if this counts as an implementation detail of
+  #  # FindCUDA
+  #  set(${cuda_version_from_findcuda} ${CUDA_VERSION_STRING})
+  #  unset(CUDA_TOOLKIT_ROOT_DIR_INTERNAL CACHE)
+  #  # Not strictly necessary, but for good luck.
+  #  unset(CUDA_VERSION CACHE)
+  #  # Error out
+  #  message(FATAL_ERROR "FindCUDA says CUDA version is ${cuda_version_from_findcuda} (usually determined by nvcc), "
+  #    "but the CUDA headers say the version is ${cuda_version_from_header}.  This often occurs "
+  #    "when you set both CUDA_HOME and CUDA_NVCC_EXECUTABLE to "
+  #    "non-standard locations, without also setting PATH to point to the correct nvcc.  "
+  #    "Perhaps, try re-running this command again with PATH=${CUDA_TOOLKIT_ROOT_DIR}/bin:$PATH.  "
+  #    "See above log messages for more diagnostics, and see https://github.com/pytorch/pytorch/issues/8092 for more details.")
+  #endif()
 endif()
 
 # Find cuDNN.
@@ -187,7 +187,7 @@ find_library(CUDA_CUDA_LIB cuda
     PATH_SUFFIXES lib lib64 lib/stubs lib64/stubs lib/x64)
 find_library(CUDA_NVRTC_LIB nvrtc
     PATHS ${CUDA_TOOLKIT_ROOT_DIR}
-    PATH_SUFFIXES lib lib64 lib/x64)
+    PATH_SUFFIXES lib lib64 lib/x64 lib/stubs)
   if(CUDA_NVRTC_LIB AND NOT CUDA_NVRTC_SHORTHASH)
  execute_process(
     COMMAND "${PYTHON_EXECUTABLE}" -c
@@ -261,7 +261,7 @@ elseif(APPLE)
       ${CUDA_TOOLKIT_ROOT_DIR}/lib/libnvToolsExt.dylib)
 
 else()
-  find_library(LIBNVTOOLSEXT libnvToolsExt.so PATHS ${CUDA_TOOLKIT_ROOT_DIR}/lib64/)
+  find_library(LIBNVTOOLSEXT libnvToolsExt.so PATHS ${CUDA_TOOLKIT_ROOT_DIR}/lib64/ ${CUDA_TOOLKIT_ROOT_DIR}/lib/)
   set_property(
       TARGET torch::nvtoolsext PROPERTY INTERFACE_LINK_LIBRARIES
       ${LIBNVTOOLSEXT})
