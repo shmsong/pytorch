@@ -289,8 +289,30 @@ if(NOT MSVC AND NOT EMSCRIPTEN AND NOT INTERN_BUILD_MOBILE)
     endif()
     if(GCC_7)
       set(CMAKE_BUILD_TYPE Release)  # Always build Sleef as a Release build to work around a gcc-7 bug
+    endif()  
+    if(CMAKE_CROSSCOMPILING)
+      # sleef needs to run a native build before cross compiled
+      # cf. https://github.com/shibatch/sleef/blob/master/travis/before_script.aarch64-gcc.sh
+      set(SLEEF_NATIVE_BINARY_DIR  ${CMAKE_BINARY_DIR}/sleef/native)
+      set(SLEEF_COMMON_ARGS "--DBUILD_QUAD=TRUE")
+      set(SLEEF_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../../third_party/sleef")
+      file(MAKE_DIRECTORY ${SLEEF_NATIVE_BINARY_DIR})
+      #message("${SLEEF_BINARY_DIR} IS CONFIGURED HERE")
+      externalproject_add(sleef_native
+        SOURCE_DIR ${SLEEF_SOURCE_DIR}
+        BINARY_DIR ${SLEEF_NATIVE_BINARY_DIR}
+        CONFIGURE_COMMAND ${CMAKE_COMMAND} ${SLEEF_COMMON_ARGS} -S ${SLEEF_SOURCE_DIR} -B ${SLEEF_NATIVE_BINARY_DIR}
+        BUILD_COMMAND ${CMAKE_COMMAND} --build ${SLEEF_NATIVE_BINARY_DIR} 
+        INSTALL_COMMAND "")
+      #add_library(sleef_native STATIC IMPORTED)
+      #set_property(TARGET sleef_lib PROPERTY IMPORTED_LOCATION ${SLEEF_BINARY_DIR}/lib/libsleef.a)
+      set(NATIVE_BUILD_DIR ${SLEEF_NATIVE_BINARY_DIR})
     endif()
     add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/../../../third_party/sleef" ${CMAKE_BINARY_DIR}/sleef)
+    if(CMAKE_CROSSCOMPILING)
+      add_dependencies(sleef sleef_native)
+    endif()
+
     if(GCC_7)
       set(CMAKE_BUILD_TYPE ${OLD_CMAKE_BUILD_TYPE})
     endif()
