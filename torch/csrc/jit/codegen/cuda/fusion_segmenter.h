@@ -258,9 +258,6 @@ class TORCH_CUDA_CU_API SegmentedFusion {
   //! original full fusion
   Fusion fusion_;
 
-  //! Count total tensorview exprs
-  size_t total_tv_expr_count_ = 0;
-
   //! States representing segmentation
   std::vector<SegmentedEdge*> edges_;
   std::vector<SegmentedGroup*> groups_;
@@ -379,6 +376,11 @@ class TORCH_CUDA_CU_API SegmentCandidateFinder {
   //! Duplicate and add all exprs producing the used
   //!  scalar values in group
   void resolveScalarsInGroup(SegmentedGroup* group);
+
+  //! Utility function to merge a vector of groups in one step,
+  //!  need to check for DAG condition before using this method
+  SegmentedGroup* mergeAllGivenGroups(
+      const std::vector<SegmentedGroup*>& groups);
 
   void finalize();
 

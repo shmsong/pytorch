@@ -429,6 +429,74 @@ std::vector<Val*> getAllOutputs(
   return output_vals;
 }
 
+// Set version of getting merged input or output if segmented_groups were
+//  merged
+//  outputs respects order in segmented_groups for deterministic
+//  merge trace
+//  will get input if get_inputs otherwise will get ouputs
+//  TODO: merge with the binary counter parts
+std::vector<Val*> allInputsIfTrueElseOutputs(
+    const std::vector<SegmentedGroup*>& segmented_groups,
+    bool get_inputs = true) {
+  // Helper to distinguish if we are getting inputs or outputs
+  using EdgeVec = std::vector<SegmentedEdge*>;
+  using ValVec = std::vector<Val*>;
+
+  // Get producer edges to get inputs, consumer edges to get outputs
+  auto edges_to_process_from_or_to_group =
+      [get_inputs](SegmentedGroup* group) -> EdgeVec& {
+    return get_inputs ? group->producer_edges : group->consumer_edges;
+  };
+
+  // Get the group that is connected to current group
+  auto global_vals_from_or_to_group =
+      [get_inputs](SegmentedGroup* group) -> ValVec& {
+    return get_inputs ? group->input_vals : group->output_vals;
+  };
+
+  // Get the group that is connected to current group by given edge
+  auto opposite_end_of_edge = [get_inputs](SegmentedEdge* edge) {
+    return get_inputs ? edge->from : edge->to;
+  };
+
+  // Keep track of value and order to ensure deterministic result
+  std::vector<Val*> merged_vals;
+  std::unordered_set<Val*> merged_vals_set;
+
+  // Put groups in a set for quick look up
+  std::unordered_set<SegmentedGroup*> segmented_groups_set(
+      segmented_groups.begin(), segmented_groups.end());
+
+  // Collect vals associated with edges
+  for (auto group : segmented_groups) {
+    for (auto edge : edges_to_process_from_or_to_group(group)) {
+      if (
+          // Need to de-duplicate values so we don't get multiple of any input
+          !merged_vals_set.count(edge->val) &&
+          // One side of this edge will be `group`, if the other end is
+          //  also in segmented_groups, then this is an internal edge
+          //  that we don't want.
+          !segmented_groups_set.count(opposite_end_of_edge(edge))) {
+        merged_vals.push_back(edge->val);
+        merged_vals_set.insert(edge->val);
+      }
+    }
+  }
+
+  // Collect original fusion's inputs/outputs and append at the end
+  for (auto group : segmented_groups) {
+    for (auto global_val : global_vals_from_or_to_group(group)) {
+      // de-duplicate
+      if (!merged_vals_set.count(global_val)) {
+        merged_vals.push_back(global_val);
+        merged_vals_set.insert(global_val);
+      }
+    }
+  }
+
+  return merged_vals;
+}
+
 // Utility function to list all expressions in a group
 void detailGroupPrint(std::ostream& os, const SegmentedGroup* group) {
   IrPrinter irp(os);
@@ -686,6 +754,106 @@ SegmentedGroup* SegmentCandidateFinder::mergeNodes() {
   return last_merged;
 }
 
+// Logic largely parallels mergeNodes, but they are used
+//  in different phases of segmentation. Should consider
+//  a clean up and share the implementations.
+SegmentedGroup* SegmentCandidateFinder::mergeAllGivenGroups(
+    const std::vector<SegmentedGroup*>& groups_to_merge) {
+  TORCH_INTERNAL_ASSERT(
+      !groups_to_merge.empty(),
+      "fusion segment :(mergeAllGivenGroups) tried to merge no groups")
+
+  // Make a set to detect internal edges
+  std::unordered_set<SegmentedGroup*> group_set(
+      groups_to_merge.begin(), groups_to_merge.end());
+
+  // Sets to de-duplicate multiple uses of
+  //  input/edge values and re-computations of exprs
+  std::unordered_set<Val*> used_vals_set;
+  std::unordered_set<Expr*> exprs_set;
+
+  // Create new group
+  auto joined_group = segmented_fusion_->newGroup();
+
+  // Populate edges, exprs, global vals
+  //  from each of the groups
+  for (auto group : groups_to_merge) {
+    // Populate producer edges to the group
+    for (auto edge : group->producer_edges) {
+      if (
+          // Check this is not internal edge
+          !group_set.count(edge->from) &&
+          // Check this val has been added or not
+          !used_vals_set.count(edge->val)) {
+        used_vals_set.insert(edge->val);
+        auto new_producer_edge =
+            segmented_fusion_->newEdge(edge->from, joined_group, edge->val);
+        joined_group->producer_edges.push_back(new_producer_edge);
+        edge->from->consumer_edges.push_back(new_producer_edge);
+      }
+    }
+
+    // Populate complete fusion inputs to the group
+    for (auto input_val : group->input_vals) {
+      if (!used_vals_set.count(input_val)) {
+        used_vals_set.insert(input_val);
+        joined_group->input_vals.push_back(input_val);
+      }
+    }
+
+    // Populate consumer edges from the group
+    for (auto edge : group->consumer_edges) {
+      if (
+          // Check this is not internal edge
+          !group_set.count(edge->to)) {
+        auto new_consumer_edge =
+            segmented_fusion_->newEdge(joined_group, edge->to, edge->val);
+        joined_group->consumer_edges.push_back(new_consumer_edge);
+        edge->to->producer_edges.push_back(new_consumer_edge);
+      }
+    }
+
+    // Populate complete fusion outputs from the group
+    for (auto output_val : group->output_vals) {
+      joined_group->output_vals.push_back(output_val);
+    }
+
+    // Populate exprs
+    for (auto expr : group->exprs_) {
+      if (!exprs_set.count(expr)) {
+        joined_group->exprs_.push_back(expr);
+        exprs_set.insert(expr);
+      }
+    }
+  }
+
+  // Clean up original groups from segmented fusion
+  for (auto group : groups_to_merge) {
+    auto disconnected_edges = disconnectGroup(group);
+    clean_up_edges_.insert(
+        disconnected_edges.begin(), disconnected_edges.end());
+  }
+
+  edges().erase(
+      std::remove_if(
+          edges().begin(),
+          edges().end(),
+          [this](SegmentedEdge* edge) { return clean_up_edges_.count(edge); }),
+      edges().end());
+
+  groups().erase(
+      std::remove_if(
+          groups().begin(),
+          groups().end(),
+          [&group_set](SegmentedGroup* group) -> bool {
+            return group_set.count(group);
+          }),
+      groups().end());
+
+  clean_up_edges_.clear();
+  return joined_group;
+}
+
 namespace {
 
 // Guard to temporarily change the inputs and outputs of a fusion. On
@@ -760,13 +928,30 @@ c10::optional<ScheduleHeuristic> tryMerge(
   return SchedulerEntry::proposeHeuristics(fusion);
 }
 
+c10::optional<ScheduleHeuristic> tryMerge(
+    Fusion* fusion,
+    const std::vector<SegmentedGroup*>& segmented_groups) {
+  FusionSegmentGuard fsg(
+      fusion,
+      allInputsIfTrueElseOutputs(segmented_groups, true),
+      allInputsIfTrueElseOutputs(segmented_groups, false));
+  return SchedulerEntry::proposeHeuristics(fusion);
+}
+
 //! An utility class to compute and maintain the "producers of"
 //!   relationship in a segmented graph. Space heavy and should
 //!   avoid use on very large graphs.
+//!
+//!  Currently trying to move as far as possible with only a
+//!   producer map, without transposing it to make a consumer map.
+//!  TODO: Space efficiency of this class is now important,
+//!        because we need it in the pre-merging of segmentedGroups,
+//!        currently O(n^2). O(nlogn) would be a reasonable
+//!        goal to achieve.
 class AllProducerGroups {
   using GroupSet = std::unordered_set<SegmentedGroup*>;
-  using GroupSetPtr = std::unique_ptr<GroupSet>;
-  using ReachMap = std::unordered_map<SegmentedGroup*, GroupSetPtr>;
+  using GroupSetOwningPtr = std::unique_ptr<GroupSet>;
+  using DependencyMap = std::unordered_map<SegmentedGroup*, GroupSetOwningPtr>;
 
  public:
   //! Populate producers of all groups in segmented fusion
@@ -789,6 +974,8 @@ class AllProducerGroups {
   }
 
   //! Update the map when the given two groups have been merged to create `ab`
+  //! this method is for book keeping and query only, doesn't implicitly check
+  //!  for DAG
   void mergeGroups(SegmentedGroup* a, SegmentedGroup* b, SegmentedGroup* ab) {
     // Access/Create the producer set of ab
     auto& ab_set = getAllKnownProducersSet(ab);
@@ -802,11 +989,11 @@ class AllProducerGroups {
     ab_set->erase(b);
 
     // a, b no longer exist, remove their producer sets
-    producer_map_.erase(a);
-    producer_map_.erase(b);
+    known_producers_of_.erase(a);
+    known_producers_of_.erase(b);
 
     // update producer maps of other groups
-    for (auto& it : producer_map_) {
+    for (auto& it : known_producers_of_) {
       // for all groups that are produced by either a or b
       if (it.second->count(a) || it.second->count(b)) {
         // insert ab as the new producer
@@ -818,6 +1005,80 @@ class AllProducerGroups {
       it.second->erase(a);
       it.second->erase(b);
     }
+  }
+
+  //! Update the map when the given two groups have been merged to create
+  //! `merged` this method is for book keeping and query only, doesn't
+  //! implicitly check
+  //!  for DAG
+  void mergeGroups(const GroupSet& groups, SegmentedGroup* merged) {
+    // Access/Create the producer set of merged
+    auto& merged_set = getAllKnownProducersSet(merged);
+
+    // Populate all producers of groups and
+    //  write into producer map of merged
+    std::for_each(
+        groups.begin(), groups.end(), [this, merged](SegmentedGroup* group) {
+          mergeAllKnownProducersIntoFrom(merged, group);
+        });
+
+    // Erase all groups that was merged from producer map
+    std::for_each(
+        groups.begin(),
+        groups.end(),
+        [this, &merged_set](SegmentedGroup* group) {
+          // erase inter dependencies
+          merged_set->erase(group);
+          // erase producer map tracking merged entires
+          known_producers_of_.erase(group);
+        });
+
+    // Update producer relationships with other groups in producer map
+    for (auto& it : known_producers_of_) {
+      auto producer_intersection = groupSetIntersection(*(it.second), groups);
+      // if current node has any producer that was merged
+      if (producer_intersection.size() > 0) {
+        for (auto merged_producer : producer_intersection) {
+          // delete all disappearing producers
+          it.second->erase(merged_producer);
+        }
+        // insert the new group as producer
+        it.second->insert(merged);
+      }
+    }
+  }
+
+  //! Populate all values that is on a path from producer to consumer
+  //!  efficiency can be important here. (TODO)
+  GroupSet valuesBetween(SegmentedGroup* producer, SegmentedGroup* consumer) {
+    GroupSet values_between;
+    auto& all_producers_of_consumer = known_producers_of_.at(consumer);
+    TORCH_INTERNAL_ASSERT(
+        all_producers_of_consumer->count(producer),
+        "Fusion segment: Trying to compute path between two nodes that are not producer-consumer pairs");
+
+    std::copy_if(
+        all_producers_of_consumer->begin(),
+        all_producers_of_consumer->end(),
+        std::inserter(values_between, values_between.end()),
+        [this, producer](SegmentedGroup* consumer_group) {
+          // Checks if producer is on the producer path of this intermediate
+          // node
+          return known_producers_of_.at(consumer_group)->count(producer);
+        });
+
+    return values_between;
+  }
+
+  //! Checks if the segmented fusion this class tracks is still a DAG
+  //!  used for generating assertions after transforms
+  bool isproducerMapDAG() const {
+    for (auto& it : known_producers_of_) {
+      if (it.second->count(it.first)) {
+        return false;
+      }
+    }
+    return true;
   }
 
  private:
@@ -900,17 +1161,32 @@ class AllProducerGroups {
   }
 
   //! Utility to access known producers of a group so far
-  GroupSetPtr& getAllKnownProducersSet(SegmentedGroup* group) {
-    auto& producer_set_ptr = producer_map_[group];
+  GroupSetOwningPtr& getAllKnownProducersSet(SegmentedGroup* group) {
+    auto& producer_set_ptr = known_producers_of_[group];
     if (!producer_set_ptr) {
       producer_set_ptr = std::make_unique<GroupSet>();
     }
     return producer_set_ptr;
   }
 
+  // utility to compute the set intersection of group sets a,b
+  GroupSet groupSetIntersection(const GroupSet& a, const GroupSet& b) {
+    bool a_is_smaller = a.size() < b.size();
+    const auto& smaller_group_set = a_is_smaller ? a : b;
+    const auto& bigger_group_set = a_is_smaller ? b : a;
+
+    GroupSet intersection;
+    for (auto group : smaller_group_set) {
+      if (bigger_group_set.count(group)) {
+        intersection.insert(group);
+      }
+    }
+    return intersection;
+  }
+
  private:
   SegmentedFusion* segmented_fusion_;
-  ReachMap producer_map_;
+  DependencyMap known_producers_of_;
 };
 
 // This function is for cleanup and
@@ -974,17 +1250,13 @@ void SegmentCandidateFinder::findSegments() {
   std::unordered_map<Expr*, SegmentedGroup*> expr2group;
 
   // Initialize DAG, convert each expr to a segment group
-  size_t total_tv_exprs = 0;
   auto exprs = completeFusion().exprs();
   for (auto expr : exprs) {
     if (!ir_utils::isScalarOp(expr)) {
       auto new_group = segmented_fusion_->newGroup(expr);
       expr2group.insert(std::make_pair(expr, new_group));
-      total_tv_exprs++;
     }
   }
-
-  segmented_fusion_->total_tv_expr_count_ = total_tv_exprs;
 
   // Create edges between the Exprs. Mark inputs and outputs of the fusion.
   for (auto expr : exprs) {
@@ -1206,20 +1478,11 @@ void SegmentCandidateFinder::resolveScalarsInGroup(SegmentedGroup* group) {
 
 void SegmentCandidateFinder::finalize() {
   // Remove unconnected groups
-  size_t total_expr = segmented_fusion_->total_tv_expr_count_;
   groups().erase(
       std::remove_if(
           groups().begin(),
           groups().end(),
-          [total_expr](SegmentedGroup* sg) {
-            // count the number of tensor ops
-            const size_t expr_count = std::count_if(
-                sg->exprs_.begin(), sg->exprs_.end(), [](Expr* expr) {
-                  return !ir_utils::isScalarOp(expr);
-                });
-
-            return !sg->isConnected() && expr_count != total_expr;
-          }),
+          [](SegmentedGroup* sg) { return !sg->isConnected(); }),
       groups().end());
 
   // Add group labeling
