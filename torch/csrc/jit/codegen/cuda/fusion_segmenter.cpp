@@ -1214,6 +1214,8 @@ class CombineReductions {
 
     // Update the reduction groups that are merged
     groups_with_reductions_.push_back(joined_group);
+    group_reduction_signature_map_[joined_group] =
+        group_reduction_signature_map_.at(first_group);
     groups_with_reductions_.erase(
         std::remove_if(
             groups_with_reductions_.begin(),
@@ -1354,6 +1356,8 @@ class CombineReductions {
             dependency_analysis.mergeGroups(groups_to_merge_set, joined_group);
 
             groups_with_reductions_.push_back(joined_group);
+            group_reduction_signature_map_[joined_group] =
+                group_reduction_signature_map_.at(first_group);
             groups_with_reductions_.erase(
                 std::remove_if(
                     groups_with_reductions_.begin(),
