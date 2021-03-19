@@ -13742,6 +13742,34 @@ TEST(NVFuserTest, FusionReductionPredicate_CUDA) {
       &fusion, {cg_output}, {input}, {aten_output}, __LINE__, __FILE__);
 }
 
+TEST(NVFuserTest, FusionSegmentVerticalMerge_CUDA) {
+  auto fusion = std::make_unique<Fusion>();
+  FusionGuard fg(fusion.get());
+
+  auto tv0 = makeSymbolicTensor(3);
+  auto tv1 = makeSymbolicTensor(3);
+
+  fusion->addInput(tv0);
+
+  // Branch 0
+  auto tv2 = sum(tv0, {0});
+  auto tv3 = add(tv2, tv1);
+  auto tv4 = sum(tv3, {0});
+  auto tv5 = add(tv4, tv1);
+  auto tv6 = sum(tv5, {0});
+
+  fusion->addOutput(tv6);
+
+  FusionExecutorCache executor_cache(std::move(fusion));
+
+  TORCH_CHECK(executor_cache.isSegmented(), "segmentation didn't happen");
+
+  // auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
+  // at::Tensor t0 = at::randn({16, 16, 16}, options);
+  // testValidate(
+  //     executor_cache.fusion(), outputs, {t0, s0}, {t5}, __LINE__, __FILE__);
+}
+
 } // namespace jit
 } // namespace torch
 #endif // #if defined(USE_CUDA)

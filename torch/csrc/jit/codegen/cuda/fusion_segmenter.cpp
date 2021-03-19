@@ -1035,7 +1035,9 @@ class CombineReductions {
   struct ReductionSignature;
 
  public:
-  static void run(SegmentCandidateFinder* segment_candidate_finder);
+  static void run(SegmentCandidateFinder* segment_candidate_finder) {
+    CombineReductions combine_reductions(segment_candidate_finder);
+  }
   static bool shouldRun(SegmentCandidateFinder* segment_candidate_finder);
 
  private:
@@ -1386,7 +1388,7 @@ class CombineReductions {
     } else if (dependency_analysis.isConsumerOf(
                    maybe_consumer, maybe_producer)) {
       auto groups_to_check =
-          dependency_analysis.valuesBetween(maybe_consumer, maybe_producer);
+          dependency_analysis.valuesBetween(maybe_producer, maybe_consumer);
       groups_to_check.insert(maybe_producer);
       groups_to_check.insert(maybe_consumer);
 
