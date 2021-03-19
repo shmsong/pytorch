@@ -13749,12 +13749,14 @@ TEST(NVFuserTest, FusionSegmentVerticalMerge_CUDA) {
   auto tv0 = makeSymbolicTensor(3);
 
   fusion->addInput(tv0);
+  // {first kernel}
   auto tv1 = sum(tv0, {0});
   auto tv2 = add(tv1, tv0);
   auto tv3 = sum(tv2, {0});
   auto tv4 = add(tv3, tv0);
   auto tv5 = sum(tv4, {0});
   auto tv6 = sum(tv5, {0});
+  // {second kernel}
   auto tv7 = add(tv6, tv5);
   auto tv8 = add(tv7, tv5);
   auto tv9 = sum(tv8, {0});
@@ -13780,19 +13782,20 @@ TEST(NVFuserTest, FusionSegmentHorizontalMerge_CUDA) {
   fusion->addInput(tv0);
   fusion->addInput(i0);
 
-  // Branch 0
-  auto tv1 = add(tv0, i0);
+  // Branch 0 {first kernel}
+  auto tv1 = sum(tv0, {0});
   auto tv2 = add(tv0, i0);
   auto tv3 = unaryOp(UnaryOpType::Rsqrt, tv2);
   auto tv4 = sum(tv3, {0});
 
-  // Branch 1
+  // Branch 1 {first kernel}
   auto tv5 = unaryOp(UnaryOpType::Rsqrt, tv3);
   auto tv6 = sum(tv5, {0});
 
-  // Incompatible
+  // Incompatible {second kernel}
   auto tv7 = sum(tv6, {0});
 
+  fusion->addOutput(tv1);
   fusion->addOutput(tv4);
   fusion->addOutput(tv7);
 
