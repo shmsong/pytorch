@@ -381,7 +381,15 @@ class GroupDependencyAnalysis : public NonCopyable {
   DependencyMap known_producers_of_;
 };
 
+// Manual node merging passes
 class CombineReductions;
+
+//! Options to configure/debug candidate finder
+struct TORCH_CUDA_CU_API SegmentCandidateFinderOptions {
+  bool run_combine_reductions = true;
+  bool run_herrmann_merge = true;
+  bool run_final_merge = true;
+};
 
 //!  SegmentCandidateFinder
 //!    Responsible for going through DAG and proposing things we could try to
@@ -409,10 +417,14 @@ class CombineReductions;
 class TORCH_CUDA_CU_API SegmentCandidateFinder {
  public:
   // Take a copy of fusion to own
-  SegmentCandidateFinder(const Fusion* fusion);
+  SegmentCandidateFinder(
+      const Fusion* fusion,
+      SegmentCandidateFinderOptions options);
 
-  static std::unique_ptr<SegmentedFusion> segment(const Fusion* fusion) {
-    SegmentCandidateFinder scf(fusion);
+  static std::unique_ptr<SegmentedFusion> segment(
+      const Fusion* fusion,
+      SegmentCandidateFinderOptions options = SegmentCandidateFinderOptions()) {
+    SegmentCandidateFinder scf(fusion, options);
     return std::move(scf.segmented_fusion_);
   }
 
@@ -490,6 +502,9 @@ class TORCH_CUDA_CU_API SegmentCandidateFinder {
   //!  instead of keeping adding friends
   friend class CombineReductions;
 
+  //! options to configure and debug the segment process
+  SegmentCandidateFinderOptions options_;
+
   std::deque<SegmentedGroup*> to_visit_;
   std::vector<SegmentedGroup*> next_to_visit_;
 
@@ -506,6 +521,8 @@ class TORCH_CUDA_CU_API SegmentCandidateFinder {
 TORCH_CUDA_CU_API std::string toString(const SegmentedGroup* group);
 TORCH_CUDA_CU_API std::string toString(const SegmentedEdge* edge);
 TORCH_CUDA_CU_API std::string toString(const SegmentedFusion* segmented_fusion);
+TORCH_CUDA_CU_API std::string toString(
+    const SegmentCandidateFinderOptions& segment_options);
 
 } // namespace cuda
 } // namespace fuser

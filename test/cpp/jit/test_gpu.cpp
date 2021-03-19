@@ -13747,27 +13747,62 @@ TEST(NVFuserTest, FusionSegmentVerticalMerge_CUDA) {
   FusionGuard fg(fusion.get());
 
   auto tv0 = makeSymbolicTensor(3);
-  auto tv1 = makeSymbolicTensor(3);
 
   fusion->addInput(tv0);
+  auto tv1 = sum(tv0, {0});
+  auto tv2 = add(tv1, tv0);
+  auto tv3 = sum(tv2, {0});
+  auto tv4 = add(tv3, tv0);
+  auto tv5 = sum(tv4, {0});
+  auto tv6 = sum(tv5, {0});
+  auto tv7 = add(tv6, tv5);
+  auto tv8 = add(tv7, tv5);
+  auto tv9 = sum(tv8, {0});
+
+  fusion->addOutput(tv9);
+
+  SegmentCandidateFinderOptions segment_options{
+      .run_herrmann_merge = false, .run_final_merge = false};
+
+  auto segmented_fusion =
+      SegmentCandidateFinder::segment(fusion.get(), segment_options);
+
+  TORCH_CHECK(segmented_fusion->groups().size() == 2);
+}
+
+TEST(NVFuserTest, FusionSegmentHorizontalMerge_CUDA) {
+  auto fusion = std::make_unique<Fusion>();
+  FusionGuard fg(fusion.get());
+
+  auto tv0 = makeSymbolicTensor(3);
+  auto i0 = new Double();
+
+  fusion->addInput(tv0);
+  fusion->addInput(i0);
 
   // Branch 0
-  auto tv2 = sum(tv0, {0});
-  auto tv3 = add(tv2, tv1);
+  auto tv1 = add(tv0, i0);
+  auto tv2 = add(tv0, i0);
+  auto tv3 = unaryOp(UnaryOpType::Rsqrt, tv2);
   auto tv4 = sum(tv3, {0});
-  auto tv5 = add(tv4, tv1);
+
+  // Branch 1
+  auto tv5 = unaryOp(UnaryOpType::Rsqrt, tv3);
   auto tv6 = sum(tv5, {0});
 
-  fusion->addOutput(tv6);
+  // Incompatible
+  auto tv7 = sum(tv6, {0});
 
-  FusionExecutorCache executor_cache(std::move(fusion));
+  fusion->addOutput(tv4);
+  fusion->addOutput(tv7);
 
-  TORCH_CHECK(executor_cache.isSegmented(), "segmentation didn't happen");
+  SegmentCandidateFinderOptions segment_options{
+      .run_herrmann_merge = false, .run_final_merge = false};
 
-  // auto options = at::TensorOptions().dtype(at::kFloat).device(at::kCUDA, 0);
-  // at::Tensor t0 = at::randn({16, 16, 16}, options);
-  // testValidate(
-  //     executor_cache.fusion(), outputs, {t0, s0}, {t5}, __LINE__, __FILE__);
+  auto segmented_fusion =
+      SegmentCandidateFinder::segment(fusion.get(), segment_options);
+
+  TORCH_CHECK(segmented_fusion->groups().size() == 2);
 }
 
 } // namespace jit

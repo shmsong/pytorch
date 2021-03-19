@@ -884,6 +884,8 @@ SegmentedGroup* SegmentCandidateFinder::mergeAllGivenGroups(
       groups().end());
 
   clean_up_edges_.clear();
+
+  joined_group->setHeuristic(deriveHeuristic(joined_group));
   return joined_group;
 }
 
@@ -1801,7 +1803,10 @@ ScheduleHeuristic SegmentCandidateFinder::deriveHeuristic(
   return h.value();
 }
 
-SegmentCandidateFinder::SegmentCandidateFinder(const Fusion* fusion) {
+SegmentCandidateFinder::SegmentCandidateFinder(
+    const Fusion* fusion,
+    SegmentCandidateFinderOptions options)
+    : options_(options) {
   segmented_fusion_ = std::make_unique<SegmentedFusion>(fusion);
   findSegments();
 }
@@ -1885,7 +1890,7 @@ void SegmentCandidateFinder::findSegments() {
   }
 
   // Run pre-merge heuristics
-  if (CombineReductions::shouldRun(this)) {
+  if (options_.run_combine_reductions && CombineReductions::shouldRun(this)) {
     CombineReductions::run(this);
   }
 
@@ -1898,52 +1903,56 @@ void SegmentCandidateFinder::findSegments() {
   }
   eraseGroups(input_groups);
 
-  bool merged_nodes = true;
-  // Initial merge iteration
-  while (merged_nodes) {
-    // Reset stateful traversal details in SegmentedGroups
-    resetTraversal();
+  if (options_.run_herrmann_merge) {
+    bool merged_nodes = true;
+    // Initial merge iteration
+    while (merged_nodes) {
+      // Reset stateful traversal details in SegmentedGroups
+      resetTraversal();
 
-    resetLevels();
+      resetLevels();
 
-    for (auto& group : groups()) {
-      if (group->merged_) {
-        continue;
+      for (auto& group : groups()) {
+        if (group->merged_) {
+          continue;
+        }
+        auto candidates = group->getMergeCandidates();
+        if (candidates.empty()) {
+          continue;
+        }
+
+        auto candidate_it = candidates.begin();
+        while (candidate_it != candidates.end() &&
+               !codeGenSupportedMerge(candidate_it->edge)) {
+          candidate_it++;
+        }
+        if (candidate_it == candidates.end()) {
+          continue;
+        }
+
+        to_merge_.emplace_back(group);
+        to_merge_.emplace_back(candidate_it->group);
+
+        group->merged_ = true;
+        group->merge_with_ = candidate_it->group;
+        group->merge_through_ = candidate_it->edge;
+
+        candidate_it->group->merged_ = true;
+        candidate_it->group->merge_with_ = group;
+        candidate_it->group->merge_through_ = candidate_it->edge;
       }
-      auto candidates = group->getMergeCandidates();
-      if (candidates.empty()) {
-        continue;
+
+      if (to_merge_.empty()) {
+        merged_nodes = false;
       }
 
-      auto candidate_it = candidates.begin();
-      while (candidate_it != candidates.end() &&
-             !codeGenSupportedMerge(candidate_it->edge)) {
-        candidate_it++;
-      }
-      if (candidate_it == candidates.end()) {
-        continue;
-      }
-
-      to_merge_.emplace_back(group);
-      to_merge_.emplace_back(candidate_it->group);
-
-      group->merged_ = true;
-      group->merge_with_ = candidate_it->group;
-      group->merge_through_ = candidate_it->edge;
-
-      candidate_it->group->merged_ = true;
-      candidate_it->group->merge_with_ = group;
-      candidate_it->group->merge_through_ = candidate_it->edge;
+      mergeNodes();
     }
-
-    if (to_merge_.empty()) {
-      merged_nodes = false;
-    }
-
-    mergeNodes();
   }
 
-  finalMerge();
+  if (options_.run_final_merge) {
+    finalMerge();
+  }
 
   finalize();
 }
@@ -2140,6 +2149,23 @@ std::unique_ptr<SegmentHeuristics> SegmentedFusion::makeHeuristics(
     ret->emplace_back(makeSchedulerEntry(g, evaluator));
   }
   return ret;
+}
+
+TORCH_CUDA_CU_API std::string toString(
+    const SegmentCandidateFinderOptions& segment_options) {
+  std::stringstream ss;
+  ss << "segmentation phases {\n";
+  if (segment_options.run_combine_reductions) {
+    ss << "combine reductions\n";
+  }
+  if (segment_options.run_herrmann_merge) {
+    ss << "herrmann merging\n";
+  }
+  if (segment_options.run_final_merge) {
+    ss << "final merging\n";
+  }
+  ss << "\n}\n";
+  return ss.str();
 }
 
 } // namespace cuda
