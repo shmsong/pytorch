@@ -663,6 +663,39 @@ std::unordered_set<SegmentedEdge*> SegmentCandidateFinder::disconnectGroup(
   return removed_edges;
 }
 
+void SegmentCandidateFinder::eraseGroups(
+    std::unordered_set<SegmentedGroup*>& groups_to_erase) {
+  std::unordered_set<SegmentedEdge*> edges_to_erase;
+  for (auto group : groups_to_erase) {
+    auto disconnected_edges = disconnectGroup(group);
+    edges_to_erase.insert(disconnected_edges.begin(), disconnected_edges.end());
+  }
+
+  edges().erase(
+      std::remove_if(
+          edges().begin(),
+          edges().end(),
+          [&edges_to_erase](SegmentedEdge* edge) {
+            if (edges_to_erase.find(edge) != edges_to_erase.end()) {
+              return true;
+            };
+            return false;
+          }),
+      edges().end());
+
+  groups().erase(
+      std::remove_if(
+          groups().begin(),
+          groups().end(),
+          [&groups_to_erase](SegmentedGroup* group) {
+            if (groups_to_erase.find(group) != groups_to_erase.end()) {
+              return true;
+            };
+            return false;
+          }),
+      groups().end());
+}
+
 SegmentedGroup* SegmentCandidateFinder::mergeNodes() {
   SegmentedGroup* last_merged = nullptr;
   auto it = to_merge_.begin();
@@ -1774,6 +1807,9 @@ void SegmentCandidateFinder::findSegments() {
   // Need this for initialization of the DAG that is process
   std::unordered_map<Expr*, SegmentedGroup*> expr2group;
 
+  // Keep track of complete fusion input use
+  std::unordered_map<Val*, SegmentedGroup*> input2group;
+
   // Initialize DAG, convert each expr to a segment group
   auto exprs = completeFusion().exprs();
   for (auto expr : exprs) {
@@ -1781,6 +1817,15 @@ void SegmentCandidateFinder::findSegments() {
       auto new_group = segmented_fusion_->newGroup(expr);
       expr2group.insert(std::make_pair(expr, new_group));
     }
+  }
+
+  // Insert auxiliary groups to use group dependency on inputs as well
+  for (auto input : completeFusion().inputs()) {
+    // These groups are used to represent input as a common
+    //  producer in horizontal merges, and should never be
+    //  seen as a candidate for vertical merge
+    auto new_group = segmented_fusion_->newGroup();
+    input2group.insert({input, new_group});
   }
 
   // Create edges between the Exprs. Mark inputs and outputs of the fusion.
@@ -1794,6 +1839,10 @@ void SegmentCandidateFinder::findSegments() {
     for (auto inp : expr->inputs()) {
       if (inp->isFusionInput()) {
         expr_group->input_vals.push_back(inp);
+        auto aux_group = input2group.at(inp);
+        auto new_edge = segmented_fusion_->newEdge(aux_group, expr_group, inp);
+        expr_group->producer_edges.push_back(new_edge);
+        aux_group->consumer_edges.push_back(new_edge);
         continue;
       }
 
@@ -1829,8 +1878,21 @@ void SegmentCandidateFinder::findSegments() {
     group->setHeuristic(deriveHeuristic(group));
   }
 
-  bool merged_nodes = true;
+  // Run pre-merge heuristics
+  if (CombineReductions::shouldRun(this)) {
+    CombineReductions::run(this);
+  }
 
+  // All merges will be vertical beyond this point for now, so
+  //  we can remove the input auxiliary groups. Should make the vertical
+  //  merges avoid auxiliary group once we start general horizontal merges
+  std::unordered_set<SegmentedGroup*> input_groups;
+  for (auto input : completeFusion().inputs()) {
+    input_groups.insert(input2group.at(input));
+  }
+  eraseGroups(input_groups);
+
+  bool merged_nodes = true;
   // Initial merge iteration
   while (merged_nodes) {
     // Reset stateful traversal details in SegmentedGroups

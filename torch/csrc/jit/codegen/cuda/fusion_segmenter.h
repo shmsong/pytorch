@@ -472,6 +472,10 @@ class TORCH_CUDA_CU_API SegmentCandidateFinder {
   SegmentedGroup* mergeAllGivenGroups(
       const std::vector<SegmentedGroup*>& groups);
 
+  //! Utility to remove a group and corresponding edges
+  //!  TODO: remove inline versions of this as much as possible
+  void eraseGroups(std::unordered_set<SegmentedGroup*>& groups_to_erase);
+
   void finalize();
 
   //! Return the resulting heuristic corresponding to the merged
