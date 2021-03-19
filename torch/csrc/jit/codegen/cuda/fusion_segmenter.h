@@ -293,6 +293,96 @@ class TORCH_CUDA_CU_API SegmentedFusion {
   void finalize();
 };
 
+//! An utility class to compute and maintain the "producers of"
+//!   relationship in a segmented graph. Space heavy and should
+//!   avoid use on very large graphs.
+//!
+//!  Currently trying to move as far as possible with only a
+//!   producer map, without transposing it to make a consumer map.
+//!  Making it NonCopyable because we should never need to
+//!   copy an instance of this class.
+//!  TODO: Space efficiency of this class will be important,
+//!        because we need it in the pre-merging of segmentedGroups,
+//!        currently O(n^2). O(nlogn) would be a reasonable
+//!        goal to achieve.
+class GroupDependencyAnalysis : public NonCopyable {
+  using GroupSet = std::unordered_set<SegmentedGroup*>;
+  using GroupSetOwningPtr = std::unique_ptr<GroupSet>;
+  using DependencyMap = std::unordered_map<SegmentedGroup*, GroupSetOwningPtr>;
+
+ public:
+  //! Populate producers of all groups in segmented fusion
+  explicit GroupDependencyAnalysis(SegmentedFusion* segmented_fusion)
+      : segmented_fusion_(segmented_fusion) {
+    computeAllProducers();
+  }
+
+  //! Checks if group is consumer of any group in groups_to_check
+  //!  TODO: refactor this similar to isConsumerOf
+  bool isConsumerOfAny(
+      SegmentedGroup* group,
+      const std::vector<SegmentedGroup*>& groups_to_check);
+
+  bool isConsumerOf(SegmentedGroup* a, SegmentedGroup* b) {
+    return known_producers_of_.at(a)->count(b);
+  }
+
+  bool isProducerOf(SegmentedGroup* a, SegmentedGroup* b) {
+    return known_producers_of_.at(b)->count(a);
+  }
+
+  //! Finds the common producers of given set of groups
+  GroupSet getCommonProducersOf(std::vector<SegmentedGroup*> groups);
+
+  //! Update the map when the given two groups have been merged to create `ab`
+  //! this method is for book keeping and query only, doesn't implicitly check
+  //!  for DAG
+  void mergeGroups(SegmentedGroup* a, SegmentedGroup* b, SegmentedGroup* ab);
+
+  //! Update the map when the given two groups have been merged to create
+  //! `merged` this method is for book keeping and query only, doesn't
+  //! implicitly check
+  //!  for DAG
+  void mergeGroups(const GroupSet& groups, SegmentedGroup* merged);
+
+  //! Populate all values that is on a path from producer to consumer
+  //!  efficiency can be important here. (TODO)
+  GroupSet valuesBetween(SegmentedGroup* producer, SegmentedGroup* consumer);
+
+  //! Checks if the segmented fusion this class tracks is still a DAG
+  //!  used for generating assertions after transforms
+  bool isproducerMapDAG() const;
+
+ private:
+  //! Collect initial producer info using
+  //!  a work list algorithm through forward traversal
+  //!  a backward DFS would do the same
+  void computeAllProducers();
+
+  //! Add all consumers of `producer` to `to_visit`
+  void addConsumersToWorkList(SegmentedGroup* producer, GroupSet& to_visit);
+
+  //! Propagate all known producers of `from` into `into`, used to keep track
+  //! of:
+  //!  1. `from` is a producer of `into`
+  //!  2. `from` has been merged with other group to create `into`
+  void mergeAllKnownProducersIntoFrom(
+      SegmentedGroup* into,
+      SegmentedGroup* from);
+
+  //! Utility to access known producers of a group so far
+  GroupSetOwningPtr& getAllKnownProducersSet(SegmentedGroup* group);
+
+  // utility to compute the set intersection of group sets a,b
+  GroupSet groupSetIntersection(const GroupSet& a, const GroupSet& b);
+
+ private:
+  SegmentedFusion* segmented_fusion_;
+  DependencyMap known_producers_of_;
+};
+
+class CombineReductions;
+
 //!  SegmentCandidateFinder
 //!    Responsible for going through DAG and proposing things we could try to
 //!    fuse together, calls "canGenerateCode" on these proposed segments to see
@@ -384,11 +474,18 @@ class TORCH_CUDA_CU_API SegmentCandidateFinder {
 
   void finalize();
 
-  // Return the resulting heuristic corresponding to the merged
-  //  group built by merging the two groups connected by edge
+  //! Return the resulting heuristic corresponding to the merged
+  //!  group built by merging the two groups connected by edge
   ScheduleHeuristic deriveHeuristic(SegmentedGroup* edge);
 
+  GroupDependencyAnalysis& getGroupDependency();
+
  protected:
+  //! These are the merge node heuristic passes, should
+  //!  eventually should have a dedicated interface
+  //!  instead of keeping adding friends
+  friend class CombineReductions;
+
   std::deque<SegmentedGroup*> to_visit_;
   std::vector<SegmentedGroup*> next_to_visit_;
 
@@ -398,6 +495,8 @@ class TORCH_CUDA_CU_API SegmentCandidateFinder {
   std::vector<SegmentedGroup*> to_merge_;
 
   std::unique_ptr<SegmentedFusion> segmented_fusion_;
+
+  std::unique_ptr<GroupDependencyAnalysis> group_dependency_;
 };
 
 TORCH_CUDA_CU_API std::string toString(const SegmentedGroup* group);

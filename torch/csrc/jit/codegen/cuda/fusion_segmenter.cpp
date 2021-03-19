@@ -938,257 +938,6 @@ c10::optional<ScheduleHeuristic> tryMerge(
   return SchedulerEntry::proposeHeuristics(fusion);
 }
 
-//! An utility class to compute and maintain the "producers of"
-//!   relationship in a segmented graph. Space heavy and should
-//!   avoid use on very large graphs.
-//!
-//!  Currently trying to move as far as possible with only a
-//!   producer map, without transposing it to make a consumer map.
-//!  TODO: Space efficiency of this class is now important,
-//!        because we need it in the pre-merging of segmentedGroups,
-//!        currently O(n^2). O(nlogn) would be a reasonable
-//!        goal to achieve.
-class AllProducerGroups {
-  using GroupSet = std::unordered_set<SegmentedGroup*>;
-  using GroupSetOwningPtr = std::unique_ptr<GroupSet>;
-  using DependencyMap = std::unordered_map<SegmentedGroup*, GroupSetOwningPtr>;
-
- public:
-  //! Populate producers of all groups in segmented fusion
-  explicit AllProducerGroups(SegmentedFusion* segmented_fusion)
-      : segmented_fusion_(segmented_fusion) {
-    computeAllProducers();
-  }
-
-  //! Checks if group is consumer of any group in groups_to_check
-  bool isConsumerOfAny(
-      SegmentedGroup* group,
-      const std::vector<SegmentedGroup*>& groups_to_check) {
-    auto& producers_of_group = getAllKnownProducersSet(group);
-    for (const auto& potential_producer : groups_to_check) {
-      if (producers_of_group->count(potential_producer)) {
-        return true;
-      }
-    }
-    return false;
-  }
-
-  //! Update the map when the given two groups have been merged to create `ab`
-  //! this method is for book keeping and query only, doesn't implicitly check
-  //!  for DAG
-  void mergeGroups(SegmentedGroup* a, SegmentedGroup* b, SegmentedGroup* ab) {
-    // Access/Create the producer set of ab
-    auto& ab_set = getAllKnownProducersSet(ab);
-
-    // propagate a's and b's known producers into ab
-    mergeAllKnownProducersIntoFrom(ab, a);
-    mergeAllKnownProducersIntoFrom(ab, b);
-
-    // a, b are now merged, so no longer exist
-    ab_set->erase(a);
-    ab_set->erase(b);
-
-    // a, b no longer exist, remove their producer sets
-    known_producers_of_.erase(a);
-    known_producers_of_.erase(b);
-
-    // update producer maps of other groups
-    for (auto& it : known_producers_of_) {
-      // for all groups that are produced by either a or b
-      if (it.second->count(a) || it.second->count(b)) {
-        // insert ab as the new producer
-        it.second->insert(ab);
-        // all producers of both a and b are now producers of `it`
-        mergeAllKnownProducersIntoFrom(it.first, ab);
-      }
-      // a, b no longer exist, remove them from `it`
-      it.second->erase(a);
-      it.second->erase(b);
-    }
-  }
-
-  //! Update the map when the given two groups have been merged to create
-  //! `merged` this method is for book keeping and query only, doesn't
-  //! implicitly check
-  //!  for DAG
-  void mergeGroups(const GroupSet& groups, SegmentedGroup* merged) {
-    // Access/Create the producer set of merged
-    auto& merged_set = getAllKnownProducersSet(merged);
-
-    // Populate all producers of groups and
-    //  write into producer map of merged
-    std::for_each(
-        groups.begin(), groups.end(), [this, merged](SegmentedGroup* group) {
-          mergeAllKnownProducersIntoFrom(merged, group);
-        });
-
-    // Erase all groups that was merged from producer map
-    std::for_each(
-        groups.begin(),
-        groups.end(),
-        [this, &merged_set](SegmentedGroup* group) {
-          // erase inter dependencies
-          merged_set->erase(group);
-          // erase producer map tracking merged entires
-          known_producers_of_.erase(group);
-        });
-
-    // Update producer relationships with other groups in producer map
-    for (auto& it : known_producers_of_) {
-      auto producer_intersection = groupSetIntersection(*(it.second), groups);
-      // if current node has any producer that was merged
-      if (producer_intersection.size() > 0) {
-        for (auto merged_producer : producer_intersection) {
-          // delete all disappearing producers
-          it.second->erase(merged_producer);
-        }
-        // insert the new group as producer
-        it.second->insert(merged);
-      }
-    }
-  }
-
-  //! Populate all values that is on a path from producer to consumer
-  //!  efficiency can be important here. (TODO)
-  GroupSet valuesBetween(SegmentedGroup* producer, SegmentedGroup* consumer) {
-    GroupSet values_between;
-    auto& all_producers_of_consumer = known_producers_of_.at(consumer);
-    TORCH_INTERNAL_ASSERT(
-        all_producers_of_consumer->count(producer),
-        "Fusion segment: Trying to compute path between two nodes that are not producer-consumer pairs");
-
-    std::copy_if(
-        all_producers_of_consumer->begin(),
-        all_producers_of_consumer->end(),
-        std::inserter(values_between, values_between.end()),
-        [this, producer](SegmentedGroup* consumer_group) {
-          // Checks if producer is on the producer path of this intermediate
-          // node
-          return known_producers_of_.at(consumer_group)->count(producer);
-        });
-
-    return values_between;
-  }
-
-  //! Checks if the segmented fusion this class tracks is still a DAG
-  //!  used for generating assertions after transforms
-  bool isproducerMapDAG() const {
-    for (auto& it : known_producers_of_) {
-      if (it.second->count(it.first)) {
-        return false;
-      }
-    }
-    return true;
-  }
-
- private:
-  //! Collect initial producer info using
-  //!  a work list algorithm through forward traversal
-  //!  a backward DFS would do the same
-  void computeAllProducers() {
-    GroupSet visited;
-    GroupSet to_visit;
-
-    // Collect source nodes, with no producers we are guaranteed
-    //  a source node on a DAG
-    std::copy_if(
-        segmented_fusion_->groups().begin(),
-        segmented_fusion_->groups().end(),
-        std::inserter(visited, visited.end()),
-        [](SegmentedGroup* group) { return group->producer_edges.empty(); });
-
-    // visited now only contain source nodes
-    //  they can go backward to nowhere
-    for (auto group : visited) {
-      addConsumersToWorkList(group, to_visit);
-    }
-
-    while (!to_visit.empty()) {
-      SegmentedGroup* to_update = nullptr;
-      for (auto visiting_group : to_visit) {
-        if (std::all_of(
-                visiting_group->producer_edges.begin(),
-                visiting_group->producer_edges.end(),
-                [&visited](SegmentedEdge* e) {
-                  return visited.count(e->from);
-                })) {
-          // filter multi-edges
-          GroupSet producers_of_visiting_group;
-          for (auto edge : visiting_group->producer_edges) {
-            producers_of_visiting_group.insert(edge->from);
-          }
-
-          // populate all possible paths
-          // from producer backward, including
-          // the producer
-          for (auto producer : producers_of_visiting_group) {
-            getAllKnownProducersSet(visiting_group)->insert(producer);
-            mergeAllKnownProducersIntoFrom(visiting_group, producer);
-          }
-          to_update = visiting_group;
-          break;
-        }
-      }
-      if (to_update) {
-        addConsumersToWorkList(to_update, to_visit);
-        to_visit.erase(to_update);
-        visited.insert(to_update);
-      } else {
-        TORCH_INTERNAL_ASSERT(false, "unreachable, original graph not a DAG");
-      }
-    }
-  }
-
-  //! Add all consumers of `producer` to `to_visit`
-  void addConsumersToWorkList(SegmentedGroup* producer, GroupSet& to_visit) {
-    for (auto e : producer->consumer_edges) {
-      // A consumer wouldn't have been worked before any of its producer
-      to_visit.insert(e->to);
-    }
-  }
-
-  //! Propagate all known producers of `from` into `into`, used to keep track
-  //! of:
-  //!  1. `from` is a producer of `into`
-  //!  2. `from` has been merged with other group to create `into`
-  void mergeAllKnownProducersIntoFrom(
-      SegmentedGroup* into,
-      SegmentedGroup* from) {
-    auto& producer_set_to_merge = *getAllKnownProducersSet(from);
-    for (auto group : producer_set_to_merge) {
-      getAllKnownProducersSet(into)->insert(group);
-    }
-  }
-
-  //! Utility to access known producers of a group so far
-  GroupSetOwningPtr& getAllKnownProducersSet(SegmentedGroup* group) {
-    auto& producer_set_ptr = known_producers_of_[group];
-    if (!producer_set_ptr) {
-      producer_set_ptr = std::make_unique<GroupSet>();
-    }
-    return producer_set_ptr;
-  }
-
-  // utility to compute the set intersection of group sets a,b
-  GroupSet groupSetIntersection(const GroupSet& a, const GroupSet& b) {
-    bool a_is_smaller = a.size() < b.size();
-    const auto& smaller_group_set = a_is_smaller ? a : b;
-    const auto& bigger_group_set = a_is_smaller ? b : a;
-
-    GroupSet intersection;
-    for (auto group : smaller_group_set) {
-      if (bigger_group_set.count(group)) {
-        intersection.insert(group);
-      }
-    }
-    return intersection;
-  }
-
- private:
-  SegmentedFusion* segmented_fusion_;
-  DependencyMap known_producers_of_;
-};
-
 // This function is for cleanup and
 //  easier debugging. It shouldn't affect functionality
 //  since segmented fusions are compiled with fusion
@@ -1219,7 +968,783 @@ void deDuplicateScalarExprs(std::vector<Expr*>& exprs) {
   }
 }
 
+// Helper function to get a reduction operation from group
+ReductionOp* firstReductionFromGroup(SegmentedGroup* group) {
+  for (auto expr : group->exprs()) {
+    if (auto rop = dynamic_cast<ReductionOp*>(expr)) {
+      return rop;
+    }
+  }
+  return nullptr;
+}
+
 } // namespace
+
+// Custom merge node passes:
+//  These passes are added at the beginning or the end of
+//  the node merging process to direct the heuristics of
+//  node merging process
+//
+//  Should consider generalization and make a proper interface
+//   if we have more merge node heuristics like this
+
+//! CombineReductions:
+//!  This pass works before the main merge node process
+//!    It identifies reduction operations that can be combined
+//!    together to form a normalization kernel.
+//!  Two reductions are considered the same type if they have
+//!   the same root domain length, and the reduction axis are the same.
+//!   This pass tries to merge nodes with the same reduction type based
+//!   on the graph structure.
+class CombineReductions {
+  using GroupSet = std::unordered_set<SegmentedGroup*>;
+  using GroupVec = std::vector<SegmentedGroup*>;
+  struct ReductionSignature;
+
+ public:
+  static void run(SegmentCandidateFinder* segment_candidate_finder);
+  static bool shouldRun(SegmentCandidateFinder* segment_candidate_finder);
+
+ private:
+  CombineReductions(SegmentCandidateFinder* segment_candidate_finder)
+      : segment_candidate_finder_(segment_candidate_finder) {
+    // Run pass over the segments
+
+    // Collect segmented groups with reductions in them,
+    //  Assuming running before any merge happened, so
+    //  should see exactly one non-trivial reduction in each group
+    for (auto group : segment_candidate_finder_->groups()) {
+      ReductionOp* rop = nullptr;
+      for (auto expr : group->exprs()) {
+        if (auto rop_in_group = dynamic_cast<ReductionOp*>(expr)) {
+          auto rop_signature =
+              std::make_unique<ReductionSignature>(rop_in_group);
+          // Ignore pure squeeze operations in this analysis
+          if (!rop_signature->has_nontrivial_reduction) {
+            continue;
+          }
+          // We should have only one nontrivial reduction in each group since no
+          // merging
+          //  has happened yet
+          TORCH_INTERNAL_ASSERT(
+              rop == nullptr,
+              "CombineReductions, two reductions found in group some incompatible transform happened before doing this pass");
+          rop = rop_in_group;
+
+          groups_with_reductions_.push_back(group);
+          // Check if this reduction signature is one that we have seen before
+          auto signature_match_it = std::find_if(
+              known_reduction_signatures_.begin(),
+              known_reduction_signatures_.end(),
+              [&rop_signature](auto& know_signature) {
+                return know_signature->sameAs(rop_signature.get());
+              });
+          // Unmatched: Create a new signature entry if not known
+          if (signature_match_it == known_reduction_signatures_.end()) {
+            group_reduction_signature_map_[group] = rop_signature.get();
+            known_reduction_signatures_.emplace_back(std::move(rop_signature));
+          } else {
+            // Matched known signature: Mark that this groups belongs to know
+            // signature
+            group_reduction_signature_map_[group] = signature_match_it->get();
+          }
+        }
+      }
+    }
+
+    // Keep trying to merge groups with compatible reductions and compatible
+    // paths
+    //  until no more merge opportunity can be identified
+    bool merged_groups = true;
+    while (merged_groups) {
+      merged_groups = false;
+
+      // Merge one pair of reduction groups at a time, and need
+      //  the pass to update dependency info along the way to avoid cycles
+      for (size_t first_group_index = 0;
+           first_group_index < groups_with_reductions_.size();
+           first_group_index++) {
+        if (merged_groups) {
+          // Need to break and re-enter this loop because
+          // groups_with_reductions_ will be updated
+          break;
+        }
+
+        // Select one of the group to merge and get its reduction signature
+        auto first_group = groups_with_reductions_[first_group_index];
+        auto first_group_signature =
+            group_reduction_signature_map_.at(first_group);
+
+        for (size_t second_group_index = first_group_index + 1;
+             second_group_index < groups_with_reductions_.size();
+             second_group_index++) {
+          if (merged_groups) {
+            // Need to break and re-enter this loop because
+            // groups_with_reductions_ will be updated
+            break;
+          }
+          auto second_group = groups_with_reductions_[second_group_index];
+          auto second_group_signature =
+              group_reduction_signature_map_.at(second_group);
+
+          // Cannot merge if their signatures are not the same
+          if (!first_group_signature->sameAs(second_group_signature)) {
+            continue;
+          }
+
+          // first try a vertical merge
+          merged_groups =
+              verticalReductionMerge(first_group, second_group) != nullptr;
+          if (!merged_groups) {
+            // vertical merge didn't happen, try a horizontal merge
+            merged_groups =
+                horizontalReductionMerge(first_group, second_group) != nullptr;
+          }
+        }
+      }
+    }
+  }
+
+  //! Merge a vertical pair of producers and consumers,
+  //!  the resulting group will include all nodes that are
+  //!  also consumers of producer and producers of consumer,
+  //!  i.e. values between the given producer-consumer pair.
+  //!  Can be proven that:
+  //!   1. Including all of these nodes will be cycle-free
+  //!   2. These nodes are the minimal set of nodes to include if
+  //!  for producer-consumer pair to be in the same group cycle-free
+  //!
+  //!  Returns nullptr if such merge cannot be achieved.
+  //!  Reasons for not merging will include:
+  //!   1. Given groups do not form producer-consumer pair
+  //!   2. Merge will create cycle on the graph
+  //!   3. The merged joined group cannot be scheduled
+  SegmentedGroup* verticalReductionMerge(
+      SegmentedGroup* first_group,
+      SegmentedGroup* second_group) {
+    // This is part of ReductionCombine pass, and we should only call this
+    // function on a pair of
+    //  reduction/normalization groups
+    TORCH_INTERNAL_ASSERT(
+        group_reduction_signature_map_.at(first_group)
+            ->sameAs(group_reduction_signature_map_.at(second_group)));
+    TORCH_INTERNAL_ASSERT(first_group != second_group);
+    // Get the group dependency data from segment finder
+    auto& dependency_analysis = segment_candidate_finder_->getGroupDependency();
+
+    // Check producer-consumer relationship
+    SegmentedGroup* producer = nullptr;
+    SegmentedGroup* consumer = nullptr;
+    if (dependency_analysis.isConsumerOf(first_group, second_group)) {
+      producer = second_group;
+      consumer = first_group;
+    } else if (dependency_analysis.isProducerOf(first_group, second_group)) {
+      producer = first_group;
+      consumer = second_group;
+    } else {
+      // Given groups aren't producer-consumer pair, won't merge
+      return nullptr;
+    }
+
+    // Collect all groups that we need to merge along with the producer and
+    // consumer
+    auto all_groups_to_merge =
+        getValidMinVerticalMergedGroupSet(producer, consumer);
+
+    if (all_groups_to_merge.empty()) {
+      // The vertical paths from producer to consumer have in-compatible
+      // reductions
+      //   so this vertical merge cannot be done.
+      return nullptr;
+    }
+
+    // TODO: this step would not be deterministic, because valuesBetween isn't
+    //       could fix this by a topological order
+    std::vector<SegmentedGroup*> all_groups_to_merge_vec(
+        all_groups_to_merge.begin(), all_groups_to_merge.end());
+
+    // Final sanity check: the merged group can actually be scheduled
+    Fusion* fusion =
+        &segment_candidate_finder_->segmented_fusion_->completeFusion();
+    if (!tryMerge(fusion, all_groups_to_merge_vec)) {
+      return nullptr;
+    }
+
+    // Merge this group
+    auto joined_group =
+        segment_candidate_finder_->mergeAllGivenGroups(all_groups_to_merge_vec);
+
+    // Update dependency analysis
+    dependency_analysis.mergeGroups(all_groups_to_merge, joined_group);
+
+    // Update the reduction groups that are merged
+    groups_with_reductions_.push_back(joined_group);
+    groups_with_reductions_.erase(
+        std::remove_if(
+            groups_with_reductions_.begin(),
+            groups_with_reductions_.end(),
+            [&all_groups_to_merge](SegmentedGroup* group) {
+              return all_groups_to_merge.count(group);
+            }),
+        groups_with_reductions_.end());
+
+    return joined_group;
+  }
+
+  //! Horizontal reduction merging:
+  //!  merge two horizontal groups with reduction expressions to make a joined
+  //!  normalization group. A pair of horizontal groups are ones that are not
+  //!  a producer-consumer pair, and share either a common producer or a common
+  //!  consumer.
+  //!
+  //!  TODO: This implementation looks at common producers only, since common
+  //!  consumers
+  //!          are not computed easily with current dependency analysis.
+  SegmentedGroup* horizontalReductionMerge(
+      SegmentedGroup* first_group,
+      SegmentedGroup* second_group) {
+    // This is part of ReductionCombine pass, and we should only call this
+    // function on a pair of
+    //  reduction/normalization groups
+    TORCH_INTERNAL_ASSERT(
+        group_reduction_signature_map_.at(first_group)
+            ->sameAs(group_reduction_signature_map_.at(second_group)));
+    TORCH_INTERNAL_ASSERT(first_group != second_group);
+
+    auto& dependency_analysis = segment_candidate_finder_->getGroupDependency();
+
+    // Check that the two groups are not producer-consumer's
+    if (dependency_analysis.isConsumerOf(first_group, second_group) ||
+        dependency_analysis.isProducerOf(first_group, second_group)) {
+      // This merge pass will not handle producer-consumer pairs
+      return nullptr;
+    }
+
+    // Get common producers of the two group
+    auto common_producers_set =
+        dependency_analysis.getCommonProducersOf({first_group, second_group});
+    if (common_producers_set.empty()) {
+      // The given pair doesn't have a common producer.
+      //  Either they have a common consumer, which we don't handle for now,
+      //  or maybe the two given groups are not connected.
+      return nullptr;
+    }
+
+    // We are looking for a very specific patterns here. The cases that this
+    // pattern
+    //  will not capture are ones that reductions of different signatures are so
+    //  interleaved that we cannot find a clear cut as explained below, without
+    //  graph rewriting. Some graph re-writing on the segmented groups level
+    //  could provide extra merging opportunities for free, which could be part
+    //  of next step.
+    //
+    // The specific pattern we look for contains a common producer P with
+    // immediate consumers
+    //  C1, C2 such that all paths from C1 to first_group and all paths from C2
+    //  to second_group won't hit a reduction with a different signature.
+
+    // Topologically sort the common producers and start with the topologically
+    // minimal,
+    //  i.e. one that are closest to the two groups. This will cut the search
+    //  space.
+    std::vector<SegmentedGroup*> common_producers(
+        common_producers_set.begin(), common_producers_set.end());
+    std::sort(
+        common_producers.begin(),
+        common_producers.begin(),
+        [&dependency_analysis](SegmentedGroup* a, SegmentedGroup* b) {
+          return dependency_analysis.isConsumerOf(a, b);
+        });
+
+    // Use a visited filter to prune search space.
+    GroupSet visited_common_producers;
+
+    // Visit the common producers found, starting from topologically minimum,
+    // i.e. the ones closer to the groups
+    for (auto common_producer : common_producers) {
+      // Visit this common producer
+      // Use a double loop in case the schedulers like some patterns
+      //  better than the other
+      for (auto first_consumer_edge : common_producer->consumer_edges) {
+        auto producer_of_first_group = first_consumer_edge->to;
+        if (visited_common_producers.count(producer_of_first_group)) {
+          // We have visited this node as common producer before and it
+          //  had conflicts. It'd hit the same conflict again if we continued
+          //  to pursue this edge.
+          continue;
+        }
+        auto to_merge_with_first_group = getValidMinVerticalMergedGroupSet(
+            producer_of_first_group, first_group);
+        if (to_merge_with_first_group.empty()) {
+          // There's no valid merge path from this consumer of common producer,
+          //  either due to a conflicting reduction signature, or simply there's
+          //  no path to first group
+          continue;
+        }
+        for (auto second_consumer_edge : common_producer->consumer_edges) {
+          auto producer_of_second_group = second_consumer_edge->to;
+          if (visited_common_producers.count(producer_of_second_group)) {
+            // We have visited this node as common producer before and it
+            //  had conflicts. It'd hit the same conflict again if we continued
+            //  to pursue this edge.
+            continue;
+          }
+          auto to_merge_with_second_group = getValidMinVerticalMergedGroupSet(
+              producer_of_second_group, second_group);
+          if (to_merge_with_second_group.empty()) {
+            // There's no valid merge path from this consumer of common
+            // producer,
+            //  either due to a conflicting reduction signature, or simply
+            //  there's no path to second group
+            continue;
+          }
+
+          // At this point we should have a pair of valid candidates,final check
+          // is to see if the combined group
+          //  can be scheduled by schedulers
+          // merge the two paths and de-duplicate,
+          //  re-using container here with to_merge_with_second_group
+          auto& groups_to_merge_set = to_merge_with_second_group;
+          groups_to_merge_set.insert(
+              to_merge_with_first_group.begin(),
+              to_merge_with_first_group.end());
+          std::vector<SegmentedGroup*> groups_to_merge_vec(
+              groups_to_merge_set.begin(), groups_to_merge_set.end());
+          Fusion* fusion =
+              &segment_candidate_finder_->segmented_fusion_->completeFusion();
+          if (tryMerge(fusion, groups_to_merge_vec)) {
+            // Found a valid horizontal merge, want to proceed with merging here
+            auto joined_group = segment_candidate_finder_->mergeAllGivenGroups(
+                groups_to_merge_vec);
+            dependency_analysis.mergeGroups(groups_to_merge_set, joined_group);
+
+            groups_with_reductions_.push_back(joined_group);
+            groups_with_reductions_.erase(
+                std::remove_if(
+                    groups_with_reductions_.begin(),
+                    groups_with_reductions_.end(),
+                    [&groups_to_merge_set](SegmentedGroup* group) {
+                      return groups_to_merge_set.count(group);
+                    }),
+                groups_with_reductions_.end());
+
+            return joined_group;
+          }
+        }
+      }
+      // Here we should have searched all consumer edges of this common producer
+      // and
+      //  found no valid pattern. Should just add it to the visted list.
+      visited_common_producers.insert(common_producer);
+    }
+
+    // Searched all possibilities and there is no valid horizontal merge pattern
+    //  found.
+    return nullptr;
+  }
+
+  GroupSet getValidMinVerticalMergedGroupSet(
+      SegmentedGroup* maybe_producer,
+      SegmentedGroup* maybe_consumer) {
+    auto& dependency_analysis = segment_candidate_finder_->getGroupDependency();
+    if (maybe_consumer == maybe_producer) {
+      // maybe producer is the same as maybe_consumer
+      return {maybe_consumer};
+    } else if (dependency_analysis.isConsumerOf(
+                   maybe_consumer, maybe_producer)) {
+      auto groups_to_check =
+          dependency_analysis.valuesBetween(maybe_consumer, maybe_producer);
+      groups_to_check.insert(maybe_producer);
+      groups_to_check.insert(maybe_consumer);
+
+      // Check that either no group has a reduction or all groups have the same
+      // reduction signature
+      ReductionSignature* reduction_signature = nullptr;
+      for (auto group : groups_to_check) {
+        if (group_reduction_signature_map_.count(group)) {
+          if (reduction_signature != nullptr) {
+            if (!group_reduction_signature_map_.at(group)->sameAs(
+                    reduction_signature)) {
+              // Found a conflict in reduction signature, cannot do a vertical
+              // merge
+              return {};
+            }
+          } else {
+            reduction_signature = group_reduction_signature_map_.at(group);
+          }
+        }
+      }
+      return groups_to_check;
+    }
+    // maybe producer is not a producer of maybe consumer
+    return {};
+  }
+
+ private:
+  SegmentCandidateFinder* segment_candidate_finder_;
+
+  // Wrapper class for reduction type
+  //  Assuming there wouldn't be too many of them
+  //  so won't need to create a hash
+  struct ReductionSignature {
+    size_t root_domain_size = 0;
+    std::vector<int> reduction_axes;
+    bool has_nontrivial_reduction = false;
+
+    ReductionSignature(ReductionOp* rop) {
+      auto out_tv = dynamic_cast<TensorView*>(rop->out());
+      TORCH_INTERNAL_ASSERT(out_tv != nullptr);
+      auto& root_domain = out_tv->getRootDomain();
+      root_domain_size = root_domain.size();
+
+      // Trivial reduction i.e. squeeze is tricky here:
+      //  this pass doesn't want to touch any pure squeeze, i.e.:
+      //    T0 [R(1), I(i0), I(i1)]
+      //  meanwhile, for two reductions having
+      //  squeezes, we do require they have squeeze at the
+      //  same position so that they can be easily root domain mapped
+      //  So T0 and T1 are the same signature,
+      //    T0 [R(1), R(i0), I(i1)]
+      //    T1 [R(1), R(i0), I(i1)]
+      //  but T2 and T3 below are not
+      //    T0 [R(1), R(1), R(i0), I(i1)]
+      //    T1 [R(1), R(i0), I(i1)]
+      for (size_t i = 0; i < root_domain_size; i++) {
+        if (root_domain[i]->isReduction()) {
+          reduction_axes.push_back(i);
+        }
+        if (!root_domain[i]->isTrivialReduction()) {
+          has_nontrivial_reduction = true;
+        }
+      }
+    }
+
+    bool sameAs(const ReductionSignature* reduction_signature) {
+      if (reduction_signature == this) {
+        return true;
+      }
+
+      if (root_domain_size != reduction_signature->root_domain_size ||
+          has_nontrivial_reduction !=
+              reduction_signature->has_nontrivial_reduction ||
+          reduction_axes.size() != reduction_signature->reduction_axes.size()) {
+        return false;
+      }
+
+      for (size_t i = 0; i < reduction_axes.size(); i++) {
+        if (reduction_axes[i] != reduction_signature->reduction_axes[i]) {
+          return false;
+        }
+      }
+
+      return true;
+    }
+
+    bool sameAs(const ReductionSignature& reduction_signature) {
+      return sameAs(&reduction_signature);
+    }
+  };
+
+  //! Keep track of groups that have nontrivial reduction ops
+
+  //! Keeps track of groups with reduction expressions,
+  //!  using a vector here to maintain a deterministic ordering
+  GroupVec groups_with_reductions_;
+
+  //! Maps groups to their corresponding signature type
+  std::unordered_map<SegmentedGroup*, ReductionSignature*>
+      group_reduction_signature_map_;
+
+  //! Maintains all reduction signatures seen in the segmented fusion
+  std::vector<std::unique_ptr<ReductionSignature>> known_reduction_signatures_;
+};
+
+//! This is to be checked
+bool CombineReductions::shouldRun(
+    SegmentCandidateFinder* segment_candidate_finder) {
+  std::vector<std::unique_ptr<ReductionSignature>> known_reductions;
+  // Iterate over group segments we have before segment candidate finder
+  //  tries to merge any groups
+  for (auto group : segment_candidate_finder->groups()) {
+    if (auto rop = firstReductionFromGroup(group)) {
+      auto reduction_signature = std::make_unique<ReductionSignature>(rop);
+      if (reduction_signature->has_nontrivial_reduction &&
+          std::any_of(
+              known_reductions.begin(),
+              known_reductions.end(),
+              [&reduction_signature](auto& know_signature) {
+                return know_signature->sameAs(reduction_signature.get());
+              })) {
+        // Found two reductions with the same signature, run pass
+        return true;
+      }
+      known_reductions.emplace_back(std::move(reduction_signature));
+    }
+  }
+  return false;
+}
+
+bool GroupDependencyAnalysis::isConsumerOfAny(
+    SegmentedGroup* group,
+    const std::vector<SegmentedGroup*>& groups_to_check) {
+  auto& producers_of_group = getAllKnownProducersSet(group);
+  for (const auto& potential_producer : groups_to_check) {
+    if (producers_of_group->count(potential_producer)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+//! Finds the common producers of given set of groups
+GroupDependencyAnalysis::GroupSet GroupDependencyAnalysis::getCommonProducersOf(
+    std::vector<SegmentedGroup*> groups) {
+  if (groups.empty()) {
+    return {};
+  }
+
+  // Optimization: start with the smallest producer set
+  std::sort(
+      groups.begin(),
+      groups.end(),
+      [this](SegmentedGroup* a, SegmentedGroup* b) {
+        return known_producers_of_.at(a)->size() <
+            known_producers_of_.at(b)->size();
+      });
+
+  // Get intersection of producers
+  GroupSet common_producers = *(known_producers_of_.at(groups[0]));
+  for (size_t i = 1; i < groups.size(); i++) {
+    common_producers = groupSetIntersection(
+        common_producers, *(known_producers_of_.at(groups[i])));
+  }
+
+  return common_producers;
+}
+
+//! Update the map when the given two groups have been merged to create `ab`
+//! this method is for book keeping and query only, doesn't implicitly check
+//!  for DAG
+void GroupDependencyAnalysis::mergeGroups(
+    SegmentedGroup* a,
+    SegmentedGroup* b,
+    SegmentedGroup* ab) {
+  // Access/Create the producer set of ab
+  auto& ab_set = getAllKnownProducersSet(ab);
+
+  // propagate a's and b's known producers into ab
+  mergeAllKnownProducersIntoFrom(ab, a);
+  mergeAllKnownProducersIntoFrom(ab, b);
+
+  // a, b are now merged, so no longer exist
+  ab_set->erase(a);
+  ab_set->erase(b);
+
+  // a, b no longer exist, remove their producer sets
+  known_producers_of_.erase(a);
+  known_producers_of_.erase(b);
+
+  // update producer maps of other groups
+  for (auto& it : known_producers_of_) {
+    // for all groups that are produced by either a or b
+    if (it.second->count(a) || it.second->count(b)) {
+      // insert ab as the new producer
+      it.second->insert(ab);
+      // all producers of both a and b are now producers of `it`
+      mergeAllKnownProducersIntoFrom(it.first, ab);
+    }
+    // a, b no longer exist, remove them from `it`
+    it.second->erase(a);
+    it.second->erase(b);
+  }
+}
+
+//! Update the map when the given two groups have been merged to create
+//! `merged` this method is for book keeping and query only, doesn't
+//! implicitly check
+//!  for DAG
+void GroupDependencyAnalysis::mergeGroups(
+    const GroupSet& groups,
+    SegmentedGroup* merged) {
+  // Access/Create the producer set of merged
+  auto& merged_set = getAllKnownProducersSet(merged);
+
+  // Populate all producers of groups and
+  //  write into producer map of merged
+  std::for_each(
+      groups.begin(), groups.end(), [this, merged](SegmentedGroup* group) {
+        mergeAllKnownProducersIntoFrom(merged, group);
+      });
+
+  // Erase all groups that was merged from producer map
+  std::for_each(
+      groups.begin(), groups.end(), [this, &merged_set](SegmentedGroup* group) {
+        // erase inter dependencies
+        merged_set->erase(group);
+        // erase producer map tracking merged entires
+        known_producers_of_.erase(group);
+      });
+
+  // Update producer relationships with other groups in producer map
+  for (auto& it : known_producers_of_) {
+    auto producer_intersection = groupSetIntersection(*(it.second), groups);
+    // if current node has any producer that was merged
+    if (producer_intersection.size() > 0) {
+      for (auto merged_producer : producer_intersection) {
+        // delete all disappearing producers
+        it.second->erase(merged_producer);
+      }
+      // insert the new group as producer
+      it.second->insert(merged);
+    }
+  }
+}
+
+//! Populate all values that is on a path from producer to consumer
+//!  efficiency can be important here. (TODO)
+GroupDependencyAnalysis::GroupSet GroupDependencyAnalysis::valuesBetween(
+    SegmentedGroup* producer,
+    SegmentedGroup* consumer) {
+  if (producer == consumer) {
+    return {};
+  }
+
+  GroupSet values_between;
+  auto& all_producers_of_consumer = known_producers_of_.at(consumer);
+  TORCH_INTERNAL_ASSERT(
+      all_producers_of_consumer->count(producer),
+      "Fusion segment: Trying to compute path between two nodes that are not producer-consumer pairs");
+
+  std::copy_if(
+      all_producers_of_consumer->begin(),
+      all_producers_of_consumer->end(),
+      std::inserter(values_between, values_between.end()),
+      [this, producer](SegmentedGroup* consumer_group) {
+        // Checks if producer is on the producer path of this intermediate
+        // node
+        return known_producers_of_.at(consumer_group)->count(producer);
+      });
+
+  return values_between;
+}
+
+//! Checks if the segmented fusion this class tracks is still a DAG
+//!  used for generating assertions after transforms
+bool GroupDependencyAnalysis::isproducerMapDAG() const {
+  for (auto& it : known_producers_of_) {
+    if (it.second->count(it.first)) {
+      return false;
+    }
+  }
+  return true;
+}
+
+//! Collect initial producer info using
+//!  a work list algorithm through forward traversal
+//!  a backward DFS would do the same
+void GroupDependencyAnalysis::computeAllProducers() {
+  GroupSet visited;
+  GroupSet to_visit;
+
+  // Collect source nodes, with no producers we are guaranteed
+  //  a source node on a DAG
+  std::copy_if(
+      segmented_fusion_->groups().begin(),
+      segmented_fusion_->groups().end(),
+      std::inserter(visited, visited.end()),
+      [](SegmentedGroup* group) { return group->producer_edges.empty(); });
+
+  // visited now only contain source nodes
+  //  they can go backward to nowhere
+  for (auto group : visited) {
+    addConsumersToWorkList(group, to_visit);
+  }
+
+  while (!to_visit.empty()) {
+    SegmentedGroup* to_update = nullptr;
+    for (auto visiting_group : to_visit) {
+      if (std::all_of(
+              visiting_group->producer_edges.begin(),
+              visiting_group->producer_edges.end(),
+              [&visited](SegmentedEdge* e) {
+                return visited.count(e->from);
+              })) {
+        // filter multi-edges
+        GroupSet producers_of_visiting_group;
+        for (auto edge : visiting_group->producer_edges) {
+          producers_of_visiting_group.insert(edge->from);
+        }
+
+        // populate all possible paths
+        // from producer backward, including
+        // the producer
+        for (auto producer : producers_of_visiting_group) {
+          getAllKnownProducersSet(visiting_group)->insert(producer);
+          mergeAllKnownProducersIntoFrom(visiting_group, producer);
+        }
+        to_update = visiting_group;
+        break;
+      }
+    }
+    if (to_update) {
+      addConsumersToWorkList(to_update, to_visit);
+      to_visit.erase(to_update);
+      visited.insert(to_update);
+    } else {
+      TORCH_INTERNAL_ASSERT(false, "unreachable, original graph not a DAG");
+    }
+  }
+}
+
+//! Add all consumers of `producer` to `to_visit`
+void GroupDependencyAnalysis::addConsumersToWorkList(
+    SegmentedGroup* producer,
+    GroupSet& to_visit) {
+  for (auto e : producer->consumer_edges) {
+    // A consumer wouldn't have been worked before any of its producer
+    to_visit.insert(e->to);
+  }
+}
+
+//! Propagate all known producers of `from` into `into`, used to keep track
+//! of:
+//!  1. `from` is a producer of `into`
+//!  2. `from` has been merged with other group to create `into`
+void GroupDependencyAnalysis::mergeAllKnownProducersIntoFrom(
+    SegmentedGroup* into,
+    SegmentedGroup* from) {
+  auto& producer_set_to_merge = *getAllKnownProducersSet(from);
+  for (auto group : producer_set_to_merge) {
+    getAllKnownProducersSet(into)->insert(group);
+  }
+}
+
+//! Utility to access known producers of a group so far
+GroupDependencyAnalysis::GroupSetOwningPtr& GroupDependencyAnalysis::
+    getAllKnownProducersSet(SegmentedGroup* group) {
+  auto& producer_set_ptr = known_producers_of_[group];
+  if (!producer_set_ptr) {
+    producer_set_ptr = std::make_unique<GroupSet>();
+  }
+  return producer_set_ptr;
+}
+
+// utility to compute the set intersection of group sets a,b
+GroupDependencyAnalysis::GroupSet GroupDependencyAnalysis::groupSetIntersection(
+    const GroupSet& a,
+    const GroupSet& b) {
+  bool a_is_smaller = a.size() < b.size();
+  const auto& smaller_group_set = a_is_smaller ? a : b;
+  const auto& bigger_group_set = a_is_smaller ? b : a;
+
+  GroupSet intersection;
+  for (auto group : smaller_group_set) {
+    if (bigger_group_set.count(group)) {
+      intersection.insert(group);
+    }
+  }
+  return intersection;
+}
 
 bool SegmentCandidateFinder::codeGenSupportedMerge(SegmentedEdge* edge) {
   Fusion* fusion = &segmented_fusion_->completeFusion();
@@ -1356,7 +1881,7 @@ void SegmentCandidateFinder::findSegments() {
 }
 
 void SegmentCandidateFinder::finalMerge() {
-  AllProducerGroups producer_check(segmented_fusion_.get());
+  auto& producer_check = getGroupDependency();
 
   bool merged_nodes = true;
   while (merged_nodes) {
@@ -1493,6 +2018,14 @@ void SegmentCandidateFinder::finalize() {
   }
 
   segmented_fusion_->finalize();
+}
+
+GroupDependencyAnalysis& SegmentCandidateFinder::getGroupDependency() {
+  if (!group_dependency_) {
+    group_dependency_ =
+        std::make_unique<GroupDependencyAnalysis>(segmented_fusion_.get());
+  }
+  return *group_dependency_;
 }
 
 namespace {
