@@ -3,6 +3,7 @@
 #include <torch/csrc/jit/codegen/cuda/instrumentation.h>
 #include <torch/csrc/jit/codegen/cuda/ir_all_nodes.h>
 #include <torch/csrc/jit/codegen/cuda/ir_cloner.h>
+#include <torch/csrc/jit/codegen/cuda/ir_graphviz.h>
 #include <torch/csrc/jit/codegen/cuda/ir_iostream.h>
 
 #include <sstream>
@@ -218,7 +219,9 @@ std::string toString(const SegmentedEdge* edge) {
 }
 
 SegmentedFusion::SegmentedFusion(const Fusion* fusion)
-    : fusion_(*fusion), impl_(this) {}
+    : fusion_(*fusion), impl_(this) {
+  segmented_fusion_name_ = segmentedFusionName();
+}
 
 SegmentedGroup* SegmentedFusion::Impl::makeGroup() {
   groups_.emplace_back(std::make_unique<SegmentedGroup>());
@@ -285,6 +288,30 @@ void SegmentedFusion::finalize() {
   for (auto g : groups_) {
     g->finalize();
   }
+}
+
+void SegmentedFusion::draw() {
+  size_t group_index = 0;
+  std::unordered_map<const Expr*, size_t> expr_color_map;
+
+  for (auto group : groups()) {
+    for (auto expr : group->exprs()) {
+      if (ir_utils::isTVOp(expr)) {
+        expr_color_map[expr] = group_index;
+      }
+    }
+    group_index++;
+  }
+
+  std::stringstream sstream;
+  sstream << "segmented_fusion" << segmented_fusion_name_ << ".dot";
+  auto filename = sstream.str();
+
+  IrGraphGenerator::print(
+      &fusion_,
+      filename.c_str(),
+      IrGraphGenerator::DetailLevel::ComputeOnly,
+      &expr_color_map);
 }
 
 namespace {
@@ -1809,6 +1836,9 @@ SegmentCandidateFinder::SegmentCandidateFinder(
     : options_(options) {
   segmented_fusion_ = std::make_unique<SegmentedFusion>(fusion);
   findSegments();
+  if (isDebugDumpEnabled(DebugDumpOption::FusionSegmentsDrawing)) {
+    segmented_fusion_->draw();
+  }
 }
 
 void SegmentCandidateFinder::findSegments() {

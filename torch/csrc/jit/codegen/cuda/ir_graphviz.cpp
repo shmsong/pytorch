@@ -98,28 +98,64 @@ class IrNodeLabel : private OptInConstDispatch {
   const DetailLevel detail_level_;
 };
 
+// Small color palette from the X11 theme
+static const char* getColorFromIndex(size_t index) {
+  const size_t number_of_colors = 10;
+  index = index % number_of_colors;
+  switch (index) {
+    case 0:
+      return "azure";
+    case 1:
+      return "pink";
+    case 2:
+      return "green";
+    case 3:
+      return "grey";
+    case 4:
+      return "yellow";
+    case 5:
+      return "lavender";
+    case 6:
+      return "cyan";
+    case 7:
+      return "white";
+    case 8:
+      return "magenta";
+    case 9:
+      return "red";
+    default:
+      break;
+  }
+  return "";
+}
+
 } // anonymous namespace
 
 void IrGraphGenerator::print(
     const Fusion* fusion,
     const char* filename,
-    DetailLevel detail_level) {
+    DetailLevel detail_level,
+    ExprColorMap* expr_color_map) {
   std::ofstream dot_file(filename);
   TORCH_CHECK(dot_file.good(), "Failed to open the IR graph file");
-  dot_file << toGraphviz(fusion, detail_level);
+  dot_file << toGraphviz(fusion, detail_level, expr_color_map);
 }
 
 std::string IrGraphGenerator::toGraphviz(
     const Fusion* fusion,
-    DetailLevel detail_level) {
-  IrGraphGenerator ir_graph(fusion, detail_level);
+    DetailLevel detail_level,
+    ExprColorMap* expr_color_map) {
+  IrGraphGenerator ir_graph(fusion, detail_level, expr_color_map);
   return ir_graph.generate();
 }
 
 IrGraphGenerator::IrGraphGenerator(
     const Fusion* fusion,
-    DetailLevel detail_level)
-    : detail_level_(detail_level), fusion_(fusion) {
+    DetailLevel detail_level,
+    ExprColorMap* expr_color_map)
+    : detail_level_(detail_level),
+      fusion_(fusion),
+      expr_color_map_(expr_color_map) {
   // setup inputs & outputs
   // (indexes used to quickly check if a value is fusion input or output)
   for (const auto* input : fusion->inputs()) {
@@ -162,7 +198,13 @@ void IrGraphGenerator::addArc(
 void IrGraphGenerator::printExpr(const Expr* expr, const std::string& label) {
   graph_def_ << "    " << getid(expr) << " "
              << "[label=\"" << label << "\", shape=oval, color=blue, "
-             << "style=filled, fillcolor=azure];\n";
+             << "style=filled, fillcolor=";
+  if (expr_color_map_ != nullptr && expr_color_map_->count(expr)) {
+    graph_def_ << getColorFromIndex(expr_color_map_->at(expr));
+  } else {
+    graph_def_ << "azure";
+  }
+  graph_def_ << "];\n";
 }
 
 void IrGraphGenerator::printValue(const Val* val, const std::string& label) {

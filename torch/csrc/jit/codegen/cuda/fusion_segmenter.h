@@ -242,6 +242,9 @@ class TORCH_CUDA_CU_API SegmentedFusion {
   //! Inline Debug print for segmented fusion
   std::string toString(int verbosity) const;
 
+  //! Debug drawing for graphviz
+  void draw();
+
   //! Debug print for segmented fusions
   void print() const;
 
@@ -255,8 +258,11 @@ class TORCH_CUDA_CU_API SegmentedFusion {
   SegmentedEdge* newEdge(SegmentedGroup* from, SegmentedGroup* to, Val* val);
 
  protected:
-  //! original full fusion
+  //! Original full fusion
   Fusion fusion_;
+
+  //! Unique name for segmented fusion
+  int segmented_fusion_name_;
 
   //! States representing segmentation
   std::vector<SegmentedEdge*> edges_;
@@ -291,6 +297,12 @@ class TORCH_CUDA_CU_API SegmentedFusion {
   //! Cleanup function to be call at the end of fusion
   //!  segment pass
   void finalize();
+
+  //! Utility to give unique name for each segmented fusion
+  static size_t segmentedFusionName() {
+    static size_t counter = 0;
+    return counter++;
+  }
 };
 
 //! An utility class to compute and maintain the "producers of"
