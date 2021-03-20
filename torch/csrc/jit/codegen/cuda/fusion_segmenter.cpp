@@ -834,7 +834,8 @@ SegmentedGroup* SegmentCandidateFinder::mergeAllGivenGroups(
 
   // Sets to de-duplicate multiple uses of
   //  input/edge values and re-computations of exprs
-  std::unordered_set<Val*> used_vals_set;
+  std::unordered_set<Val*> used_edge_vals_set;
+  std::unordered_set<Val*> used_input_vals_set;
   std::unordered_set<Expr*> exprs_set;
 
   // Create new group
@@ -843,26 +844,31 @@ SegmentedGroup* SegmentCandidateFinder::mergeAllGivenGroups(
   // Populate edges, exprs, global vals
   //  from each of the groups
   for (auto group : groups_to_merge) {
+    // Populate complete fusion inputs to the group
+    for (auto input_val : group->input_vals) {
+      if (!used_input_vals_set.count(input_val)) {
+        used_input_vals_set.insert(input_val);
+        joined_group->input_vals.push_back(input_val);
+      }
+    }
+
+    // Populate complete fusion outputs from the group
+    for (auto output_val : group->output_vals) {
+      joined_group->output_vals.push_back(output_val);
+    }
+
     // Populate producer edges to the group
     for (auto edge : group->producer_edges) {
       if (
           // Check this is not internal edge
           !group_set.count(edge->from) &&
           // Check this val has been added or not
-          !used_vals_set.count(edge->val)) {
-        used_vals_set.insert(edge->val);
+          !used_edge_vals_set.count(edge->val)) {
+        used_edge_vals_set.insert(edge->val);
         auto new_producer_edge =
             segmented_fusion_->newEdge(edge->from, joined_group, edge->val);
         joined_group->producer_edges.push_back(new_producer_edge);
         edge->from->consumer_edges.push_back(new_producer_edge);
-      }
-    }
-
-    // Populate complete fusion inputs to the group
-    for (auto input_val : group->input_vals) {
-      if (!used_vals_set.count(input_val)) {
-        used_vals_set.insert(input_val);
-        joined_group->input_vals.push_back(input_val);
       }
     }
 
@@ -876,11 +882,6 @@ SegmentedGroup* SegmentCandidateFinder::mergeAllGivenGroups(
         joined_group->consumer_edges.push_back(new_consumer_edge);
         edge->to->producer_edges.push_back(new_consumer_edge);
       }
-    }
-
-    // Populate complete fusion outputs from the group
-    for (auto output_val : group->output_vals) {
-      joined_group->output_vals.push_back(output_val);
     }
 
     // Populate exprs
@@ -1322,7 +1323,7 @@ class CombineReductions {
         common_producers_set.begin(), common_producers_set.end());
     std::sort(
         common_producers.begin(),
-        common_producers.begin(),
+        common_producers.end(),
         [&dependency_analysis](SegmentedGroup* a, SegmentedGroup* b) {
           return dependency_analysis.isConsumerOf(a, b);
         });
