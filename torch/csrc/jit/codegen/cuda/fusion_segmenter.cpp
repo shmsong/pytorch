@@ -772,6 +772,11 @@ SegmentedGroup* SegmentCandidateFinder::mergeNodes() {
     }
 
     joined_group->setHeuristic(deriveHeuristic(joined_group));
+    // Need to maintain the group dependency data if it has been intialized
+    //  by previous merging
+    if (group_dependency_) {
+      group_dependency_->mergeGroups(group1, group2, joined_group);
+    }
     last_merged = joined_group;
   }
 
@@ -2035,10 +2040,7 @@ void SegmentCandidateFinder::finalMerge() {
     } else {
       TORCH_INTERNAL_ASSERT(
           to_merge_.size() == 2, "merging more than 2 nodes in final iter");
-      auto merged_a = *to_merge_.begin();
-      auto merged_b = merged_a->merge_with_;
-      auto merged_ab = mergeNodes();
-      producer_check.mergeGroups(merged_a, merged_b, merged_ab);
+      mergeNodes();
     }
   }
 }
