@@ -53,11 +53,11 @@ if [ -x "$(command -v ninja)" ]; then
   CMAKE_ARGS+=("-GNinja")
 fi
 
-export TORCH_CUDA_ARCH_LIST='5.3;6.2;7.2'
+export TORCH_CUDA_ARCH_LIST='7.2'
 export USE_CUDA=1
 export CUDA_HOME=/usr/local/cuda-10.2/targets/aarch64-linux
 export CUDA_PATH=/usr/local/cuda-10.2/targets/aarch64-linux
-export CUDA_LIB_PATH=/usr/local/cuda-10.2/targets/aarch64-linux/lib/stubs
+export CUDA_LIB_PATH=/usr/local/cuda-10.2/targets/aarch64-linux/lib
 export CUDA_NVCC_EXECUTABLE=/usr/local/cuda-10.2/bin/nvcc 
 
 ARM_CUDA_STUBS=/usr/local/cuda-10.2/targets/aarch64-linux/lib/stubs
@@ -79,7 +79,8 @@ CMAKE_ARGS+=("-DUSE_PYTORCH_QNNPACK=OFF")
 CMAKE_ARGS+=("-Wno-dev")
 CMAKE_ARGS+=($@)
 
-BUILD_ROOT=${BUILD_ROOT:-"$CAFFE2_ROOT/build_arm"}
+BUILD_ROOT=${BUILD_ROOT:-"$CAFFE2_ROOT/build"}
+
 INSTALL_PREFIX=${BUILD_ROOT}/install
 mkdir -p $BUILD_ROOT
 cd $BUILD_ROOT
@@ -91,14 +92,5 @@ cmake "$CAFFE2_ROOT" \
     -DCMAKE_BUILD_TYPE=Release \
     "${CMAKE_ARGS[@]}"
 
-# # Cross-platform parallel build
-# if [ -z "$MAX_JOBS" ]; then
-#   if [ "$(uname)" == 'Darwin' ]; then
-#     MAX_JOBS=$(sysctl -n hw.ncpu)
-#   else
-#     MAX_JOBS=$(nproc)
-#   fi
-# fi
+cmake --build . --target install -- "-j${MAX_JOBS}"
 
-# cmake --build . --target install -- "-j${MAX_JOBS}"
-# echo "Installation completed, now you can copy the headers/libs from $INSTALL_PREFIX to your Android project directory."

@@ -168,7 +168,7 @@
 #      When turned on, the following cmake variables will be toggled as well:
 #        USE_SYSTEM_CPUINFO=ON USE_SYSTEM_SLEEF=ON BUILD_CUSTOM_PROTOBUF=OFF
 
-# This future is needed to print Python2 EOL message
+# This future is needed to print Python2 EOL message        
 from __future__ import print_function
 import sys
 if sys.version_info < (3,):
@@ -208,6 +208,9 @@ from tools.setup_helpers.env import (IS_WINDOWS, IS_DARWIN, IS_LINUX,
                                      check_env_flag, build_type)
 from tools.setup_helpers.cmake import CMake
 from tools.generate_torch_version import get_torch_version
+
+os.environ['CC']="/usr/bin/aarch64-linux-gnu-gcc"
+os.environ['LDSHARED']="/usr/bin/aarch64-linux-gnu-gcc -shared"
 
 ################################################################################
 # Parameters parsed from environment
@@ -408,7 +411,7 @@ class build_ext(setuptools.command.build_ext.build_ext):
             break
 
     def run(self):
-        # Report build options. This is run after the build completes so # `CMakeCache.txt` exists and we can get an
+        # # Report build options. This is run after the build completes so # `CMakeCache.txt` exists and we can get an
         # accurate report on what is used and what is not.
         cmake_cache_vars = defaultdict(lambda: False, cmake.get_cmake_cache_variables())
         if cmake_cache_vars['USE_NUMPY']:
@@ -421,6 +424,7 @@ class build_ext(setuptools.command.build_ext.build_ext):
         else:
             report('-- Not using cuDNN')
         if cmake_cache_vars['USE_CUDA']:
+            return
             report('-- Detected CUDA at ' + cmake_cache_vars['CUDA_TOOLKIT_ROOT_DIR'])
         else:
             report('-- Not using CUDA')
@@ -684,7 +688,7 @@ def configure_extension_build():
             extra_compile_args.append('-Werror')
 
     library_dirs.append(lib_path)
-
+    
     main_compile_args = []
     main_libraries = ['torch_python']
     main_link_args = []
@@ -713,7 +717,7 @@ def configure_extension_build():
             extra_compile_args += ['-g']
             extra_link_args += ['-g']
 
-
+    
     def make_relative_rpath_args(path):
         if IS_DARWIN:
             return ['-Wl,-rpath,@loader_path/' + path]
