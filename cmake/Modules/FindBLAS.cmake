@@ -272,7 +272,13 @@ if((NOT BLAS_LIBRARIES)
 endif()
 
 # Determine if blas was compiled with the f2c conventions
-IF (BLAS_LIBRARIES)
+IF (BLAS_LIBRARIES AND CMAKE_CROSSCOMPILING)
+# Not sure if there's a way to check there when cross compiling
+SET(BLAS_F2C FALSE)
+SET(BLAS_USE_CBLAS_DOT FALSE)
+ENDIF()
+
+IF (BLAS_LIBRARIES AND NOT CMAKE_CROSSCOMPILING)
   SET(CMAKE_REQUIRED_LIBRARIES ${BLAS_LIBRARIES})
   CHECK_C_SOURCE_RUNS("
 #include <stdlib.h>

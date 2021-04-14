@@ -588,6 +588,14 @@ if(NOT IOS AND CMAKE_SYSTEM_NAME STREQUAL "Darwin" AND CMAKE_OSX_ARCHITECTURES M
   set(CAFFE2_CUSTOM_PROTOC_EXECUTABLE "${PROJECT_SOURCE_DIR}/build_host_protoc/bin/protoc")
 endif()
 
+if(CMAKE_CROSSCOMPILING)
+    if(NOT TARGET protobuf::protoc)
+      add_executable(protobuf::protoc IMPORTED)
+    endif()
+    set_property(TARGET protobuf::protoc PROPERTY
+        IMPORTED_LOCATION ${PROTOBUF_PROTOC_EXECUTABLE})
+endif()
+
 # ---[ Misc checks to cope with various compiler modes
 include(cmake/MiscCheck.cmake)
 
