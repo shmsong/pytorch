@@ -211,6 +211,7 @@ from tools.generate_torch_version import get_torch_version
 
 os.environ['CC']="/usr/bin/aarch64-linux-gnu-gcc"
 os.environ['LDSHARED']="/usr/bin/aarch64-linux-gnu-gcc -shared"
+os.environ["_PYTHON_HOST_PLATFORM"]="linux_aarch64"
 
 ################################################################################
 # Parameters parsed from environment
@@ -489,6 +490,15 @@ class build_ext(setuptools.command.build_ext.build_ext):
                 os.makedirs(target_dir)
 
             self.copy_file(export_lib, target_lib)
+
+    def get_ext_filename(self,name):
+        if 'CROSS_ARCH' in os.environ:
+            from platform import processor
+            native_arch = processor()
+            target_arch = os.environ['CROSS_ARCH']
+            _ext_file_name = super().get_ext_filename(name)
+            return _ext_file_name.replace(native_arch,target_arch)
+        return super().get_ext_filename(name)
 
     def build_extensions(self):
         self.create_compile_commands()

@@ -100,4 +100,6 @@ cmake --build . --target install --
 
 # build wheel
 cd ..
-_PYTHON_HOST_PLATFORM=linux_aarch64 python setup.py bdist_wheel -p linux_aarch64
+export _PYTHON_HOST_PLATFORM=linux_aarch64
+export CROSS_ARCH=aarch64
+python setup.py bdist_wheel -p linux_aarch64
