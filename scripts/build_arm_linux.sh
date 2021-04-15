@@ -21,6 +21,17 @@
 
 set -e
 
+# Build native sleef
+SLEEF_NATIVE_BINARY_DIR=build/sleef/native
+cmake -GNinja --DBUILD_QUAD=TRUE -S third_party/sleef -B ${SLEEF_NATIVE_BINARY_DIR}
+cmake --build ${SLEEF_NATIVE_BINARY_DIR}
+# Sleef cross compile assumes a Makefile in the native build but we want ninja, for sure
+printf "all:\n\tninja\n">>${SLEEF_NATIVE_BINARY_DIR}/Makefile
+echo "SLEEF DONE"
+pwd
+# Build native protoc
+scripts/build_host_protoc.sh
+
 CAFFE2_ROOT="$( cd "$(dirname "$0")"/.. ; pwd -P)"
 
 if [ -z "$PYTHON" ]; then
@@ -39,13 +50,14 @@ echo "Caffe2 path: $CAFFE2_ROOT"
 
 CMAKE_ARGS=()
 CMAKE_ARGS+=("-DCMAKE_TOOLCHAIN_FILE=$CAFFE2_ROOT/cmake/cmake_aarch64.toolchain")
+CMAKE_ARGS+=("-DCAFFE2_CUSTOM_PROTOC_EXECUTABLE=$CAFFE2_ROOT/build_host_protoc/bin/protoc")
+CMAKE_ARGS+=("-DPROTOBUF_PROTOC_EXECUTABLE=$CAFFE2_ROOT/build_host_protoc/bin/protoc")
 
-#CMAKE_ARGS+=("-DCUDA_TOOLKIT_ROOT_DIR=/usr/local/cuda-10.2")
-#CMAKE_ARGS+=("-DCUDA_TOOLKIT_TARGET_DIR=/usr/local/cuda-10.2/targets/aarch64-linux/include")
-CMAKE_ARGS+=("-DCAFFE2_CUSTOM_PROTOC_EXECUTABLE=/usr/local/bin/protoc")
-CMAKE_ARGS+=("-DCMAKE_PREFIX_PATH=$($PYTHON -c 'from distutils.sysconfig import get_python_lib; print(get_python_lib())')")
+ARM_SYS_LIB=/usr/aarch64-linux-gnu
+PYTHON_LIB=$($PYTHON -c 'from distutils.sysconfig import get_python_lib; print(get_python_lib())')
+CMAKE_ARGS+=("-DCMAKE_PREFIX_PATH=$ARM_SYS_LIB;$PYTHON_LIB")
+
 CMAKE_ARGS+=("-DPYTHON_EXECUTABLE=$($PYTHON -c 'import sys; print(sys.executable)')")
-CMAKE_ARGS+=("-DBUILD_CUSTOM_PROTOBUF=ON")
 CMAKE_ARGS+=("-DCOMPILER_WORKS_EXITCODE=0")
 CMAKE_ARGS+=("-DCOMPILER_WORKS_EXITCODE__TRYRUN_OUTPUT=''")
 # If Ninja is installed, prefer it to Make
@@ -57,13 +69,8 @@ export TORCH_CUDA_ARCH_LIST='7.2'
 export USE_CUDA=1
 export CUDA_HOME=/usr/local/cuda-10.2/targets/aarch64-linux
 export CUDA_PATH=/usr/local/cuda-10.2/targets/aarch64-linux
-export CUDA_LIB_PATH=/usr/local/cuda-10.2/targets/aarch64-linux/lib
+export CUDA_LIB_PATH=/usr/local/cuda-10.2/targets/aarch64-linux/lib:/usr/local/cuda-10.2/targets/aarch64-linux/lib/stubs
 export CUDA_NVCC_EXECUTABLE=/usr/local/cuda-10.2/bin/nvcc 
-
-ARM_CUDA_STUBS=/usr/local/cuda-10.2/targets/aarch64-linux/lib/stubs
-export LD_LIBRARY_PATH=$ARM_CUDA_STUBS
-
-#Manually add these lib dependencies for now
 
 CMAKE_ARGS+=("-DUSE_CUDA=ON")
 CMAKE_ARGS+=("-DCUDA_64_BIT_DEVICE_CODE=ON")
@@ -71,11 +78,8 @@ CMAKE_ARGS+=("-DCUDA_VERSION=10.2")
 CMAKE_ARGS+=("-DUSE_NCCL=OFF")
 CMAKE_ARGS+=("-DUSE_DISTRIBUTED=OFF")
 CMAKE_ARGS+=("-DUSE_QNNPACK=OFF")
+CMAKE_ARGS+=("-DUSE_XNNPACK=OFF")
 CMAKE_ARGS+=("-DUSE_PYTORCH_QNNPACK=OFF")
-
-
-#CMAKE_ARGS+=("-DCUDA_CUDART_LIBRARY=/usr/local/cuda/lib64/libcudart.so")
-#CMAKE_ARGS+=("-DCUDA_INCLUDE_DIRS=$CUDA_HOME/include")
 CMAKE_ARGS+=("-Wno-dev")
 CMAKE_ARGS+=($@)
 
@@ -92,5 +96,9 @@ cmake "$CAFFE2_ROOT" \
     -DCMAKE_BUILD_TYPE=Release \
     "${CMAKE_ARGS[@]}"
 
-cmake --build . --target install -- "-j${MAX_JOBS}"
+# build libs
+#cmake --build . --target install --
 
+# build wheel
+# cd ..
+# _PYTHON_HOST_PLATFORM=linux_aarch64 python setup.py bdist_wheel -p linux_aarch64
