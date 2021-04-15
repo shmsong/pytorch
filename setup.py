@@ -424,8 +424,13 @@ class build_ext(setuptools.command.build_ext.build_ext):
         else:
             report('-- Not using cuDNN')
         if cmake_cache_vars['USE_CUDA']:
-            return
-            report('-- Detected CUDA at ' + cmake_cache_vars['CUDA_TOOLKIT_ROOT_DIR'])
+            if cmake_cache_vars['CUDA_TOOLKIT_ROOT_DIR']:
+                cuda_toolkit_root_dir = cmake_cache_vars['CUDA_TOOLKIT_ROOT_DIR']
+            elif cmake_cache_vars['CUDA_TOOLKIT_ROOT_DIR_INTERNAL']:
+                cuda_toolkit_root_dir = cmake_cache_vars['CUDA_TOOLKIT_ROOT_DIR_INTERNAL']
+            else:
+                cuda_toolkit_root_dir = 'unknown-from-build'
+            report('-- Detected CUDA at ' + cuda_toolkit_root_dir)
         else:
             report('-- Not using CUDA')
         if cmake_cache_vars['USE_MKLDNN']:

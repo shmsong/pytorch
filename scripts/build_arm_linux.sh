@@ -85,11 +85,10 @@ CMAKE_ARGS+=($@)
 
 BUILD_ROOT=${BUILD_ROOT:-"$CAFFE2_ROOT/build"}
 
-INSTALL_PREFIX=${BUILD_ROOT}/install
+INSTALL_PREFIX=$CAFFE2_ROOT/torch
 mkdir -p $BUILD_ROOT
 cd $BUILD_ROOT
 echo "${CMAKE_ARGS[@]}"
-
 
 cmake "$CAFFE2_ROOT" \
     -DCMAKE_INSTALL_PREFIX=$INSTALL_PREFIX \
@@ -97,8 +96,8 @@ cmake "$CAFFE2_ROOT" \
     "${CMAKE_ARGS[@]}"
 
 # build libs
-#cmake --build . --target install --
+cmake --build . --target install --
 
 # build wheel
-# cd ..
-# _PYTHON_HOST_PLATFORM=linux_aarch64 python setup.py bdist_wheel -p linux_aarch64
+cd ..
+_PYTHON_HOST_PLATFORM=linux_aarch64 python setup.py bdist_wheel -p linux_aarch64
