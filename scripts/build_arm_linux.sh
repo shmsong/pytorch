@@ -99,6 +99,8 @@ cmake "$CAFFE2_ROOT" \
     -DCMAKE_BUILD_TYPE=Release \
     "${CMAKE_ARGS[@]}"
 
+echo "config complete"
+
 if [[ "$BUILD_OPTION" != "config-only" ]]
 then
   # build libs
