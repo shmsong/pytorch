@@ -23,7 +23,7 @@ set -e
 
 # Build native sleef
 SLEEF_NATIVE_BINARY_DIR=build/sleef/native
-cmake -GNinja --DBUILD_QUAD=TRUE -S third_party/sleef -B ${SLEEF_NATIVE_BINARY_DIR}
+cmake -GNinja -DBUILD_QUAD=TRUE -S third_party/sleef -B ${SLEEF_NATIVE_BINARY_DIR}
 cmake --build ${SLEEF_NATIVE_BINARY_DIR}
 # Sleef cross compile assumes a Makefile in the native build but we want ninja, for sure
 printf "all:\n\tninja\n">>${SLEEF_NATIVE_BINARY_DIR}/Makefile
