@@ -99,12 +99,12 @@ cmake "$CAFFE2_ROOT" \
     -DCMAKE_BUILD_TYPE=Release \
     "${CMAKE_ARGS[@]}"
 
-if [["$build_it"=="YES" ]]
-then 
-  # # build libs
+if [[ "$1" != "--config-only" ]]
+then
+  # build libs
   cmake --build . --target install --
 
-  # # build wheel
+  # build wheel
   cd ..
   export _PYTHON_HOST_PLATFORM=linux_aarch64
   export CROSS_ARCH=aarch64
