@@ -71,6 +71,7 @@ export CUDA_HOME=/usr/local/cuda-10.2/targets/aarch64-linux
 export CUDA_PATH=/usr/local/cuda-10.2/targets/aarch64-linux
 export CUDA_LIB_PATH=/usr/local/cuda-10.2/targets/aarch64-linux/lib:/usr/lib/aarch64-linux-gnu
 export CUDA_NVCC_EXECUTABLE=/usr/local/cuda-10.2/bin/nvcc 
+export MAGMA_HOME="$PACKAGE_INSTALL_DIR/magma"
 
 CMAKE_ARGS+=("-DUSE_CUDA=ON")
 CMAKE_ARGS+=("-DCUDA_64_BIT_DEVICE_CODE=ON")
