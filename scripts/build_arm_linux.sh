@@ -96,11 +96,11 @@ cmake "$CAFFE2_ROOT" \
     -DCMAKE_BUILD_TYPE=Release \
     "${CMAKE_ARGS[@]}"
 
-# build libs
-cmake --build . --target install --
+# # build libs
+# cmake --build . --target install --
 
-# build wheel
-cd ..
-export _PYTHON_HOST_PLATFORM=linux_aarch64
-export CROSS_ARCH=aarch64
-python setup.py bdist_wheel -p linux_aarch64
+# # build wheel
+# cd ..
+# export _PYTHON_HOST_PLATFORM=linux_aarch64
+# export CROSS_ARCH=aarch64
+# python setup.py bdist_wheel -p linux_aarch64
