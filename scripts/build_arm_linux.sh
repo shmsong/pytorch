@@ -69,7 +69,7 @@ export TORCH_CUDA_ARCH_LIST='7.2'
 export USE_CUDA=1
 export CUDA_HOME=/usr/local/cuda-10.2/targets/aarch64-linux
 export CUDA_PATH=/usr/local/cuda-10.2/targets/aarch64-linux
-export CUDA_LIB_PATH=/usr/local/cuda-10.2/targets/aarch64-linux/lib:/usr/local/cuda-10.2/targets/aarch64-linux/lib/stubs
+export CUDA_LIB_PATH=/usr/local/cuda-10.2/targets/aarch64-linux/lib:/usr/lib/aarch64-linux-gnu
 export CUDA_NVCC_EXECUTABLE=/usr/local/cuda-10.2/bin/nvcc 
 
 CMAKE_ARGS+=("-DUSE_CUDA=ON")
