@@ -53,9 +53,9 @@ CMAKE_ARGS+=("-DCMAKE_TOOLCHAIN_FILE=$CAFFE2_ROOT/cmake/cmake_aarch64.toolchain"
 CMAKE_ARGS+=("-DCAFFE2_CUSTOM_PROTOC_EXECUTABLE=$CAFFE2_ROOT/build_host_protoc/bin/protoc")
 CMAKE_ARGS+=("-DPROTOBUF_PROTOC_EXECUTABLE=$CAFFE2_ROOT/build_host_protoc/bin/protoc")
 
-ARM_SYS_LIB=/usr/aarch64-linux-gnu
+ARM_SYS_LIB=/usr/aarch64-linux-gnu:/usr/lib/aarch64-linux-gnu
 PYTHON_LIB=$($PYTHON -c 'from distutils.sysconfig import get_python_lib; print(get_python_lib())')
-CMAKE_ARGS+=("-DCMAKE_PREFIX_PATH=$ARM_SYS_LIB;$PYTHON_LIB")
+CMAKE_ARGS+=("-DCMAKE_PREFIX_PATH=$ARM_SYS_LIB;$PACKAGE_INSTALL_DIR")
 
 CMAKE_ARGS+=("-DPYTHON_EXECUTABLE=$($PYTHON -c 'import sys; print(sys.executable)')")
 CMAKE_ARGS+=("-DCOMPILER_WORKS_EXITCODE=0")
