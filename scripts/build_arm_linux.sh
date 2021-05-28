@@ -60,6 +60,9 @@ CMAKE_ARGS+=("-DCMAKE_PREFIX_PATH=$ARM_SYS_LIB;$PACKAGE_INSTALL_DIR")
 CMAKE_ARGS+=("-DPYTHON_EXECUTABLE=$($PYTHON -c 'import sys; print(sys.executable)')")
 CMAKE_ARGS+=("-DCOMPILER_WORKS_EXITCODE=0")
 CMAKE_ARGS+=("-DCOMPILER_WORKS_EXITCODE__TRYRUN_OUTPUT=''")
+CMAKE_ARGS+=("-DPYTHON_INCLUDE_DIRS=$PACKAGE_INSTALL_DIR/python/include/python3.7m")
+CMAKE_ARGS+=("-DPYTHON_LIBRARIES=$PACKAGE_INSTALL_DIR/python/lib/python3.7")
+
 # If Ninja is installed, prefer it to Make
 if [ -x "$(command -v ninja)" ]; then
   CMAKE_ARGS+=("-GNinja")
